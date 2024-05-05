@@ -1,0 +1,210 @@
+# Contains useful utilities for manipulating notes
+from typing import Any
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
+def get_idx2chord() -> list[str]:
+    return ['C', 'C:min', 'C#', 'C#:min', 'D', 'D:min', 'D#', 'D#:min', 'E', 'E:min', 'F', 'F:min', 'F#',
+             'F#:min', 'G', 'G:min', 'G#', 'G#:min', 'A', 'A:min', 'A#', 'A#:min', 'B', 'B:min', 'No chord']
+
+@lru_cache(maxsize=1)
+def get_quality_list():
+    return ['min', 'maj', 'dim', 'aug', 'min6', 'maj6', 'min7', 'minmaj7', 'maj7', '7', 'dim7', 'hdim7', 'sus2', 'sus4']
+
+@lru_cache(maxsize=1)
+def get_idx2voca_chord() -> list[str]:
+    """A more comprehensive chord list"""
+    root_list = get_pitch_names()
+    quality_list = get_quality_list()
+    idx2voca_chord = [""] * 170
+    idx2voca_chord[169] = 'No chord'
+    idx2voca_chord[168] = 'Unknown'
+    for i in range(168):
+        root = i // 14
+        root = root_list[root]
+        quality = i % 14
+        quality = quality_list[quality]
+        if i % 14 != 1:
+            chord = root + ':' + quality
+        else:
+            chord = root
+        idx2voca_chord[i] = chord
+
+    assert idx2voca_chord[-1] == "No chord"
+    return idx2voca_chord
+
+@lru_cache(maxsize=1)
+def get_inv_voca_map() -> dict[str, int]:
+    """Get a mapping from chord names to indices"""
+    idx2voca_chord = get_idx2voca_chord()
+    inv_voca_map = {v: i for i, v in enumerate(idx2voca_chord)}
+    return inv_voca_map
+
+@lru_cache(maxsize=1)
+def notes_to_idx(note: str):
+    mapping = {
+        "C": 0,
+        "C#": 1,
+        "Db": 1,
+        "D": 2,
+        "D#": 3,
+        "Eb": 3,
+        "E": 4,
+        "F": 5,
+        "F#": 6,
+        "Gb": 6,
+        "G": 7,
+        "G#": 8,
+        "Ab": 8,
+        "A": 9,
+        "A#": 10,
+        "Bb": 10,
+        "B": 11,
+    }
+    return mapping[note]
+
+@lru_cache(maxsize=1)
+def idx_to_notes(idx: int):
+    mapping = {
+        0: "C",
+        1: "C#",
+        2: "D",
+        3: "D#",
+        4: "E",
+        5: "F",
+        6: "F#",
+        7: "G",
+        8: "G#",
+        9: "A",
+        10: "A#",
+        11: "B",
+        12: "C"
+    }
+    return mapping[idx % 12]
+
+@lru_cache(maxsize=128)
+def move_semitone(note: str, semitone: int):
+    return idx_to_notes(notes_to_idx(note) + semitone)
+
+def fix_enharmonic_equivs(mapping: dict[str, Any]):
+    """Add equivalent key names for enharmonics in the correlation dict and delete what doesnt make sense in music theory"""
+    # Major keys
+    mapping['Db major'] = mapping['C# major']
+    mapping['Eb major'] = mapping['D# major']
+    mapping['Gb major'] = mapping['F# major']
+    mapping['Ab major'] = mapping['G# major']
+    mapping['Bb major'] = mapping['A# major']
+    del mapping['D# major']
+    del mapping['G# major']
+    del mapping['A# major']
+
+    # Minor keys
+    mapping['Eb minor'] = mapping['D# minor']
+    mapping['Ab minor'] = mapping['G# minor']
+    mapping['Bb minor'] = mapping['A# minor']
+
+    return mapping
+
+@lru_cache(maxsize=1)
+def get_pitch_names():
+    """All the pitch names in a 12-tone equal temperament system."""
+    return ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+
+@lru_cache(maxsize=1)
+def get_keys():
+    """All 24 majors and minors"""
+    return [
+        "C major",
+        "C# major",
+        "D major",
+        "D# major",
+        "E major",
+        "F major",
+        "F# major",
+        "G major",
+        "G# major",
+        "A major",
+        "A# major",
+        "B major",
+        "C minor",
+        "C# minor",
+        "D minor",
+        "D# minor",
+        "E minor",
+        "F minor",
+        "F# minor",
+        "G minor",
+        "G# minor",
+        "A minor",
+        "A# minor",
+        "B minor",
+    ]
+
+@lru_cache(maxsize=1)
+def get_chord_notes() -> dict[str, frozenset[str]]:
+    """Get a dictionary of chord notes."""
+    base_chord_notes = {
+        "C:min": ["C", "Eb", "G"],
+        "C": ["C", "E", "G"],
+        "C:dim": ["C", "Eb", "Gb"],
+        "C:aug": ["C", "E", "G#"],
+        "C:min6": ["C", "Eb", "G", "A"],
+        "C:maj6": ["C", "E", "G", "A"],
+        "C:min7": ["C", "Eb", "G", "Bb"],
+        "C:minmaj7": ["C", "Eb", "G", "B"],
+        "C:maj7": ["C", "E", "G", "B"],
+        "C:7": ["C", "E", "G", "Bb"],
+        "C:dim7": ["C", "Eb", "Gb", "A"],
+        "C:hdim7": ["C", "Eb", "Gb", "Bb"],
+        "C:sus2": ["C", "D", "G"],
+        "C:sus4": ["C", "F", "G"],
+    }
+
+    chord_notes = {}
+    for i in range(12):
+        note = idx_to_notes(i)
+        for chord, notes in base_chord_notes.items():
+            new_chord_name = note + ":" + chord[2:] if ":" in chord else note
+            new_notes = frozenset(idx_to_notes(notes_to_idx(n) + i) for n in notes)
+            chord_notes[new_chord_name] = new_notes
+
+    chord_notes["Unknown"] = frozenset()
+    chord_notes["No chord"] = frozenset()
+
+    # Sanity check
+    assert set(chord_notes.keys()) == set(get_idx2voca_chord())
+    for _, value in chord_notes.items():
+        for note in value:
+            assert note in get_pitch_names()
+    return chord_notes
+
+@lru_cache(maxsize=1)
+def get_chord_note_inv() -> dict[frozenset[str], str]:
+    """Get a dictionary of chord notes."""
+    chord_notes_map = get_chord_notes()
+    chord_notes_inv = {v: k for k, v in chord_notes_map.items()}
+    return chord_notes_inv
+
+@lru_cache
+def get_chord_quality(chord: str) -> tuple[str, str]:
+    """Get the quality of a chord. Returns (note, quality) string tuple"""
+    assert chord in get_chord_notes(), f"{chord} not a recognised chord"
+    if chord in ["No chord", "Unknown"]:
+        return "", chord
+    
+    if ":" in chord:
+        note, quality = chord.split(":")
+        return note, quality
+
+    return chord, "maj"
+
+@lru_cache(maxsize=None)
+def transpose_chord(chord: str, semitone: int) -> str:
+    if chord in ["No chord", "Unknown"]:
+        return chord
+    
+    if ":" in chord:
+        root, quality = chord.split(":")
+        return f"{move_semitone(root, semitone)}:{quality}"
+    
+    return move_semitone(chord, semitone)
