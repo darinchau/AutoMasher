@@ -18,10 +18,10 @@ class Hyperparameters:
     model: dict[str, Any]
 
 
-class self_attention_block(nn.Module):
+class SelfAttentionBlock(nn.Module):
     def __init__(self, hidden_size, total_key_depth, total_value_depth, filter_size, num_heads,
                  bias_mask=None, layer_dropout=0.0, attention_dropout=0.0, relu_dropout=0.0, attention_map=False):
-        super(self_attention_block, self).__init__()
+        super(SelfAttentionBlock, self).__init__()
 
         self.attention_map = attention_map
         self.multi_head_attention = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth,hidden_size, num_heads, bias_mask, attention_dropout, attention_map)
@@ -58,11 +58,11 @@ class self_attention_block(nn.Module):
             return y, weights #type: ignore
         return y
 
-class bi_directional_self_attention(nn.Module):
+class BidirectionalSelfAttention(nn.Module):
     def __init__(self, hidden_size, total_key_depth, total_value_depth, filter_size, num_heads, max_length,
                  layer_dropout=0.0, attention_dropout=0.0, relu_dropout=0.0):
 
-        super(bi_directional_self_attention, self).__init__()
+        super(BidirectionalSelfAttention, self).__init__()
 
         self.weights_list = list()
 
@@ -77,7 +77,7 @@ class bi_directional_self_attention(nn.Module):
                   relu_dropout,
                   True)
 
-        self.attn_block = self_attention_block(*params)
+        self.attn_block = SelfAttentionBlock(*params)
 
         params = (hidden_size,
                   total_key_depth or hidden_size,
@@ -90,7 +90,7 @@ class bi_directional_self_attention(nn.Module):
                   relu_dropout,
                   True)
 
-        self.backward_attn_block = self_attention_block(*params)
+        self.backward_attn_block = SelfAttentionBlock(*params)
 
         self.linear = nn.Linear(hidden_size*2, hidden_size)
 
@@ -111,11 +111,11 @@ class bi_directional_self_attention(nn.Module):
         self.weights_list.append(reverse_weights)
         return y, self.weights_list
 
-class bi_directional_self_attention_layers(nn.Module):
+class BidirectionalSelfAttentionLayers(nn.Module):
     def __init__(self, embedding_size, hidden_size, num_layers, num_heads, total_key_depth, total_value_depth,
                  filter_size, max_length=100, input_dropout=0.0, layer_dropout=0.0,
                  attention_dropout=0.0, relu_dropout=0.0):
-        super(bi_directional_self_attention_layers, self).__init__()
+        super(BidirectionalSelfAttentionLayers, self).__init__()
 
         self.timing_signal = _gen_timing_signal(max_length, hidden_size)
         params = (hidden_size,
@@ -128,7 +128,7 @@ class bi_directional_self_attention_layers(nn.Module):
                   attention_dropout,
                   relu_dropout)
         self.embedding_proj = nn.Linear(embedding_size, hidden_size, bias=False)
-        self.self_attn_layers = nn.Sequential(*[bi_directional_self_attention(*params) for l in range(num_layers)])
+        self.self_attn_layers = nn.Sequential(*[BidirectionalSelfAttention(*params) for l in range(num_layers)])
         self.layer_norm = LayerNorm(hidden_size)
         self.input_dropout = nn.Dropout(input_dropout)
 
@@ -169,7 +169,7 @@ class BTCModel(nn.Module):
                   config['attention_dropout'],
                   config['relu_dropout'])
 
-        self.self_attn_layers = bi_directional_self_attention_layers(*params)
+        self.self_attn_layers = BidirectionalSelfAttentionLayers(*params)
         self.output_layer = SoftmaxOutputLayer(hidden_size=config['hidden_size'], output_size=config['num_chords'], probs_out=config['probs_out'])
 
     def forward(self, x, labels):

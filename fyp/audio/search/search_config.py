@@ -6,16 +6,6 @@ from tqdm.auto import tqdm
 from typing import Any
 from copy import deepcopy
 
-def has_madmom():
-    """Check if madmom is installed"""
-    try:
-        import madmom
-        return True
-    except ImportError:
-        return False
-    
-HAS_MADMOM = has_madmom()
-
 @dataclass(frozen=True)
 class SearchConfig:
     """
@@ -97,29 +87,11 @@ class SearchConfig:
     skip_search: bool = False
     filter_dataset: Callable[[dict], bool] | None = None
     filter_first: bool = True
-    backend_url: str | None = "https://unique-closing-gecko.ngrok-free.app"
     chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
     beat_model_path: str = "resources/ckpts/beat_transformer.pt"
     cache_dir: str | None = "./"
     cache: bool = True
     verbose_progress: bool = False
-    use_request_beat_transformer: bool = not HAS_MADMOM
-
-    @staticmethod
-    def parse(cmd: str):
-        """Parses the command line arguments"""
-        return SearchConfig() ## TODO: implement
-        args = cmd.split()
-        config = SearchConfig()
-        for arg in args:
-            if "=" not in arg:
-                continue
-            key, value = arg.split("=")
-            # Check if key is an attribute of SearchConfig
-            if hasattr(config, key):
-                # Potentially unsafe eval but oh well
-                setattr(config, key, eval(value))
-        return config
     
     def clone(self, **kwargs: Any):
         """Clones the SearchConfig with the new attributes"""
