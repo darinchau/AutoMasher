@@ -8,14 +8,6 @@ def clear_cuda():
     import torch
     import gc
     torch.cuda.empty_cache()
-    for obj in gc.get_objects():
-        try:
-            if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                del obj
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt
-        except Exception as e:
-            pass
 
 def is_ipython():
     try:

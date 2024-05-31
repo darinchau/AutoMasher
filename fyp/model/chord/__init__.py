@@ -47,14 +47,11 @@ def get_default_config() -> Hyperparameters:
         },
     )
 
-def inference(audio: Audio, model_path: str, *, device = None) -> list[tuple[float, int]]:
-    """Main entry point. We will give you back list of triplets: (start, chord)"""
-    # Handle audio and resample to the requied sr
-    original_wav: np.ndarray = audio.resample(22050).numpy()
-    sr = 22050
-
-    # Device
-    device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+_BTC_MODEL = None
+def get_model(model_path: str, device: torch.device, use_loaded_model: bool) -> tuple[BTCModel, Hyperparameters, Any, Any]:
+    global _BTC_MODEL
+    if _BTC_MODEL is not None and use_loaded_model:
+        return _BTC_MODEL
 
     # Init config
     config = get_default_config()
@@ -70,6 +67,18 @@ def inference(audio: Audio, model_path: str, *, device = None) -> list[tuple[flo
     mean = checkpoint['mean']
     std = checkpoint['std']
     model.load_state_dict(checkpoint['model'])
+    _BTC_MODEL = (model, config, mean, std)
+    return _BTC_MODEL
+
+def inference(audio: Audio, model_path: str, *, use_loaded_model: bool = True) -> list[tuple[float, int]]:
+    """Main entry point. We will give you back list of triplets: (start, chord)"""
+    # Handle audio and resample to the requied sr
+    original_wav: np.ndarray = audio.resample(22050).numpy()
+    sr = 22050
+
+    # Load the model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, config, mean, std = get_model(model_path, device, use_loaded_model)
 
     # Compute audio features
     currunt_sec_hz = 0

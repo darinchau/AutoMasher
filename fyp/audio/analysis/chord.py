@@ -9,10 +9,10 @@ from ...util.note import get_idx2voca_chord
 from ...util.note import get_inv_voca_map
 
 def analyse_chord_transformer(audio: Audio, *, model_path: str = "../../resources/ckpts/btc_model_large_voca.pt", 
-                              device = None,
+                              use_loaded_model: bool = True,
                               cache_path: str | None = None) -> ChordAnalysisResult:    
     def calculate_chord():
-        results = inference(audio, model_path=model_path, device = device)
+        results = inference(audio, model_path=model_path, use_loaded_model=use_loaded_model)
         chords = get_idx2voca_chord()
         times = [r[0] for r in results]
         inv_voca = get_inv_voca_map()

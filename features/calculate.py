@@ -6,7 +6,7 @@ from fyp.audio.separation import HPSSAudioSeparator
 from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transformer
 from fyp.audio.analysis import ChordAnalysisResult, BeatAnalysisResult
 from fyp.audio.dataset import DatasetEntry, SongDataset, load_song_dataset, save_song_dataset
-from fyp.util import is_ipython
+from fyp.util import is_ipython, clear_cuda
 import gc
 from datasets import Dataset
 import glob
@@ -111,10 +111,10 @@ def process_video_url(video_url: str, playlist_url: str, genre="pop") -> Dataset
     audio = Audio.load(video_url)
 
     print(f"Analysing chords...")
-    chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt")
+    chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
 
     print(f"Analysing beats...")
-    beat_result = analyse_beat_transformer(audio, model_path="./resources/ckpts/beat_transformer.pt")
+    beat_result = analyse_beat_transformer(audio, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
 
     print("Postprocessing...")
     labels = chord_result.grouped_labels
@@ -165,6 +165,7 @@ def calculate_playlist(playlist_url: str, batch_genre_name: str, dataset_path: s
 
     # Get all video url datas
     t = time.time()
+    last_t = None
     urls = []
     processed_urls = set(dataset._data.keys())
     for url in tqdm(get_video_urls(playlist_url), desc="Getting URLs from playlist..."):
@@ -174,8 +175,17 @@ def calculate_playlist(playlist_url: str, batch_genre_name: str, dataset_path: s
         
     for i, url in enumerate(urls):
         clear_output()
+        
+        last_entry_process_time = round(time.time() - last_t, 2) if last_t else None
+        last_t = time.time()
         print(f"Current number of entries: {len(dataset)} {i}/{len(urls)} for current playlist.")
-        print(f"Playlist title: {title}, Genre: {batch_genre_name}, time elapsed: {time.time() - t:.2f}s")
+        print(f"Playlist title: {title}")
+        print(f"Last entry process time: {last_entry_process_time} seconds")
+        print(f"Current entry: {url}")
+        print(f"Time elapsed: {round(time.time() - t, 2)} seconds")
+        print(f"Genre: {batch_genre_name}")
+        
+        clear_cuda()
 
         entry = process_video_url(url, playlist_url, genre=batch_genre_name)
         if not entry:
@@ -185,7 +195,6 @@ def calculate_playlist(playlist_url: str, batch_genre_name: str, dataset_path: s
         save_song_dataset(dataset, dataset_path)
 
 #### Driver code and functions ####
-
 def get_next_playlist_to_process(queue_path: str) -> tuple[str, str] | None:
     try:
         with open(queue_path, "r") as file:

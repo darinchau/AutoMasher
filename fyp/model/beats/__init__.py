@@ -25,13 +25,22 @@ def separator_stft(data: np.ndarray) -> np.ndarray:
         return out[0]
     return np.concatenate(out, axis=2)
 
-def inference(parts: dict[str, np.ndarray], model_path: str) -> tuple[list[float], list[float]]:
+_BEAT_MODEL = None
+def get_model(model_path: str, device: torch.device, use_loaded_model: bool = True):
+    global _BEAT_MODEL
+    if _BEAT_MODEL is not None and use_loaded_model:
+        return _BEAT_MODEL
+    model = DemixedDilatedTransformerModel(attn_len=5, instr=5, ntoken=2, dmodel=256, nhead=8, d_hid=1024, nlayers=9, norm_first=True)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu'))['state_dict'])
+    model.to(device)
+    model.eval()
+    _BEAT_MODEL = model
+    return model
+
+def inference(parts: dict[str, np.ndarray], model_path: str, use_loaded_model: bool = True) -> tuple[list[float], list[float]]:
     """Beat transformer inference code copied from backer-end"""
     require_madmom()
     assert set(parts.keys()) == {'vocals', 'piano', 'drums', 'bass', 'other'}
-    model = DemixedDilatedTransformerModel(attn_len=5, instr=5, ntoken=2, dmodel=256, nhead=8, d_hid=1024, nlayers=9, norm_first=True)
-    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu'))['state_dict'])
-    
 
     mel_f = librosa.filters.mel(sr=44100, n_fft=4096, n_mels=128, fmin=30, fmax=11000).T
     x = np.stack([
@@ -44,8 +53,7 @@ def inference(parts: dict[str, np.ndarray], model_path: str) -> tuple[list[float
     x = np.transpose(x, (0, 2, 1))
     
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    model.to(device)
-    model.eval()
+    model = get_model(model_path, device, use_loaded_model)
 
     with torch.no_grad():
         model_input = torch.from_numpy(x).unsqueeze(0).float().to(device)
