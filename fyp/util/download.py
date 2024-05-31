@@ -14,7 +14,7 @@ def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose = Tru
         os.makedirs(output_path, exist_ok=True)
 
         logger = 'bar' if verbose else None
-        audio.write_audiofile(os.path.join(output_path, wav_filename), fps=sr, verbose=verbose, logger=logger) #type: ignore
+        audio.write_audiofile(os.path.join(output_path, wav_filename), fps=sr, verbose=verbose, logger=logger)
         return wav_filename
     except Exception as e:
         return "Error converting to wav", e
@@ -32,7 +32,7 @@ def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
         
         video = YouTube(yt.watch_url, on_progress_callback=progress_callback).streams.filter(file_extension='mp4').get_lowest_resolution()
         progress_bar = tqdm(total=video.filesize, unit='B', unit_scale=True, ncols=100, disable=not verbose) #type:ignore
-        video.download(output_path=output_path, timeout=timeout) #type: ignore
-        return os.path.join(output_path, video.default_filename) #type: ignore
+        video.download(output_path=output_path, timeout=timeout)
+        return os.path.join(output_path, video.default_filename)
     except Exception as e:
         return "Error downloading video", e

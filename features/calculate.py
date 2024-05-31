@@ -50,7 +50,7 @@ def filter_song(yt: YouTube):
 
 def clear_output():
     try:
-        get_ipython #type: ignore
+        get_ipython
         from IPython.display import clear_output as ip_clear_output
         ip_clear_output()
     except (ImportError, NameError) as e:

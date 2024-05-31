@@ -19,7 +19,7 @@ def clear_cuda():
 
 def is_ipython():
     try:
-        __IPYTHON__ #type: ignore
+        __IPYTHON__
         return True
     except NameError:
         return False

@@ -1,11 +1,15 @@
 # Contains useful utilities for manipulating notes
+# This place contains a few getters:
+# get_idx2voca_chord() -> list[str]: Gets the list of all 170 chord names
+# get_inv_voca_map() -> dict[str, int]: Gets a mapping from chord names to indices. The inverse of get_idx2voca_chord()
+# get_pitch_names() -> list[str]: Gets all the pitch names in a 12-tone equal temperament system
+# get_keys() -> list[str]: Gets all 24 major and minor keys
+# get_chord_notes() -> dict[str, frozenset[str]]: Gets a dictionary of chord notes
+# get_chord_note_inv() -> dict[frozenset[str], str]: Gets a dictionary of chord notes, inverse of get_chord_notes()
+# get_chord_quality(chord: str) -> tuple[str, str]: Gets the quality of a chord. Returns (note, quality) string tuple
+
 from typing import Any
 from functools import lru_cache
-
-@lru_cache(maxsize=1)
-def get_idx2chord() -> list[str]:
-    return ['C', 'C:min', 'C#', 'C#:min', 'D', 'D:min', 'D#', 'D#:min', 'E', 'E:min', 'F', 'F:min', 'F#',
-             'F#:min', 'G', 'G:min', 'G#', 'G#:min', 'A', 'A:min', 'A#', 'A#:min', 'B', 'B:min', 'No chord']
 
 @lru_cache(maxsize=1)
 def get_quality_list():
@@ -63,7 +67,7 @@ def notes_to_idx(note: str):
     }
     return mapping[note]
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=None)
 def idx_to_notes(idx: int):
     mapping = {
         0: "C",

@@ -19,9 +19,9 @@ def get_entry_from_database(dataset: DatasetType, video_id_or_url: str):
     url = video_id_or_url if video_id_or_url.startswith("https://") else f"https://www.youtube.com/watch?v={video_id_or_url}"
     entry: dict[str, Any] = {}
     for e in dataset:
-        if e['url'] == url: #type: ignore
+        if e['url'] == url:
             for key in ("length", "beats", "downbeats", "audio_name", "views"):
-                entry[key] = e[key]  #type: ignore
+                entry[key] = e[key] 
             entry['url'] = url
             break
     

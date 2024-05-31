@@ -34,10 +34,10 @@ class DemucsAudioSeparator(AudioSeparator):
         if isinstance(model, BagOfModels):
             if segment is not None:
                 for sub in model.models:
-                    sub.segment = segment #type: ignore
+                    sub.segment = segment
         else:
             if segment is not None:
-                model.segment = segment #type: ignore
+                model.segment = segment
 
         model.cpu()
         model.eval()
@@ -91,7 +91,7 @@ class DemucsAudioSeparator(AudioSeparator):
                                  overlap=overlap, 
                                  progress=show_progress, 
                                  num_workers=jobs, 
-                                 device=device)[0] #type: ignore
+                                 device=device)[0]
         components = components * ref.std() + ref.mean()
 
         # Get the name indices - i.e. components[name[i]] is the audio for the `name` component

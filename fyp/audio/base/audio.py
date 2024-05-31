@@ -246,7 +246,7 @@ class Audio(TimeSeries):
                 raise RuntimeError(f"Cannot find the file specified: {fpath}")
             return Audio.load(new_fpath)
         
-        wav, sr = torchaudio.load(fpath) #type: ignore
+        wav, sr = torchaudio.load(fpath)
         if wav.dtype != torch.float32:
             wav = wav.to(dtype = torch.float32)
         return cls(wav, sr)
@@ -357,7 +357,7 @@ class Audio(TimeSeries):
         if fpath.endswith(".mp3"):
             raise RuntimeError("Saving to mp3 is not supported. Please save to wav or other formats")
         try:
-            torchaudio.save(fpath, self._data, sample_rate = self._sample_rate) #type: ignore
+            torchaudio.save(fpath, self._data, sample_rate = self._sample_rate)
             return
         except (ValueError, RuntimeError) as e: # Seems like torchaudio changed the error type to runtime error in 2.2?
             # or the file path is invalid

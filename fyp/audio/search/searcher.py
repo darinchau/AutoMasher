@@ -71,11 +71,11 @@ class SongSearcher:
 		self.search_config = search_config or SearchConfig()
 		if dataset is None:
 			if os.path.isdir(dataset_path):
-				dataset = load_from_disk(dataset_path=dataset_path, keep_in_memory=True) #type: ignore
+				dataset = load_from_disk(dataset_path=dataset_path, keep_in_memory=True)
 			else:
-				dataset = load_dataset("HKUST-FYPHO2/audio-infos-filtered", split="train") #type: ignore
-				dataset.save_to_disk(dataset_path) #type: ignore
-				dataset = load_from_disk(dataset_path=dataset_path, keep_in_memory=True) #type: ignore
+				dataset = load_dataset("HKUST-FYPHO2/audio-infos-filtered", split="train")
+				dataset.save_to_disk(dataset_path)
+				dataset = load_from_disk(dataset_path=dataset_path, keep_in_memory=True)
 		assert isinstance(dataset, Dataset) or isinstance(dataset, list), dataset
 		self.dataset = dataset
 		self._all_scores: list[tuple[float, str]] = []

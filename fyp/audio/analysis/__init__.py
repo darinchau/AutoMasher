@@ -56,7 +56,7 @@ def compare_bpm_trend(audio: Audio, beatanalysers: list[Callable[[Audio], BeatAn
         print(f"({name}) Mean: {bpm_diff.mean()}")
 
         if hasattr(result, "smooth_heuristics"):
-            print(f"({name}) Best smoothery: {result.smooth_heuristics}") #type: ignore
+            print(f"({name}) Best smoothery: {result.smooth_heuristics}")
 
         print(f"({name}) Time: {round(t2 - t1, 4)}s")
         print()
