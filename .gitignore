@@ -76,3 +76,5 @@ resources/*
 !resources/ckpts
 *.ipynb
 !demo.ipynb
+features/*
+!features/*.py

@@ -25,7 +25,7 @@ def separator_stft(data: np.ndarray) -> np.ndarray:
         return out[0]
     return np.concatenate(out, axis=2)
 
-def inference(parts: dict[str, np.ndarray], model_path: str, *, min_bpm: float = 55.0, max_bpm: float = 215.0) -> tuple[list[float], list[float]]:
+def inference(parts: dict[str, np.ndarray], model_path: str) -> tuple[list[float], list[float]]:
     """Beat transformer inference code copied from backer-end"""
     require_madmom()
     assert set(parts.keys()) == {'vocals', 'piano', 'drums', 'bass', 'other'}

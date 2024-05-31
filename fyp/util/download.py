@@ -2,6 +2,7 @@ import os
 from pytube import YouTube
 from tqdm import tqdm
 from moviepy.editor import VideoFileClip
+from .combine import get_video_title
 
 # Convert video file to .wav format with 48kHz sample rate
 def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose = True):
@@ -31,14 +32,48 @@ def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
             print(f"Downloading: {yt.title}")
         
         video = YouTube(yt.watch_url, on_progress_callback=progress_callback).streams.filter(file_extension='mp4').get_lowest_resolution()
-        progress_bar = tqdm(total=video.filesize, unit='B', unit_scale=True, ncols=100, disable=not verbose) #type:ignore
+        progress_bar = tqdm(total=video.filesize, unit='B', unit_scale=True, ncols=100, disable=not verbose)
         video.download(output_path=output_path, timeout=timeout)
         return os.path.join(output_path, video.default_filename)
     except Exception as e:
         return "Error downloading video", e
 
+def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True, timeout=120):
+    try:
+        from yt_dlp.YoutubeDL import YoutubeDL
+    except ImportError:
+        raise ImportError("Please install yt-dlp to use this function")
+    ydl = YoutubeDL({
+        "format": "bestaudio/best",
+        "output": "%(title)s.%(ext)s",
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "wav",
+            "preferredquality": "192",
+        }],
+        "quiet": not verbose,
+        "windowsfilenames": True,
+        "paths": {
+            "home": output_dir
+        }
+    })
+    retcode = ydl.download([link])
+    title = ydl.extract_info(link, download=False)['title']
+
+    # Find the downloaded file
+    for file in os.listdir(output_dir):
+        if title in file and file.endswith('.wav'):
+            return os.path.join(output_dir, file)
+    raise FileNotFoundError(f"Could not find downloaded file for {link}: {retcode}")
+
 # More often than not we only want the audio so here is one combined function
 def download_audio(link: str, output_dir: str, verbose=True, timeout=120):
+    try:
+        return download_audio_with_yt_dlp(link, output_dir, verbose=verbose, timeout=timeout)
+    except Exception as e:
+        print("yt-dlp failed, falling back to pytube, which is less likely to work but we gotta try what we could do", e)
+    
+    # Try fallback
     yt = YouTube(link)
     video_path = download_video(yt, output_dir, verbose=verbose, timeout=timeout)
     if isinstance(video_path, tuple):
@@ -47,5 +82,4 @@ def download_audio(link: str, output_dir: str, verbose=True, timeout=120):
     audio_path = convert_to_wav(video_path, output_dir, verbose = False)
     if isinstance(audio_path, tuple):
         raise RuntimeError(f"Error converting to wav: {audio_path[1]}")
-    
     return audio_path

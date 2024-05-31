@@ -1,7 +1,7 @@
 # Provides a function to load our dataset as a list of dataset entries
 # This additional data structure facilitates getting by url
 from dataclasses import dataclass
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 from typing import Any, Callable, Optional
 from copy import deepcopy
 from ..util.combine import get_url
@@ -59,7 +59,14 @@ class SongDataset:
         return new_dataset
 
 def load_song_dataset(dataset_path: str) -> SongDataset:
-    dataset = load_dataset(dataset_path, split="train")
+    try:
+        dataset = load_dataset(dataset_path, split="train")
+    except ValueError as e:
+        expected_message = "You are trying to load a dataset that was saved using `save_to_disk`. Please use `load_from_disk` instead."
+        if e.args[0] == expected_message:
+            dataset = Dataset.load_from_disk(dataset_path)
+        else:
+            raise e
     song_dataset = SongDataset()
     for entry in dataset:
         song_dataset[entry["url"]] = DatasetEntry(
@@ -78,3 +85,21 @@ def load_song_dataset(dataset_path: str) -> SongDataset:
         )
 
     return song_dataset
+
+def save_song_dataset(dataset: SongDataset, dataset_path: str):
+    ds = Dataset.from_dict({
+        "chords": [entry.chords for entry in dataset],
+        "chord_times": [entry.chord_times for entry in dataset],
+        "downbeats": [entry.downbeats for entry in dataset],
+        "beats": [entry.beats for entry in dataset],
+        "genre": [entry.genre for entry in dataset],
+        "audio_name": [entry.audio_name for entry in dataset],
+        "url": [entry.url for entry in dataset],
+        "playlist": [entry.playlist for entry in dataset],
+        "views": [entry.views for entry in dataset],
+        "length": [entry.length for entry in dataset],
+        "normalized_chord_times": [entry.normalized_chord_times for entry in dataset],
+        "music_duration": [entry.music_duration for entry in dataset]
+    })
+
+    ds.save_to_disk(dataset_path)
