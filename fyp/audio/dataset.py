@@ -58,7 +58,7 @@ class SongDataset:
                 new_dataset[entry.url] = entry
         return new_dataset
 
-def load_song_dataset(dataset_path: str = "HKUST-FYPHO2/audio-infos-filtered") -> SongDataset:
+def load_song_dataset(dataset_path: str) -> SongDataset:
     dataset = load_dataset(dataset_path, split="train")
     song_dataset = SongDataset()
     for entry in dataset:

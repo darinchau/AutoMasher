@@ -25,8 +25,7 @@ import typing
 from torchaudio.transforms import TimeStretch
 import librosa
 from ...util import is_ipython
-from ...util.combine import get_video_id
-from ...util.download import download_video, convert_to_wav, YouTube
+from ...util.download import download_audio
 
 def get_sounddevice():
     try:
@@ -214,18 +213,8 @@ class Audio(TimeSeries):
             if cache_path is not None and os.path.isfile(cache_path):
                 return Audio.load(cache_path)
 
-            from ...util.download import download_video, convert_to_wav, YouTube
-            yt = YouTube(fpath)
-
             with tempfile.NamedTemporaryFile(suffix = ".mp4") as tmp:
-                video_path = download_video(yt, os.path.dirname(tmp.name), verbose = False)
-                if isinstance(video_path, tuple):
-                    raise RuntimeError(f"Error downloading video: {video_path[1]}")
-                
-                audio_path = convert_to_wav(video_path, os.path.dirname(tmp.name), verbose = False)
-                if isinstance(audio_path, tuple):
-                    raise RuntimeError(f"Error converting to wav: {audio_path[1]}")
-                
+                audio_path = download_audio(fpath, os.path.dirname(tmp.name), verbose = False)
                 a = Audio.load(audio_path)
             if cache_path is not None:
                 a.save(cache_path)

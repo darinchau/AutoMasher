@@ -36,3 +36,16 @@ def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
         return os.path.join(output_path, video.default_filename)
     except Exception as e:
         return "Error downloading video", e
+
+# More often than not we only want the audio so here is one combined function
+def download_audio(link: str, output_dir: str, verbose=True, timeout=120):
+    yt = YouTube(link)
+    video_path = download_video(yt, output_dir, verbose=verbose, timeout=timeout)
+    if isinstance(video_path, tuple):
+        raise RuntimeError(f"Error downloading video: {video_path[1]}")
+    
+    audio_path = convert_to_wav(video_path, output_dir, verbose = False)
+    if isinstance(audio_path, tuple):
+        raise RuntimeError(f"Error converting to wav: {audio_path[1]}")
+    
+    return audio_path

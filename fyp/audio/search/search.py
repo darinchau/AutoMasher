@@ -4,7 +4,7 @@ from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_tra
 from ..analysis import TimeSegmentResult
 from ... import Audio
 from typing import Any
-from ..dataset import SongDataset
+from ..dataset import SongDataset, load_song_dataset
 from ..separation import DemucsAudioSeparator
 from math import exp
 from .search_config import SearchConfig
@@ -31,11 +31,11 @@ def curve_score(score: float) -> float:
 
 class SongSearchState:
     """A state object for song searching that caches the results of the search and every intermediate step."""
-    def __init__(self, link: str, audio: Audio | None, search_config: SearchConfig, dataset: SongDataset):
+    def __init__(self, link: str, config: SearchConfig, audio: Audio | None = None, dataset: SongDataset | None = None):
         self._link = link
         self._audio = audio
-        self.search_config = search_config
-        self.dataset = dataset
+        self.search_config = config
+        self._dataset = dataset
         self._all_scores: list[tuple[float, str]] = []
         self._raw_chord_result: ChordAnalysisResult | None = None
         self._raw_beat_result: BeatAnalysisResult | None = None
@@ -49,13 +49,19 @@ class SongSearchState:
 
     @property
     def link(self) -> str:
-        return self.link
+        return self._link
     
     @property
     def audio(self) -> Audio:
         if self._audio is None:
             self._audio = Audio.load(self.link)
         return self._audio
+    
+    @property
+    def dataset(self) -> SongDataset:
+        if self._dataset is None:
+            self._dataset = load_song_dataset(self.search_config.dataset_path)
+        return self._dataset
 
     @property
     def cache_dir(self) -> str | None:
@@ -65,7 +71,7 @@ class SongSearchState:
         if not self.search_config.cache:
             return None
         if not os.path.isdir(self.search_config.cache_dir):
-            os.makedirs(self.search_config.cache_dir)
+            raise ValueError(f"Cache directory not found: {self.search_config.cache_dir}")
         return self.search_config.cache_dir
     
     @property
