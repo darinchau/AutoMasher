@@ -26,6 +26,7 @@ from torchaudio.transforms import TimeStretch
 import librosa
 from ...util import is_ipython
 from ...util.combine import get_video_id
+from ...util.download import download_video, convert_to_wav, YouTube
 
 def get_sounddevice():
     try:
@@ -62,14 +63,6 @@ class Audio(TimeSeries):
         # For playing audio
         self._stop_audio = False
         self._thread = None
-
-        # For youtube links if they are used
-        self._link = None
-
-    def apply_link(self, link: str | None):
-        """Apply a link to the audio. This is used for youtube links"""
-        self._link = link
-        return self
 
     @property
     def sample_rate(self) -> int:
@@ -120,7 +113,7 @@ class Audio(TimeSeries):
     
     def clone(self):
         """Returns an identical copy of self"""
-        return Audio(self.get_data(), self._sample_rate).apply_link(self._link)
+        return Audio(self.get_data(), self._sample_rate)
     
     def pad(self, target: int, front: bool = False) -> Audio:
         """Returns a new audio with the given number of frames and the same sample rate as self.
@@ -163,7 +156,7 @@ class Audio(TimeSeries):
                 return self.mix_to_stereo(left_mix=0.)
             
             case (AudioMode.STEREO, AudioMode.MONO):
-                return Audio(self._data.mean(dim = 0, keepdim=True), self._sample_rate).apply_link(self._link)
+                return Audio(self._data.mean(dim = 0, keepdim=True), self._sample_rate)
         
         assert False, "Unreachable"
 
@@ -174,7 +167,7 @@ class Audio(TimeSeries):
             return self.clone()
         
         data = F.resample(self._data, self._sample_rate, target_sr, **kwargs)
-        return Audio(data, target_sr).apply_link(self._link)
+        return Audio(data, target_sr)
     
     def slice(self, start_frame: int = 0, end_frame: int = -1) -> Audio:
         """Takes the current audio and splice the audio between start (frames) and end (frames). Returns a new copy.
@@ -219,8 +212,8 @@ class Audio(TimeSeries):
         # Load from youtube if the file path is a youtube url
         if fpath.startswith("http") and "youtube" in fpath:
             if cache_path is not None and os.path.isfile(cache_path):
-                return Audio.load(cache_path).apply_link(fpath)
-            
+                return Audio.load(cache_path)
+
             from ...util.download import download_video, convert_to_wav, YouTube
             yt = YouTube(fpath)
 
@@ -236,16 +229,8 @@ class Audio(TimeSeries):
                 a = Audio.load(audio_path)
             if cache_path is not None:
                 a.save(cache_path)
-            return a.apply_link(fpath)
-        
-        # Override to load test env more easily
-        is_test_env = os.path.basename(os.getcwd()) == "tests"
-        if not os.path.isfile(fpath) and is_test_env:
-            new_fpath = f"../../resources/test/{fpath}"
-            if not os.path.isfile(new_fpath):
-                raise RuntimeError(f"Cannot find the file specified: {fpath}")
-            return Audio.load(new_fpath)
-        
+            return a
+
         wav, sr = torchaudio.load(fpath)
         if wav.dtype != torch.float32:
             wav = wav.to(dtype = torch.float32)
