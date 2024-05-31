@@ -20,7 +20,7 @@ from scipy.signal.windows import hann
 from ...model.beat_transformer import inference    
 import warnings
 
-def analyse_beat_transformer_local(audio: Audio | None = None, 
+def analyse_beat_transformer(audio: Audio | None = None, 
                                    parts: AudioCollection | Callable[[], AudioCollection] | None = None, 
                                    separator: AudioSeparator | None = None,
                                     do_normalization: bool = False, cache_path: str | None = None,

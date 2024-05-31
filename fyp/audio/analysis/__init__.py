@@ -7,7 +7,6 @@ from .key import (
 )
 from .beat import (
     analyse_beat_transformer,
-    analyse_beat_transformer_local,
 )
 from .chord import (
     analyse_chord_transformer,
@@ -54,10 +53,6 @@ def compare_bpm_trend(audio: Audio, beatanalysers: list[Callable[[Audio], BeatAn
         bpm_diff_x = (beats[1:] + beats[:-1]) / 2
 
         print(f"({name}) Mean: {bpm_diff.mean()}")
-
-        if hasattr(result, "smooth_heuristics"):
-            print(f"({name}) Best smoothery: {result.smooth_heuristics}")
-
         print(f"({name}) Time: {round(t2 - t1, 4)}s")
         print()
 

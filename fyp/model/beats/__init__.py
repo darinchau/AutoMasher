@@ -6,8 +6,8 @@ import librosa
 from scipy.signal.windows import hann
 from librosa.core import stft
 import torch
-from .beat_modules import DemixedDilatedTransformerModel
-from .beat_tracker import unpack_beats, unpack_downbeats, require_madmom
+from .modules import DemixedDilatedTransformerModel
+from .tracker import unpack_beats, unpack_downbeats, require_madmom
 
 def separator_stft(data: np.ndarray) -> np.ndarray:
     data = np.asfortranarray(data)

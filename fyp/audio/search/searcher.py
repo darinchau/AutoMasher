@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer_local
+from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
 from ..analysis import TimeSegmentResult
 from ... import Audio
 from .. import AudioCollection
@@ -172,7 +172,7 @@ class SongSearcher:
 					cache_path = self.beat_cache_path,
 				)
 			else:
-				br = analyse_beat_transformer_local(
+				br = analyse_beat_transformer(
 					parts = lambda: self.raw_parts_result, 
 					cache_path = self.beat_cache_path,
 					model_path=self.search_config.beat_model_path
