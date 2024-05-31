@@ -20,7 +20,6 @@ import torch.nn.functional as F
 from scipy.ndimage import gaussian_filter1d
 from .base import BeatAnalysisResult
 from .base import Audio
-from ...util.html_scraping import find_bpm
 from .base import TimeSegmentResult
 from scipy import stats
 import librosa

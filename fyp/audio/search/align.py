@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 import numba
 import heapq
 import typing 
-from datasets import Dataset
+from ..dataset import SongDataset, DatasetEntry
 from .search_config import SearchConfig
 
 NO_CHORD_PENALTY = 3
@@ -89,7 +89,8 @@ def distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
 
 @lru_cache(maxsize=1)
 def calculate_distance_array():
-    """Calculates the distance array for all chords. The distance array is a 2D array where the (i, j)th element is the distance between the ith and jth chords."""
+    """Calculates the distance array for all chords. The distance array is a 2D array where the (i, j)th element is the distance between the ith and jth chords.
+    This will be cached and used for all future calculations."""
     chord_mapping = get_idx2voca_chord()
     n = len(chord_mapping)
     distance_array = [[0] * n for _ in range(n)]
@@ -102,6 +103,9 @@ def calculate_distance_array():
 # Calculates the distance of chord results except we only put everything as np arrays for numba jit
 @numba.njit
 def _dist_chord_results(times1, times2, chords1, chords2, distances):
+    """A jitted version of the chord result distance calculation, which is defined to be the sum of distances times time
+    between the two chord results. The distance between two chords is defined to be the distance between the two chords.
+    Refer to our report for more detalis."""
     score = 0
     cumulative_duration = 0.
 
@@ -174,8 +178,8 @@ def get_music_duration(chord_result: ChordAnalysisResult):
             music_duration += end - start
     return music_duration
 
-# This is now not needed during the search step because we have precalculated it
 def get_normalized_chord_result(cr: ChordAnalysisResult, br: BeatAnalysisResult):
+    """Normalize the chord result with the beat result. This is done by retime the chord result as the number of downbeats."""
     # For every time stamp in the chord result, retime it as the number of downbeats.
     # For example, if the time stamp is half way between downbeat[1] and downbeat[2], then it should be 1.5
     # If the time stamp is before the first downbeat, then it should be 0.
@@ -195,21 +199,19 @@ def get_normalized_chord_result(cr: ChordAnalysisResult, br: BeatAnalysisResult)
 
 # Use a more efficient data scructure to store the scores
 class MashabilityScore:
-    def __init__(self, keep_first_k: int = -1):
+    """A class to store the scores of the mashability search. It is a heap that keeps the top k scores if k > 0. Otherwise this behaves like a list."""
+    def __init__(self, keep_first_k: int):
+        assert keep_first_k > 0, "Use a Mashability List instead"
         self.keep_first_k = keep_first_k
         self.heap = []
 
     def insert(self, score: float, id: str):
-        if self.keep_first_k < 0:
-            self.heap.append((score, id))
-        elif len(self.heap) < self.keep_first_k:
+        if len(self.heap) < self.keep_first_k:
             heapq.heappush(self.heap, (-score, id))
         else:
             heapq.heappushpop(self.heap, (-score, id))
 
     def get(self):
-        if self.keep_first_k < 0:
-            return sorted(self.heap)
         return sorted([(-score, id) for score, id in self.heap])
     
 class MashabilityList:
@@ -224,31 +226,16 @@ class MashabilityList:
 
 # An optimized version of the legacy code
 def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult, 
-                         dataset: list[dict[str, Any]] | Dataset, first_k: int | None = None,
-                         on_search_start: Callable[[int], None] | None = None,
-                         on_search_progress: Callable[[int, int], None] | None = None,
-                         on_search_end: Callable[[int], None] | None = None,
+                         dataset: SongDataset, first_k: int | None = None,
                          search_config: SearchConfig | None = None) -> list[tuple[float, str]]:
     """Find the best song in the data list that matches the given audio.
-
     Assuming the chord result is always short enough
-
     Assume t=0 is always a downbeat
-
-    Returns the best score and the best entry in the dataset.
-    """
+    Returns the best score and the best entry in the dataset."""
     assert submitted_beat_result.downbeats is not None
-    assert submitted_beat_result.downbeats[0] < 1e-5
+    assert submitted_beat_result.downbeats[0] == 0.
     assert submitted_chord_result.duration == submitted_beat_result.duration
     search_config = search_config or SearchConfig()
-
-    # Handle callback default values
-    if on_search_start is None:
-        on_search_start = lambda x: None
-    if on_search_progress is None:
-        on_search_progress = lambda x, y: None
-    if on_search_end is None:
-        on_search_end = lambda x: None
     
     # Normalize the submitted chord result with the submitted beat result
     submitted_normalized_cr = get_normalized_chord_result(submitted_chord_result, submitted_beat_result)
@@ -268,7 +255,7 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
     # Calculate chord distances
     distances = calculate_distance_array()
 
-    scores = MashabilityScore(keep_first_k=search_config.keep_first_k) if search_config.keep_first_k > 0 else MashabilityList()
+    scores = MashabilityScore(keep_first_k=search_config.keep_first_k)
     num_calculated = 0
 
     # At this point both the submitted and sample are normalized
@@ -276,24 +263,18 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
 
     # Initiate progress bar
     total: int = first_k if first_k is not None else len(dataset)
-
-    on_search_start(total)
-
-    # Additional information for the search
-    filtered_unfitting_bpm = tqdm(desc="Filtered segment because unfitting bpm: ", disable = not search_config.verbose_progress)
-
-    for entry in dataset:
+    for entry in tqdm(dataset, total=total, desc="Searching database", disable=not search_config.verbose):
         # Early exit if needed
         if first_k is not None and num_calculated >= first_k:
             break
 
         # Create and normalize the sample chord result and beat result
-        id = entry['url'][-11:] # type: ignore
-        downbeats: list[float] = entry['downbeats'] # type: ignore
+        id = entry.url[-11:]
+        downbeats = entry.downbeats
 
-        sample_beat_result = BeatAnalysisResult.from_data_entry(entry) # type: ignore
-        sample_normalized_cr = ChordAnalysisResult(len(downbeats), entry['chords'], entry['normalized_chord_times']) # type: ignore
-        sample_music_duration = entry['music_duration'] # type: ignore
+        sample_beat_result = BeatAnalysisResult.from_data_entry(entry)
+        sample_normalized_cr = ChordAnalysisResult(len(downbeats), entry.chords, entry.normalized_chord_times)
+        sample_music_duration = entry.music_duration
 
         # Calculate the scores for each bar
         for i in range(len(downbeats) - nbars):
@@ -310,7 +291,6 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
                                               submitted_beat_result.duration, end_downbeat - start_downbeat, 
                                               search_config.max_delta_bpm, search_config.min_delta_bpm)
             if not is_bpm_within_tolerance:
-                filtered_unfitting_bpm.update(1)
                 continue
 
             times2, chords2 = sample_normalized_cr.get_sliced_np(i, i+nbars)
@@ -319,16 +299,13 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
                 new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
                 
                 if search_config.extra_info:
-                    timestamp = downbeats[i]
-                    timestamp = f"{timestamp//60}:{timestamp%60:.2f}"
-                    views = entry['views'] # type: ignore
-                    views = f"{views//1e9}B" if views > 1e9 else f"{views//1e6}M" if views > 1e6 else f"{views//1e3}K"
-                    title = entry['audio_name'] # type: ignore
-                    title = title if len(title) < 40 else title[:37] + "..."
+                    timestamp = f"{downbeats[i]//60}:{downbeats[i]%60:.2f}"
+                    views = f"{entry.views//1e9}B" if entry.views > 1e9 else f"{entry.views//1e6}M" if entry.views > 1e6 else f"{entry.views//1e3}K"
+                    title = entry.audio_name if len(entry.audio_name) < 40 else entry.audio_name[:37] + "..."
                     info_ = search_config.extra_info.format(
                         title = title,
                         timestamp = timestamp,
-                        genre = entry['genre'], # type: ignore
+                        genre = entry.genre,
                         views = views
                     )
                     new_id = f"{id}/{i}/{k}/{info_}"
@@ -336,10 +313,6 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
                     new_id = f"{id}/{i}/{k}"
                 scores.insert(new_score, new_id)
         num_calculated += 1
-        on_search_progress(num_calculated, total)
-
-    on_search_end(total)
-
     scores_list = scores.get()
     return scores_list
 
@@ -372,18 +345,29 @@ def filter_dataset(example):
     
     return True
 
-def mapping_dataset(entry):
-    chord_result = ChordAnalysisResult(entry['length'], entry['chords'], entry['chord_times'])
-    beat_result = BeatAnalysisResult(entry['length'], entry['beats'], entry['downbeats'])
+def mapping_dataset(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
+                    *, genre: str, audio_name: str, url: str, playlist: str, views: int):
+    chord_result = ChordAnalysisResult(length, chords, chord_times)
+    beat_result = BeatAnalysisResult(length, beats, downbeats)
     normalized_cr = get_normalized_chord_result(chord_result, beat_result)
-    
-    entry['normalized_chord_times'] = normalized_cr.times
 
     # For each bar, calculate its music duration
     music_duration: list[float] = []
-    for i in range(len(entry['downbeats'])):
+    for i in range(len(downbeats)):
         bar_cr = normalized_cr.slice_seconds(i, i + 1)
         music_duration.append(get_music_duration(bar_cr))
     
-    entry['music_duration'] = music_duration
-    return entry
+    return DatasetEntry(
+        chords=chords,
+        chord_times=chord_times,
+        downbeats=downbeats,
+        beats=beats,
+        genre=genre,
+        audio_name=audio_name,
+        url=url,
+        playlist=playlist,
+        views=views,
+        length=length,
+        normalized_chord_times=normalized_cr.times,
+        music_duration=music_duration
+    )

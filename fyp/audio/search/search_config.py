@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable
 from .. import Audio, AudioCollection
+from ..dataset import DatasetEntry
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from tqdm.auto import tqdm
 from typing import Any
@@ -44,18 +45,15 @@ class SearchConfig:
         nbars: The number of bars to slice the song. If set to None, the pipeline will perform time segmentation and slice
             the song according to the chorus, and set nbars to 8 bars. Default is None.
 
-        skip_search: Whether to skip the search and only perform the analysis. This parameter is useful in some internal
-            use cases. Default is False.
-
-        filter_dataset: A lambda function to be used in the search. The filter should take in a dataset entry and return
+        filter_func: A lambda function to be used in the search. The filter should take in a dataset entry and return
             a boolean. If the filter returns True, the entry will be included in the search. When this parameter is set
             to None, the search will include all entries. Default is None.
 
         filter_first: Whether to include only the best result of each song from the search. This does not affect the
             runtime of the search since the filtering is done after the search. Default is True.
 
-        backend_url: The URL of the beat transformer backer-end. Defaults to None, and is only used when use_request_beat_transformer
-            is set to True.
+        dataset_path: The path to the dataset. Default is "hkust-fypho2", which is the dataset path on hugging face.
+            Feel free to keep this default value because hugging face will handle caching for us.
 
         chord_model_path: The path to the chord model. Default is "resources/ckpts/btc_model_large_voca.pt", which is the
             model path on a fresh clone of the repository from the root
@@ -67,10 +65,7 @@ class SearchConfig:
 
         cache: Whether to cache the results. If set to False, the pipeline will force recomputation on every search. Default is True.
 
-        verbose_progress: Whether to show the debug progress bars during the search. Default is False.
-
-        use_request_beat_transformer: Whether to use the request beat transformer. If set to True, the pipeline will use the
-            beat transformer backer-end. Default is True if madmom is not installed, False otherwise.
+        verbose: Whether to show the progress bars during the search. Default is False.
     """
     max_transpose: int | tuple[int, int] = 3
     min_music_percentage: float = 0.8
@@ -84,14 +79,14 @@ class SearchConfig:
     progress_bar: bool = True
     bar_number: int | None = None
     nbars: int | None = None
-    skip_search: bool = False
-    filter_dataset: Callable[[dict], bool] | None = None
+    filter_func: Callable[[DatasetEntry], bool] | None = None
     filter_first: bool = True
     chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
     beat_model_path: str = "resources/ckpts/beat_transformer.pt"
+    dataset_path: str = "HKUST-FYPHO2/audio-infos-filtered"
     cache_dir: str | None = "./"
     cache: bool = True
-    verbose_progress: bool = False
+    verbose: bool = False
     
     def clone(self, **kwargs: Any):
         """Clones the SearchConfig with the new attributes"""
@@ -99,88 +94,3 @@ class SearchConfig:
         new_kwargs.update(kwargs)
         new_config = SearchConfig(**new_kwargs)
         return new_config
-
-class SongSearchCallbackHandler:
-    def on_search_start(self, link: str):
-        """Called when the search is about to start. Link is the link of the audio."""
-        pass
-
-    def on_search_end(self, scores: list[tuple[float, str]]):
-        """Called when the search is done. Scores is a list of tuples, where the first element is the score and the second element is the url."""
-        pass
-
-    def on_chord_transformer_start(self, audio: Audio):
-        """Called when the chord transformer is about to start transforming the audio"""
-        print("Chord transformer started", flush=True)
-
-    def on_chord_transformer_end(self, chord_result: ChordAnalysisResult):
-        """Called when the chord transformer is done transforming the audio"""
-        print("Chord transformer ended", flush=True)
-
-    def on_beat_transformer_start(self, audio: Audio):
-        """Called when the beat transformer is about to start transforming the audio"""
-        print("Beat transformer started", flush=True)
-
-    def on_beat_transformer_end(self, beat_result: BeatAnalysisResult):
-        """Called when the beat transformer is done transforming the audio"""
-        print("Beat transformer ended", flush=True)
-
-    def on_demucs_start(self, audio: Audio):
-        """Called when the demucs audio separator is about to start separating the audio"""
-        pass
-
-    def on_demucs_end(self, parts: AudioCollection):
-        """Called when the demucs audio separator is done separating the audio"""
-        pass
-
-    def on_load(self, audio: Audio | None, link: str | None):
-        """Called when the audio is loaded from the link"""
-        pass
-
-    def on_chorus_start(self, audio: Audio):
-        """Called when the chorus extraction is about to start"""
-        print("Time segmentation extraction started", flush=True)
-
-    def on_chorus_end(self, downbeat: float):
-        """Called when the chorus extraction is done"""
-        print("Time segmentation extraction ended", flush=True)
-
-    def on_search_database_entry(self, progress: int, total: int):
-        self._tqdm.update(1)
-
-    def on_search_database_start(self, total: int):
-        self._tqdm = tqdm(total=total, desc="Searching database", unit="entry")
-
-    def on_search_database_end(self, total: int):
-        self._tqdm.close()
-
-class Shutup(SongSearchCallbackHandler):
-    """A callback handler that silences all the messages."""
-    def on_chord_transformer_start(self, audio: Audio):
-        pass
-
-    def on_chord_transformer_end(self, chord_result: ChordAnalysisResult):
-        pass
-
-    def on_beat_transformer_start(self, audio: Audio):
-        pass
-
-    def on_beat_transformer_end(self, beat_result: BeatAnalysisResult):
-        pass
-        
-    def on_chorus_start(self, audio: Audio):
-        """Called when the chorus extraction is about to start"""
-        pass
-
-    def on_chorus_end(self, downbeat: float):
-        """Called when the chorus extraction is done"""
-        pass
-        
-    def on_search_database_entry(self, progress: int, total: int):
-        pass
-
-    def on_search_database_start(self, total: int):
-        pass
-
-    def on_search_database_end(self, total: int):
-        pass

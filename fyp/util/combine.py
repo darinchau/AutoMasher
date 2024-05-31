@@ -5,30 +5,6 @@ import matplotlib.pyplot as plt
 import librosa
 import numpy as np
 
-DatasetType = list[dict[str, Any]] | Dataset
-
-def filter_dataset(dataset: DatasetType, filter_func: Callable[[dict[str, Any]], bool] | None):
-    if filter_func is None:
-        return dataset
-    if isinstance(dataset, Dataset):
-        return dataset.filter(filter_func)
-    return [e for e in dataset if filter_func(e)]
-
-def get_entry_from_database(dataset: DatasetType, video_id_or_url: str):
-    """Given a youtube link or video id, returns the entry from the database. Raises ValueError if not found."""
-    url = video_id_or_url if video_id_or_url.startswith("https://") else f"https://www.youtube.com/watch?v={video_id_or_url}"
-    entry: dict[str, Any] = {}
-    for e in dataset:
-        if e['url'] == url:
-            for key in ("length", "beats", "downbeats", "audio_name", "views"):
-                entry[key] = e[key] 
-            entry['url'] = url
-            break
-    
-    if entry is None:
-        raise ValueError("Entry not found")
-    return entry
-
 def get_video_id(link_or_video_id: str):
     return YouTube(get_url(link_or_video_id)).video_id
 

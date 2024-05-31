@@ -4,20 +4,12 @@ import os
 from typing import Any
 from ...audio import Audio, AudioMode
 from .base import BeatAnalysisResult
-import requests
-from typing import Any
 from ...audio import Audio, AudioMode
-import librosa
 from typing import Callable
 import numpy as np
-import soundfile as sf
-import random
-from contextlib import contextmanager
 from .. import AudioCollection
 from ..separation import DemucsAudioSeparator, AudioSeparator
-from librosa.core import stft
-from scipy.signal.windows import hann
-from ...model.beat_transformer import inference    
+from ...model import beats_inference as inference    
 import warnings
 
 def analyse_beat_transformer(audio: Audio | None = None, 

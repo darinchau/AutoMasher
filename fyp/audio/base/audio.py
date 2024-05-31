@@ -43,7 +43,7 @@ class AudioMode(Enum):
     STEREO = 2
 
 class Audio(TimeSeries):
-    """An audio is a special type of tensor with shape=(nchannels, T) and dtype=float32. We have checks and special methods for audios to facilitate audio processing."""
+    """An audio has a special type of tensor with shape=(nchannels, T) and dtype=float32. We have checks and special methods for audios to facilitate audio processing."""
     @final
     def sanity_check(self):
         # Dont call any properties here as it might lead to infinite recursion

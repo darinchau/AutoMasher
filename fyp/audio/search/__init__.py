@@ -2,4 +2,4 @@
 
 from .align import search_database, calculate_boundaries
 from .search_config import SearchConfig
-from .searcher import SongSearcher
+from .search import SongSearchState

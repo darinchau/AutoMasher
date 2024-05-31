@@ -31,7 +31,7 @@ class ReverbSettings(Enum):
         def _auditorium(tail_percent: float = 0.):
             assert tail_percent >= 0. and tail_percent <= 1., "Tail percent must be between 0 and 1"
             SAMPLE_RIR = download_asset("tutorial-assets/Lab41-SRI-VOiCES-rm1-impulse-mc01-stu-clo-8000hz.wav", progress=False)
-            rir_raw, sample_rate = torchaudio.load(SAMPLE_RIR) # type: ignore
+            rir_raw, sample_rate = torchaudio.load(SAMPLE_RIR)
             aux = Audio(rir_raw, sample_rate).slice_seconds(1.01 + 0.29 * tail_percent, 1.3)
             return aux
 

@@ -230,7 +230,7 @@ def calculate_playlist(playlist_url: str, batch_genre_name: str, use_low_resourc
         existing_ds = load_from_disk(dataset_path, keep_in_memory = True)
         for entry in tqdm(existing_ds, desc="Copying dataset"):
             for key in dataset:
-                dataset[key].append(entry[key]) # type: ignore
+                dataset[key].append(entry[key])
         del existing_ds
         gc.collect()
 

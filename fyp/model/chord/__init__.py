@@ -6,7 +6,7 @@ import torch
 import librosa
 from dataclasses import dataclass
 from typing import Any
-from ..audio import Audio
+from ...audio import Audio
 from .chord_modules import *
 
 @dataclass

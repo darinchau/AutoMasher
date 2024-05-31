@@ -34,8 +34,8 @@ def correlations_from_chromograph(chromograph: NDArray) -> list[float]:
     correlations = [0.] * 24
     for i in range(12):
         key_test = rotate_array(chroma, i)
-        correlations[i] = float(np.corrcoef(maj_profile, key_test)[1, 0]) # type: ignore
-        correlations[12 + i] = float(np.corrcoef(min_profile, key_test)[1, 0]) # type: ignore
+        correlations[i] = float(np.corrcoef(maj_profile, key_test)[1, 0])
+        correlations[12 + i] = float(np.corrcoef(min_profile, key_test)[1, 0])
 
     return correlations
 

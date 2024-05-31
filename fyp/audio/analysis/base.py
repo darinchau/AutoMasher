@@ -14,6 +14,7 @@ import numpy as np
 import numba
 import json
 from enum import Enum
+from ..dataset import DatasetEntry
 
 class BeatAnalysisResult(TimeSeries):
     """Has the following properties:
@@ -33,8 +34,8 @@ class BeatAnalysisResult(TimeSeries):
         return bpm
     
     @classmethod
-    def from_data_entry(cls, data_entry):
-        return cls(data_entry['length'], data_entry['beats'], downbeat_frames = data_entry['downbeats'])
+    def from_data_entry(cls, data_entry: DatasetEntry):
+        return cls(data_entry.length, data_entry.beats, data_entry.downbeats)
     
     def slice_seconds(self, start: float, end: float) -> BeatAnalysisResult:
         """Slice the beat analysis result by seconds. includes start and excludes end"""
@@ -264,8 +265,8 @@ class ChordAnalysisResult(TimeSeries):
         return ChordAnalysisResult(self.duration, labels, self.times)
     
     @classmethod
-    def from_data_entry(cls, entry):
-        return cls(entry['length'], entry['chords'], entry['chord_times'])
+    def from_data_entry(cls, entry: DatasetEntry):
+        return cls(entry.length, entry.chords, entry.chord_times)
     
     def save(self, path: str):
         json_dict = {
