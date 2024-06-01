@@ -186,8 +186,13 @@ def calculate_playlist(playlist_url: str, batch_genre_name: str, dataset_path: s
         print(f"Genre: {batch_genre_name}")
         
         clear_cuda()
+        
+        try:
+            entry = process_video_url(url, playlist_url, genre=batch_genre_name)
+        except Exception as e:
+            write_error(f"Failed to process video: {url}", e)
+            continue
 
-        entry = process_video_url(url, playlist_url, genre=batch_genre_name)
         if not entry:
             continue
         
