@@ -5,7 +5,7 @@ from fyp import Audio
 from fyp.audio.separation import HPSSAudioSeparator
 from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transformer
 from fyp.audio.analysis import ChordAnalysisResult, BeatAnalysisResult
-from fyp.audio.dataset import DatasetEntry, SongDataset, load_song_dataset, save_song_dataset
+from fyp.audio.dataset import DatasetEntry, SongDataset, load_song_dataset, save_song_dataset, SongGenre
 from fyp.util import is_ipython, clear_cuda
 import gc
 from datasets import Dataset
@@ -72,7 +72,7 @@ def filter_dataset(beats: list[float], downbeats: list[float], chord_times: list
 
 # Create a dataset entry from the given data
 def create_entry(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
-                    *, genre: str, audio_name: str, url: str, playlist: str, views: int):
+                    *, genre: SongGenre, audio_name: str, url: str, playlist: str, views: int):
     chord_result = ChordAnalysisResult(length, chords, chord_times)
     beat_result = BeatAnalysisResult(length, beats, downbeats)
     normalized_cr = get_normalized_chord_result(chord_result, beat_result)
@@ -98,7 +98,7 @@ def create_entry(length: float, beats: list[float], downbeats: list[float], chor
         music_duration=music_duration
     )
 
-def process_video_url(video_url: str, playlist_url: str, genre="pop") -> DatasetEntry | None:
+def process_video_url(video_url: str, playlist_url: str, genre: SongGenre) -> DatasetEntry | None:
     # Make the YouTube object
     yt = YouTube(video_url)
 
@@ -144,7 +144,7 @@ def process_video_url(video_url: str, playlist_url: str, genre="pop") -> Dataset
     )
 
 # Calculates features for an entire playlist. Returns false if the calculation fails at any point
-def calculate_playlist(playlist_url: str, batch_genre_name: str, dataset_path: str):
+def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: str):
     clear_output()
 
     # Get and confirm playlist url
@@ -183,12 +183,12 @@ def calculate_playlist(playlist_url: str, batch_genre_name: str, dataset_path: s
         print(f"Last entry process time: {last_entry_process_time} seconds")
         print(f"Current entry: {url}")
         print(f"Time elapsed: {round(time.time() - t, 2)} seconds")
-        print(f"Genre: {batch_genre_name}")
+        print(f"Genre: {batch_genre.value}")
         
         clear_cuda()
         
         try:
-            entry = process_video_url(url, playlist_url, genre=batch_genre_name)
+            entry = process_video_url(url, playlist_url, genre=batch_genre)
         except Exception as e:
             write_error(f"Failed to process video: {url}", e)
             continue
@@ -252,7 +252,7 @@ def main():
         
         playlist_url, genre_name = next_playlist
         try:
-            calculate_playlist(playlist_url, genre_name, dataset_path)
+            calculate_playlist(playlist_url, SongGenre(genre_name), dataset_path)
             update_playlist_process_queue(True, playlist_url, genre_name, queue_path)
         except Exception as e:
             write_error(f"Failed to process playlist: {playlist_url} {genre_name}", e, error_file)

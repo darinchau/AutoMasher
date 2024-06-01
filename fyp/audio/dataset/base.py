@@ -132,7 +132,7 @@ def save_song_dataset(dataset: SongDataset, dataset_path: str):
         "chord_times": [entry.chord_times for entry in dataset],
         "downbeats": [entry.downbeats for entry in dataset],
         "beats": [entry.beats for entry in dataset],
-        "genre": [entry.genre for entry in dataset],
+        "genre": [entry.genre.value for entry in dataset],
         "audio_name": [entry.audio_name for entry in dataset],
         "url": [entry.url for entry in dataset],
         "playlist": [entry.playlist for entry in dataset],
