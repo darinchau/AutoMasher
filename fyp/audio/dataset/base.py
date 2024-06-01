@@ -1,10 +1,42 @@
 # Provides a function to load our dataset as a list of dataset entries
 # This additional data structure facilitates getting by url
+from __future__ import annotations
 from dataclasses import dataclass
 from datasets import load_dataset, Dataset
 from typing import Any, Callable, Optional
 from copy import deepcopy
-from ..util.combine import get_url
+from ...util.combine import get_url
+from enum import Enum
+
+class SongGenre(Enum):
+    POP = "pop"
+    CANTOPOP = "cantopop"
+    VOCALOID = "vocaloid"
+    KPOP = "kpop"
+    NIGHTCORE = "nightcore"
+    ANIME = "anime"
+    BROADWAY = "broadway"
+    JPOP = "jp-pop"
+
+    @property
+    def mapping(self):
+        return {
+            SongGenre.POP: 0,
+            SongGenre.CANTOPOP: 1,
+            SongGenre.VOCALOID: 2,
+            SongGenre.KPOP: 3,
+            SongGenre.NIGHTCORE: 4,
+            SongGenre.ANIME: 5,
+            SongGenre.BROADWAY: 6,
+            SongGenre.JPOP: 7
+        }
+
+    def to_int(self) -> int:
+        return self.mapping[self]
+    
+    @staticmethod
+    def from_int(i: int) -> SongGenre:
+        return list(SongGenre)[i]
 
 @dataclass(frozen=True)
 class DatasetEntry:
@@ -12,7 +44,7 @@ class DatasetEntry:
     chord_times: list[float]
     downbeats: list[float]
     beats: list[float]
-    genre: str
+    genre: SongGenre
     audio_name: str
     url: str
     playlist: str
@@ -36,8 +68,13 @@ class SongDataset:
     def get_by_url(self, url: str) -> DatasetEntry | None:
         return self._data.get(url, None)
     
-    def __getitem__(self, url: str) -> DatasetEntry:
-        return self._data[url]
+    def __getitem__(self, url: str | int) -> DatasetEntry:
+        if isinstance(url, str):
+            return self._data[url]
+        elif isinstance(url, int):
+            return list(self._data.values())[url]
+        else:
+            raise TypeError(f"Invalid type for url: {type(url)}")
     
     def __setitem__(self, url: str, entry: DatasetEntry):
         self._data[url] = entry
@@ -57,6 +94,9 @@ class SongDataset:
             if filter_func(entry):
                 new_dataset[entry.url] = entry
         return new_dataset
+    
+    def __repr__(self):
+        return f"SongDataset({len(self)} entries)"
 
 def load_song_dataset(dataset_path: str) -> SongDataset:
     try:
@@ -74,7 +114,7 @@ def load_song_dataset(dataset_path: str) -> SongDataset:
             chord_times=entry["chord_times"],
             downbeats=entry["downbeats"],
             beats=entry["beats"],
-            genre=entry["genre"],
+            genre=SongGenre(entry["genre"].strip()),
             audio_name=entry["audio_name"],
             url=entry["url"],
             playlist=entry["playlist"],
