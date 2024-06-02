@@ -1,4 +1,5 @@
 # This module contains code that compresses the SongDataset into a binary format
+# Assumes a couple of things which all the sanity checks are done in the post init method of DatasetEntry
 
 import numpy as np
 import re
@@ -17,7 +18,7 @@ class BitsEncoder(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def decode(self, data: Iterator[int]) -> tuple[T, int]:
+    def decode(self, data: Iterator[int]) -> T:
         """Returns the decoded data and the number of bits read from the input stream."""
         pass
 
@@ -100,8 +101,7 @@ class Float32Encoder(BitsEncoder[float]):
 class Int64Encoder(BitsEncoder[int]):
     def encode(self, data: int) -> Iterator[int]:
         assert 0 <= data < 2**64
-        for i in range(8):
-            yield (data >> (i * 8)) & 0xFF
+        yield from struct.pack('q', data)
 
     def decode(self, data: Iterator[int]) -> tuple[int, int]:
         b: list[int] = []
@@ -133,9 +133,9 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
     - Playlist ID: Null-terminated unicode string in bytes array format
     - Title: Null-terminated unicode string in bytes array format
     """
-    def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
-        self.chord_time_encoder = TimeStampEncoder(chord_time_resolution)
-        self.beat_time_encoder = TimeStampEncoder(beat_time_resolution)
+    def __init__(self, chord_times_encoder: BitsEncoder[list[float]], beats_encoder: BitsEncoder[list[float]]):
+        self.chord_time_encoder = chord_times_encoder
+        self.beat_time_encoder = beats_encoder
         self.chord_labels_encoder = ChordLabelsEncoder()
         self.genre_encoder = GenreEncoder()
         self.string_encoder = StringEncoder()
@@ -183,7 +183,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
 
         total_bytes = chords_len + chord_times_len + downbeats_len + beats_len + youtube_id_len + genre_len + views_len + length_len + playlist_id_len + audio_name_len
         return entry, total_bytes
-    
+
 class SongDatasetEncoder(BitsEncoder[SongDataset]):
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
         self.entry_encoder = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)

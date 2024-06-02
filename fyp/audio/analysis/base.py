@@ -17,10 +17,7 @@ from enum import Enum
 from ..dataset import DatasetEntry
 
 class BeatAnalysisResult(TimeSeries):
-    """Has the following properties:
-        `beat frames` (list[int]): the indices of frames the beats should occur on
-        `downbeat frames` (list[int]): the indices of frames the beats should occur on"""
-
+    """A class that represents the result of a beat analysis."""
     def __init__(self, duration: float, beat_frames: list[float] | NDArray[np.float32], downbeat_frames: list[float] | NDArray[np.float32]):
         # TODO: Check sortedness for the beat frames
         assert len(beat_frames) == 0 or duration >= beat_frames[-1]

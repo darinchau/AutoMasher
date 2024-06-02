@@ -37,6 +37,9 @@ class SongGenre(Enum):
     @staticmethod
     def from_int(i: int) -> SongGenre:
         return list(SongGenre)[i]
+    
+def _is_sorted(ls: list[float]):
+    return all(a <= b for a, b in zip(ls, ls[1:]))
 
 @dataclass(frozen=True)
 class DatasetEntry:
@@ -66,6 +69,9 @@ class DatasetEntry:
         assert self.playlist.startswith(self.get_playlist_prepend())
         assert self.views >= 0
         assert self.length > 0
+        assert _is_sorted(self.chord_times)
+        assert _is_sorted(self.downbeats)
+        assert _is_sorted(self.beats)
 
     @property
     def url_id(self):
