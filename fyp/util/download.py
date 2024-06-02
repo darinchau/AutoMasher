@@ -38,7 +38,7 @@ def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
     except Exception as e:
         return "Error downloading video", e
 
-def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True, timeout=120):
+def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True):
     try:
         from yt_dlp.YoutubeDL import YoutubeDL
     except ImportError:
@@ -69,9 +69,9 @@ def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True, timeout
 # More often than not we only want the audio so here is one combined function
 def download_audio(link: str, output_dir: str, verbose=True, timeout=120):
     try:
-        return download_audio_with_yt_dlp(link, output_dir, verbose=verbose, timeout=timeout)
+        return download_audio_with_yt_dlp(link, output_dir, verbose=verbose)
     except Exception as e:
-        print("yt-dlp failed, falling back to pytube, which is less likely to work but we gotta try what we could do", e)
+        print("yt-dlp failed, falling back to pytube, which is less likely to work but we gotta try what we could do\nyt-dlp error: ", e)
     
     # Try fallback
     yt = YouTube(link)
