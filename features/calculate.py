@@ -118,29 +118,62 @@ def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGe
     )
 
 def download_audio(urls: list[str]):
-    def download_audio_single(url: str):
+    # def download_audio_single(url: str):
+    #     if not filter_song(YouTube(url)):
+    #         return None
+    #     audio = Audio.load(url)
+    #     return audio
+    
+    # # Downloads the things concurrently and yields them one by one
+    # with ThreadPoolExecutor(max_workers=2) as executor:
+    #     futures = {executor.submit(download_audio_single, url): url for url in urls}
+    #     for future in as_completed(futures):
+    #         url = futures[future]
+    #         try:
+    #             audio = future.result()
+    #             if audio:
+    #                 yield audio, url
+    #         except Exception as e:
+    #             write_error(f"Failed to download audio: {url}", e)
+    for url in urls:
+        if not filter_song(YouTube(url)):
+            continue
         audio = Audio.load(url)
-        return audio
+        yield audio, url
+
+def calculate_url_list(urls: list[str], dataset: SongDataset, genre: SongGenre, dataset_path: str, playlist_url: str, title: str):
+    # if len(urls) > 300:
+    #     calculate_url_list(urls[:300], dataset, genre, dataset_path, playlist_url, title)
+    #     calculate_url_list(urls[300:], dataset, genre, dataset_path, playlist_url, title)
+    #     return
     
-    def filtered_urls(urls: list[str]):
-        for url in urls:
-            try:
-                yt = YouTube(url)
-                if filter_song(yt):
-                    yield url
-            except Exception as e:
-                write_error(f"Failed to filter song: {url}", e)
-    
-    # Downloads the things concurrently and yields them one by one
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(download_audio_single, url): url for url in filtered_urls(urls)}
-        for future in as_completed(futures):
-            url = futures[future]
-            try:
-                audio = future.result()
-                yield audio, url
-            except Exception as e:
-                write_error(f"Failed to download audio: {url}", e)
+    t = time.time()
+    last_t = None
+    for i, (audio, url) in enumerate(download_audio(urls)):
+        clear_output()
+        
+        last_entry_process_time = round(time.time() - last_t, 2) if last_t else None
+        last_t = time.time()
+        print(f"Current number of entries: {len(dataset)} {i}/{len(urls)} for current playlist.")
+        print(f"Playlist title: {title}")
+        print(f"Last entry process time: {last_entry_process_time} seconds")
+        print(f"Current entry: {url}")
+        print(f"Time elapsed: {round(time.time() - t, 2)} seconds")
+        print(f"Genre: {genre.value}")
+        
+        clear_cuda()
+        
+        try:
+            entry = process_audio(audio, url, playlist_url, genre=genre)
+        except Exception as e:
+            write_error(f"Failed to process video: {url}", e)
+            continue
+
+        if not entry:
+            continue
+        
+        dataset.add_entry(entry)
+        save_song_dataset(dataset, dataset_path)
 
 # Calculates features for an entire playlist. Returns false if the calculation fails at any point
 def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: str):
@@ -163,40 +196,12 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         dataset = SongDataset()
 
     # Get all video url datas
-    t = time.time()
-    last_t = None
-    urls = []
+    urls: list[str] = []
     processed_urls = set(dataset._data.keys())
     for url in tqdm(get_video_urls(playlist_url), desc="Getting URLs from playlist..."):
         if url not in processed_urls:
             urls.append(url)
             processed_urls.add(url)
-
-    for i, (audio, url) in enumerate(download_audio(urls)):
-        clear_output()
-        
-        last_entry_process_time = round(time.time() - last_t, 2) if last_t else None
-        last_t = time.time()
-        print(f"Current number of entries: {len(dataset)} {i}/{len(urls)} for current playlist.")
-        print(f"Playlist title: {title}")
-        print(f"Last entry process time: {last_entry_process_time} seconds")
-        print(f"Current entry: {url}")
-        print(f"Time elapsed: {round(time.time() - t, 2)} seconds")
-        print(f"Genre: {batch_genre.value}")
-        
-        clear_cuda()
-        
-        try:
-            entry = process_audio(audio, url, playlist_url, genre=batch_genre)
-        except Exception as e:
-            write_error(f"Failed to process video: {url}", e)
-            continue
-
-        if not entry:
-            continue
-        
-        dataset.add_entry(entry)
-        save_song_dataset(dataset, dataset_path)
 
 #### Driver code and functions ####
 def get_next_playlist_to_process(queue_path: str) -> tuple[str, str] | None:
