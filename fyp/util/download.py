@@ -2,7 +2,6 @@ import os
 from pytube import YouTube
 from tqdm import tqdm
 from moviepy.editor import VideoFileClip
-from .combine import get_video_title
 
 # Convert video file to .wav format with 48kHz sample rate
 def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose = True):
@@ -66,14 +65,7 @@ def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True):
             return os.path.join(output_dir, file)
     raise FileNotFoundError(f"Could not find downloaded file for {link}: {retcode}")
 
-# More often than not we only want the audio so here is one combined function
-def download_audio(link: str, output_dir: str, verbose=True, timeout=120):
-    try:
-        return download_audio_with_yt_dlp(link, output_dir, verbose=verbose)
-    except Exception as e:
-        print("yt-dlp failed, falling back to pytube, which is less likely to work but we gotta try what we could do\nyt-dlp error: ", e)
-    
-    # Try fallback
+def download_audio_with_pytube(link: str, output_dir: str, verbose=True, timeout=120):
     yt = YouTube(link)
     video_path = download_video(yt, output_dir, verbose=verbose, timeout=timeout)
     if isinstance(video_path, tuple):
@@ -83,3 +75,10 @@ def download_audio(link: str, output_dir: str, verbose=True, timeout=120):
     if isinstance(audio_path, tuple):
         raise RuntimeError(f"Error converting to wav: {audio_path[1]}")
     return audio_path
+
+# More often than not we only want the audio so here is one combined function
+def download_audio(link: str, output_dir: str, verbose=True, timeout=120):
+    try:
+        return download_audio_with_pytube(link, output_dir, verbose=verbose, timeout=timeout)
+    except Exception as e:
+        return download_audio_with_yt_dlp(link, output_dir, verbose=verbose)

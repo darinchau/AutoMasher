@@ -14,6 +14,7 @@ import time
 import traceback
 from tqdm.auto import tqdm
 from fyp.audio.dataset.create import create_entry
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Return true if this song should be processed, false otherwise
 # Duplicate handling should not be queried here
@@ -77,18 +78,7 @@ def get_demucs():
         _DEMUCS = DemucsAudioSeparator()
     return _DEMUCS
 
-def process_video_url(video_url: str, playlist_url: str, genre: SongGenre) -> DatasetEntry | None:
-    # Make the YouTube object
-    yt = YouTube(video_url)
-
-    # If too long or too short then return
-    if not filter_song(yt):
-        print(f"Video filtered: {video_url}")
-        return None
-    
-    print(f"Downloading audio... {yt.title}")
-    audio = Audio.load(video_url)
-
+def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGenre) -> DatasetEntry | None:
     print(f"Analysing chords...")
     chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
 
@@ -112,6 +102,8 @@ def process_video_url(video_url: str, playlist_url: str, genre: SongGenre) -> Da
         print(f"Dataset filtered: {video_url}")
         return None
     
+    yt = YouTube(video_url)
+    
     return create_entry(
         length = audio.duration,
         beats = beats,
@@ -124,6 +116,31 @@ def process_video_url(video_url: str, playlist_url: str, genre: SongGenre) -> Da
         playlist = playlist_url,
         views = yt.views
     )
+
+def download_audio(urls: list[str]):
+    def download_audio_single(url: str):
+        audio = Audio.load(url)
+        return audio
+    
+    def filtered_urls(urls: list[str]):
+        for url in urls:
+            try:
+                yt = YouTube(url)
+                if filter_song(yt):
+                    yield url
+            except Exception as e:
+                write_error(f"Failed to filter song: {url}", e)
+    
+    # Downloads the things concurrently and yields them one by one
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(download_audio_single, url): url for url in filtered_urls(urls)}
+        for future in as_completed(futures):
+            url = futures[future]
+            try:
+                audio = future.result()
+                yield audio, url
+            except Exception as e:
+                write_error(f"Failed to download audio: {url}", e)
 
 # Calculates features for an entire playlist. Returns false if the calculation fails at any point
 def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: str):
@@ -154,8 +171,8 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         if url not in processed_urls:
             urls.append(url)
             processed_urls.add(url)
-        
-    for i, url in enumerate(urls):
+
+    for i, (audio, url) in enumerate(download_audio(urls)):
         clear_output()
         
         last_entry_process_time = round(time.time() - last_t, 2) if last_t else None
@@ -170,7 +187,7 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         clear_cuda()
         
         try:
-            entry = process_video_url(url, playlist_url, genre=batch_genre)
+            entry = process_audio(audio, url, playlist_url, genre=batch_genre)
         except Exception as e:
             write_error(f"Failed to process video: {url}", e)
             continue
@@ -242,4 +259,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
