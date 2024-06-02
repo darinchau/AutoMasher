@@ -13,7 +13,7 @@ import glob
 import time
 import traceback
 from tqdm.auto import tqdm
-from fyp.audio.search.align import get_normalized_chord_result, get_music_duration
+from fyp.audio.dataset.create import create_entry
 
 # Return true if this song should be processed, false otherwise
 # Duplicate handling should not be queried here
@@ -76,34 +76,6 @@ def get_demucs():
     if not _DEMUCS:
         _DEMUCS = DemucsAudioSeparator()
     return _DEMUCS
-
-# Create a dataset entry from the given data
-def create_entry(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
-                    *, genre: SongGenre, audio_name: str, url: str, playlist: str, views: int):
-    chord_result = ChordAnalysisResult(length, chords, chord_times)
-    beat_result = BeatAnalysisResult(length, beats, downbeats)
-    normalized_cr = get_normalized_chord_result(chord_result, beat_result)
-
-    # For each bar, calculate its music duration
-    music_duration: list[float] = []
-    for i in range(len(downbeats)):
-        bar_cr = normalized_cr.slice_seconds(i, i + 1)
-        music_duration.append(get_music_duration(bar_cr))
-    
-    return DatasetEntry(
-        chords=chords,
-        chord_times=chord_times,
-        downbeats=downbeats,
-        beats=beats,
-        genre=genre,
-        audio_name=audio_name,
-        url=url,
-        playlist=playlist,
-        views=views,
-        length=length,
-        normalized_chord_times=normalized_cr.times,
-        music_duration=music_duration
-    )
 
 def process_video_url(video_url: str, playlist_url: str, genre: SongGenre) -> DatasetEntry | None:
     # Make the YouTube object
@@ -206,7 +178,7 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         if not entry:
             continue
         
-        dataset[url] = entry
+        dataset.add_entry(entry)
         save_song_dataset(dataset, dataset_path)
 
 #### Driver code and functions ####

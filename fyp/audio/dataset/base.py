@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datasets import load_dataset, Dataset
 from typing import Any, Callable, Optional
 from copy import deepcopy
-from ...util.combine import get_url
+from ...util.combine import get_video_id
 from enum import Enum
 
 class SongGenre(Enum):
@@ -53,12 +53,58 @@ class DatasetEntry:
     normalized_chord_times: list[float]
     music_duration: list[float]
 
+    @staticmethod
+    def get_playlist_prepend():
+        return "https://www.youtube.com/playlist?list="
+
     def __post_init__(self):
         assert len(self.chords) == len(self.chord_times) == len(self.normalized_chord_times)
+        assert all(0 <= c <= 600 for c in self.chord_times)
+        assert all(0 <= c <= 170 for c in self.chords)
+        assert all(0 <= c <= 600 for c in self.downbeats)
+        assert all(0 <= c <= 600 for c in self.beats)
+        assert self.playlist.startswith(self.get_playlist_prepend())
+        assert self.views >= 0
+        assert self.length > 0
 
     @property
     def url_id(self):
-        return self.url[-11:]
+        # return self.url[-11:]
+        return get_video_id(self.url)
+    
+    def __repr__(self):
+        return f"DatasetEntry({self.audio_name} [{self.url_id}])"
+    
+    def equal(self, value: DatasetEntry, *, eps: float = 1e-5) -> bool:
+        """Check if the given value is equal to this entry. This is useful for testing purposes.
+        This is a bit more lenient than __eq__ as it allows for some floating point error."""
+        if self.url != value.url:
+            return False
+        if self.audio_name != value.audio_name:
+            return False
+        if self.genre != value.genre:
+            return False
+        if self.playlist != value.playlist:
+            return False
+        if self.views != value.views:
+            return False
+        if abs(self.length - value.length) > eps:
+            return False
+        if self.chords != value.chords:
+            return False
+        if len(self.chord_times) != len(value.chord_times):
+            return False
+        if any(abs(a - b) > eps for a, b in zip(self.chord_times, value.chord_times)):
+            return False
+        if len(self.downbeats) != len(value.downbeats):
+            return False
+        if any(abs(a - b) > eps for a, b in zip(self.downbeats, value.downbeats)):
+            return False
+        if len(self.beats) != len(value.beats):
+            return False
+        if any(abs(a - b) > eps for a, b in zip(self.beats, value.beats)):
+            return False
+        return True
 
 class SongDataset:
     """Use a hashmap for now. lmk if there are more efficient ways to do this."""
@@ -75,15 +121,15 @@ class SongDataset:
             return list(self._data.values())[url]
         else:
             raise TypeError(f"Invalid type for url: {type(url)}")
-    
-    def __setitem__(self, url: str, entry: DatasetEntry):
-        self._data[url] = entry
 
     def __len__(self):
         return len(self._data)
     
     def __iter__(self):
         return iter(self._data.values())
+    
+    def add_entry(self, entry: DatasetEntry):
+        self._data[entry.url] = entry
     
     def filter(self, filter_func: Callable[[DatasetEntry], bool] | None):
         """Returns a new dataset with the entries that satisfy the filter function. If filter_func is None, return yourself"""
@@ -92,7 +138,7 @@ class SongDataset:
         new_dataset = SongDataset()
         for entry in self:
             if filter_func(entry):
-                new_dataset[entry.url] = entry
+                new_dataset.add_entry(entry)
         return new_dataset
     
     def __repr__(self):
@@ -109,7 +155,7 @@ def load_song_dataset(dataset_path: str) -> SongDataset:
             raise e
     song_dataset = SongDataset()
     for entry in dataset:
-        song_dataset[entry["url"]] = DatasetEntry(
+        entry = DatasetEntry(
             chords=entry["chords"],
             chord_times=entry["chord_times"],
             downbeats=entry["downbeats"],
@@ -123,6 +169,7 @@ def load_song_dataset(dataset_path: str) -> SongDataset:
             normalized_chord_times=entry["normalized_chord_times"],
             music_duration=entry["music_duration"]
         )
+        song_dataset.add_entry(entry)
 
     return song_dataset
 
