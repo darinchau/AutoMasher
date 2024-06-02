@@ -2,7 +2,7 @@ import os
 from pytube import YouTube
 from pytube import Playlist
 from fyp import Audio
-from fyp.audio.separation import HPSSAudioSeparator
+from fyp.audio.separation import DemucsAudioSeparator
 from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transformer
 from fyp.audio.analysis import ChordAnalysisResult, BeatAnalysisResult
 from fyp.audio.dataset import DatasetEntry, SongDataset, load_song_dataset, save_song_dataset, SongGenre
@@ -70,6 +70,13 @@ def filter_dataset(beats: list[float], downbeats: list[float], chord_times: list
     
     return True
 
+_DEMUCS = None
+def get_demucs():
+    global _DEMUCS
+    if not _DEMUCS:
+        _DEMUCS = DemucsAudioSeparator()
+    return _DEMUCS
+
 # Create a dataset entry from the given data
 def create_entry(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
                     *, genre: SongGenre, audio_name: str, url: str, playlist: str, views: int):
@@ -113,8 +120,11 @@ def process_video_url(video_url: str, playlist_url: str, genre: SongGenre) -> Da
     print(f"Analysing chords...")
     chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
 
+    print("Separating audio...")
+    parts = get_demucs().separate_audio(audio)
+
     print(f"Analysing beats...")
-    beat_result = analyse_beat_transformer(audio, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
+    beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
 
     print("Postprocessing...")
     labels = chord_result.grouped_labels
