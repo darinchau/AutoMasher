@@ -21,6 +21,13 @@ class BitsEncoder(ABC, Generic[T]):
         """Returns the decoded data and the number of bits read from the input stream."""
         pass
 
+    def read_from_path(self, path: str) -> T:
+        def file_stream():
+            with open(path, "rb") as f:
+                stream = f.read()
+                yield from stream
+        return self.decode(file_stream())
+
 class TimeStampEncoder(BitsEncoder[list[float]]):
     def __init__(self, resolution: float):
         self.resolution = resolution
