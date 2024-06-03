@@ -215,7 +215,7 @@ class Audio(TimeSeries):
         # Load from youtube if the file path is a youtube url
         if fpath.startswith("http") and "youtube" in fpath:
             tempdir = tempfile.gettempdir()
-            tmp_audio_path = download_audio(fpath, tempdir, verbose=True)
+            tmp_audio_path = download_audio(fpath, tempdir, verbose=False)
             a = cls.load(tmp_audio_path)
 
             # Attempt to delete the temporary file created
