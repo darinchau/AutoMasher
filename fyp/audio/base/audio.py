@@ -213,9 +213,10 @@ class Audio(TimeSeries):
             if cache_path is not None and os.path.isfile(cache_path):
                 return Audio.load(cache_path)
 
-            with tempfile.NamedTemporaryFile(suffix = ".mp4") as tmp:
-                audio_path = download_audio(fpath, os.path.dirname(tmp.name), verbose = False)
+            with tempfile.TemporaryDirectory() as tmp:
+                audio_path = download_audio(link = fpath, output_dir = tmp, verbose = True)
                 a = Audio.load(audio_path)
+
             if cache_path is not None:
                 a.save(cache_path)
             return a

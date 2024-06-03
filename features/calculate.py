@@ -58,19 +58,6 @@ def log(message: str, verbose: bool = True):
     if verbose:
         print(message)
 
-# Postprocessing filter dataset. If false means the data point is not valid
-def filter_dataset(beats: list[float], downbeats: list[float], chord_times: list[float], length: float) -> bool:
-    if not beats or beats[-1] > length:
-        return False
-    
-    if not downbeats or downbeats[-1] > length:
-        return False
-    
-    if not chord_times or chord_times[-1] > length:
-        return False
-    
-    return True
-
 _DEMUCS = None
 def get_demucs():
     global _DEMUCS
@@ -79,8 +66,22 @@ def get_demucs():
     return _DEMUCS
 
 def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGenre) -> DatasetEntry | None:
+    print(f"Audio length: {audio.duration} ({YouTube(video_url).length})")
+    length = audio.duration
+
     print(f"Analysing chords...")
     chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
+
+    labels = chord_result.grouped_labels
+    chord_times = chord_result.grouped_times
+    if len(labels) != len(chord_times):
+        print(f"Length mismatch: {video_url}")
+        time.sleep(1)
+        return None
+    
+    if not chord_times or chord_times[-1] > length:
+        print(f"Chord times error: {video_url}")
+        return None
 
     print("Separating audio...")
     parts = get_demucs().separate_audio(audio)
@@ -89,19 +90,19 @@ def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGe
     beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
 
     print("Postprocessing...")
-    labels = chord_result.grouped_labels
-    times = chord_result.grouped_times
     beats: list[float] = beat_result.beats.tolist()
     downbeats: list[float] = beat_result.downbeats.tolist()
 
-    if len(labels) != len(times):
-        print(f"Length mismatch: {video_url}")
+    if not beats or beats[-1] > length:
+        print(f"Beats error: {video_url}")
+        time.sleep(1)
         return None
 
-    if not filter_dataset(beats, downbeats, times, audio.duration):
-        print(f"Dataset filtered: {video_url}")
+    if not downbeats or downbeats[-1] > length:
+        print(f"Downbeats error: {video_url}")
+        time.sleep(1)
         return None
-    
+
     yt = YouTube(video_url)
     
     return create_entry(
@@ -109,7 +110,7 @@ def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGe
         beats = beats,
         downbeats = downbeats,
         chords = labels,
-        chord_times = times,
+        chord_times = chord_times,
         genre = genre,
         audio_name = yt.title,
         url = video_url,
@@ -118,34 +119,34 @@ def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGe
     )
 
 def download_audio(urls: list[str]):
-    # def download_audio_single(url: str):
-    #     if not filter_song(YouTube(url)):
-    #         return None
-    #     audio = Audio.load(url)
-    #     return audio
-    
-    # # Downloads the things concurrently and yields them one by one
-    # with ThreadPoolExecutor(max_workers=2) as executor:
-    #     futures = {executor.submit(download_audio_single, url): url for url in urls}
-    #     for future in as_completed(futures):
-    #         url = futures[future]
-    #         try:
-    #             audio = future.result()
-    #             if audio:
-    #                 yield audio, url
-    #         except Exception as e:
-    #             write_error(f"Failed to download audio: {url}", e)
-    for url in urls:
+    def download_audio_single(url: str):
         if not filter_song(YouTube(url)):
-            continue
+            return None
         audio = Audio.load(url)
-        yield audio, url
+        return audio
+    
+    # Downloads the things concurrently and yields them one by one
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {executor.submit(download_audio_single, url): url for url in urls}
+        for future in as_completed(futures):
+            url = futures[future]
+            try:
+                audio = future.result()
+                if audio:
+                    yield audio, url
+            except Exception as e:
+                write_error(f"Failed to download audio (skipping): {url}", e)
+    # for url in urls:
+    #     if not filter_song(YouTube(url)):
+    #         continue
+    #     audio = Audio.load(url)
+    #     yield audio, url
 
 def calculate_url_list(urls: list[str], dataset: SongDataset, genre: SongGenre, dataset_path: str, playlist_url: str, title: str):
-    # if len(urls) > 300:
-    #     calculate_url_list(urls[:300], dataset, genre, dataset_path, playlist_url, title)
-    #     calculate_url_list(urls[300:], dataset, genre, dataset_path, playlist_url, title)
-    #     return
+    if len(urls) > 300:
+        calculate_url_list(urls[:300], dataset, genre, dataset_path, playlist_url, title)
+        calculate_url_list(urls[300:], dataset, genre, dataset_path, playlist_url, title)
+        return
     
     t = time.time()
     last_t = None
@@ -183,10 +184,13 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
     if not is_youtube_playlist(playlist_url):
         playlist_url = f"https://www.youtube.com/playlist?list={playlist_url}"
 
+    print(f"Processing playlist: {playlist_url}")
+
     try:
         title = Playlist(playlist_url).title
     except Exception as e:
         raise RuntimeError(f"It seems like what you entered is not a valid playlist: {e}")
+    print("Playlist title: " + title)
 
     # Initialize dataset
     if os.path.exists(dataset_path):
@@ -194,6 +198,8 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         gc.collect()
     else:
         dataset = SongDataset()
+    
+    print(f"Current number of entries: {len(dataset)}")
 
     # Get all video url datas
     urls: list[str] = []
@@ -202,6 +208,9 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         if url not in processed_urls:
             urls.append(url)
             processed_urls.add(url)
+
+    # Calculate features
+    calculate_url_list(urls, dataset, batch_genre, dataset_path, playlist_url, title)
 
 #### Driver code and functions ####
 def get_next_playlist_to_process(queue_path: str) -> tuple[str, str] | None:
