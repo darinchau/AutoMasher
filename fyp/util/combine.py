@@ -12,7 +12,7 @@ def get_video_title(link_or_video_id: str):
     return YouTube(get_url(link_or_video_id)).title
 
 def get_url(link_or_video_id: str):
-    if link_or_video_id.startswith("https://"):
+    if link_or_video_id.startswith("https://") or link_or_video_id.startswith("http://"):
         return link_or_video_id
     return f"https://www.youtube.com/watch?v={link_or_video_id}"
 

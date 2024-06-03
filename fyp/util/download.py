@@ -65,7 +65,7 @@ def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True):
             return os.path.join(output_dir, file)
     raise FileNotFoundError(f"Could not find downloaded file for {link}: {retcode}")
 
-def download_audio_with_pytube(link: str, output_dir: str, verbose=True, timeout=120):
+def download_audio_with_pytube(link: str, output_dir: str, verbose=True, timeout=120) -> str:
     yt = YouTube(link)
     video_path = download_video(yt, output_dir, verbose=verbose, timeout=timeout)
     if isinstance(video_path, tuple):

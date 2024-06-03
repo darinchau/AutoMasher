@@ -26,6 +26,7 @@ from torchaudio.transforms import TimeStretch
 import librosa
 from ...util import is_ipython
 from ...util.download import download_audio
+import tempfile
 
 def get_sounddevice():
     try:
@@ -208,14 +209,20 @@ class Audio(TimeSeries):
 
         Explicitly specify cache = False if you do not want to cache the audio when downloaded from youtube
         """
+        if cache_path is not None and os.path.isfile(cache_path):
+            return Audio.load(cache_path)
+
         # Load from youtube if the file path is a youtube url
         if fpath.startswith("http") and "youtube" in fpath:
-            if cache_path is not None and os.path.isfile(cache_path):
-                return Audio.load(cache_path)
+            tempdir = tempfile.gettempdir()
+            tmp_audio_path = download_audio(fpath, tempdir, verbose=True)
+            a = cls.load(tmp_audio_path)
 
-            with tempfile.TemporaryDirectory() as tmp:
-                audio_path = download_audio(link = fpath, output_dir = tmp, verbose = True)
-                a = Audio.load(audio_path)
+            # Attempt to delete the temporary file created
+            try:
+                os.remove(tmp_audio_path)
+            except Exception as e:
+                pass
 
             if cache_path is not None:
                 a.save(cache_path)

@@ -4,17 +4,16 @@ from pytube import Playlist
 from fyp import Audio
 from fyp.audio.separation import DemucsAudioSeparator
 from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transformer
-from fyp.audio.analysis import ChordAnalysisResult, BeatAnalysisResult
-from fyp.audio.dataset import DatasetEntry, SongDataset, load_song_dataset, save_song_dataset, SongGenre
+from fyp.audio.dataset import DatasetEntry, SongGenre
 from fyp.util import is_ipython, clear_cuda
-import gc
-from datasets import Dataset
-import glob
+from fyp.util.combine import get_video_id, get_url
+from fyp.audio.dataset.compress import DatasetEntryEncoder
 import time
 import traceback
 from tqdm.auto import tqdm
 from fyp.audio.dataset.create import create_entry
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import tempfile
 
 # Return true if this song should be processed, false otherwise
 # Duplicate handling should not be queried here
@@ -65,6 +64,18 @@ def get_demucs():
         _DEMUCS = DemucsAudioSeparator()
     return _DEMUCS
 
+def cleanup_temp_dir():
+    clear_output()
+    current_dir = tempfile.gettempdir()
+    for filename in os.listdir(current_dir):
+        if filename.endswith('.wav') or filename.endswith('.mp4'):
+            file_path = os.path.join(current_dir, filename)
+            try:
+                os.remove(file_path)
+                print(f"Deleted {filename}")
+            except Exception as e:
+                print(f"Failed to delete file: {file_path}")
+    
 def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGenre) -> DatasetEntry | None:
     print(f"Audio length: {audio.duration} ({YouTube(video_url).length})")
     length = audio.duration
@@ -132,30 +143,35 @@ def download_audio(urls: list[str]):
             url = futures[future]
             try:
                 audio = future.result()
-                if audio:
-                    yield audio, url
+                yield audio, url
             except Exception as e:
                 write_error(f"Failed to download audio (skipping): {url}", e)
-    # for url in urls:
-    #     if not filter_song(YouTube(url)):
-    #         continue
-    #     audio = Audio.load(url)
-    #     yield audio, url
+                yield None, url
 
-def calculate_url_list(urls: list[str], dataset: SongDataset, genre: SongGenre, dataset_path: str, playlist_url: str, title: str):
+def save_dataset_entry(entry: DatasetEntry, dataset_path: str):
+    encoder = DatasetEntryEncoder()
+    b = encoder.encode(entry)
+    with open(os.path.join(dataset_path, f"{get_video_id(entry.url)}.data"), "wb") as file:
+        file.write(bytes(b))
+
+def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, playlist_url: str, title: str):
     if len(urls) > 300:
-        calculate_url_list(urls[:300], dataset, genre, dataset_path, playlist_url, title)
-        calculate_url_list(urls[300:], dataset, genre, dataset_path, playlist_url, title)
+        calculate_url_list(urls[:300], genre, dataset_path, playlist_url, title)
+        calculate_url_list(urls[300:], genre, dataset_path, playlist_url, title)
         return
     
     t = time.time()
     last_t = None
+    urls = [get_url(url) for url in urls]
     for i, (audio, url) in enumerate(download_audio(urls)):
+        if not audio:
+            continue
+
         clear_output()
         
         last_entry_process_time = round(time.time() - last_t, 2) if last_t else None
         last_t = time.time()
-        print(f"Current number of entries: {len(dataset)} {i}/{len(urls)} for current playlist.")
+        print(f"Current number of entries: {len(os.listdir(dataset_path))} {i}/{len(urls)} for current playlist.")
         print(f"Playlist title: {title}")
         print(f"Last entry process time: {last_entry_process_time} seconds")
         print(f"Current entry: {url}")
@@ -173,8 +189,8 @@ def calculate_url_list(urls: list[str], dataset: SongDataset, genre: SongGenre, 
         if not entry:
             continue
         
-        dataset.add_entry(entry)
-        save_song_dataset(dataset, dataset_path)
+        save_dataset_entry(entry, dataset_path)
+    cleanup_temp_dir()
 
 # Calculates features for an entire playlist. Returns false if the calculation fails at any point
 def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: str):
@@ -193,24 +209,29 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
     print("Playlist title: " + title)
 
     # Initialize dataset
-    if os.path.exists(dataset_path):
-        dataset = load_song_dataset(dataset_path)
-        gc.collect()
-    else:
-        dataset = SongDataset()
+    if not os.path.exists(dataset_path):
+        os.makedirs(dataset_path)
+
+    processed_urls = set()
+    for file in os.listdir(dataset_path):
+        if file.endswith(".data"):
+            processed_urls.add(file[:-5])
     
-    print(f"Current number of entries: {len(dataset)}")
+    # Debug only
+    print("Processed URLs:")
+    for url in processed_urls:
+        print(url)
 
     # Get all video url datas
     urls: list[str] = []
-    processed_urls = set(dataset._data.keys())
     for url in tqdm(get_video_urls(playlist_url), desc="Getting URLs from playlist..."):
+        url = get_video_id(url)
         if url not in processed_urls:
             urls.append(url)
             processed_urls.add(url)
 
     # Calculate features
-    calculate_url_list(urls, dataset, batch_genre, dataset_path, playlist_url, title)
+    calculate_url_list(urls, batch_genre, dataset_path, playlist_url, title)
 
 #### Driver code and functions ####
 def get_next_playlist_to_process(queue_path: str) -> tuple[str, str] | None:
@@ -246,6 +267,15 @@ def update_playlist_process_queue(success: bool, playlist_url: str, genre_name: 
                 else:
                     file.write(line)
 
+def clean_playlist_queue(queue_path: str):
+    with open(queue_path, "r") as f:
+        playlist = f.readlines()
+
+    playlist = sorted(set([x.strip() for x in playlist]))
+
+    with open(queue_path, "w") as f:
+        f.write("\n".join(playlist))
+
 # Main function
 def main():
     queue_path = "./features/playlist_queue.txt"
@@ -256,6 +286,8 @@ def main():
     if not os.path.exists(queue_path):
         print("No playlist queue found.")
         return
+    
+    clean_playlist_queue(queue_path)
 
     while True:
         next_playlist = get_next_playlist_to_process(queue_path)
