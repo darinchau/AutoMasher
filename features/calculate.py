@@ -116,6 +116,7 @@ def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGe
 
     yt = YouTube(video_url)
     
+    print("Creating entry...")
     return create_entry(
         length = audio.duration,
         beats = beats,
@@ -137,7 +138,7 @@ def download_audio(urls: list[str]):
         return audio
     
     # Downloads the things concurrently and yields them one by one
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(download_audio_single, url): url for url in urls}
         for future in as_completed(futures):
             url = futures[future]
@@ -182,6 +183,7 @@ def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, pla
         
         try:
             entry = process_audio(audio, url, playlist_url, genre=genre)
+            print(f"Entry processed: {url}")
         except Exception as e:
             write_error(f"Failed to process video: {url}", e)
             continue

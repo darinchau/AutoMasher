@@ -8,6 +8,11 @@ from typing import Iterator, TypeVar, Generic
 from .base import DatasetEntry, SongDataset, SongGenre
 from ...util.combine import get_url
 from .create import create_entry
+from collections import Counter
+import numpy as np
+from math import ceil, exp
+from typing import Iterator
+import struct
 
 T = TypeVar('T')
 class BitsEncoder(ABC, Generic[T]):
@@ -27,31 +32,168 @@ class BitsEncoder(ABC, Generic[T]):
                 stream = f.read()
                 yield from stream
         return self.decode(file_stream())
+    
+    def write_to_path(self, obj: T, path: str):
+        with open(path, "wb") as f:
+            f.write(bytes(self.encode(obj)))
 
-class TimeStampEncoder(BitsEncoder[list[float]]):
-    def __init__(self, resolution: float):
+def make_huffman_tree(counter: dict[int, int]) -> tuple:
+    # Reserve 0xF for padding and EOS
+    # So we want the 0xF least common elements
+    # Since the length of the counter decreases by 14 each iteration
+    # To ensure each level has exactly 15 elements, the first merge
+    # should operate on len(counter) % 14 elements
+    def merge(counter: dict, n_elems: int):
+        least_common = sorted([(k, v) for k, v in counter.items()], key = lambda x: x[1])[:n_elems]
+        cumulative = 0
+        elems = []
+        for k, v in least_common:
+            del counter[k]
+            cumulative += v
+            elems.append(k)
+        counter[tuple(elems)] = cumulative
+        return counter
+
+    if len(counter) > 0xF:
+        first_merge_n_elems = len(counter) % 14
+        first_merge_n_elems = 14 if first_merge_n_elems == 0 else first_merge_n_elems
+        counter = merge(counter, first_merge_n_elems)
+        while len(counter) > 0xF:
+            counter = merge(counter, 0xF)
+    
+    tree = tuple(counter.keys())
+    assert len(tree) == 15
+
+    # Turn the tree into a table
+    table = {}
+    def traverse(tree, path):
+        if isinstance(tree, int):
+            table[tree] = path
+        else:
+            for i, branch in enumerate(tree):
+                traverse(branch, path + [i])
+    traverse(tree, [])
+    return tree, table
+
+def get_chord_time_label_codebook(resolution: float = 10.8):
+    max_time = ceil(600 * resolution) + 1
+    # The distribution of chord time diffs roughly follows a power law
+    # So use that to build a huffman tree and then we have a context free codebook
+
+    counter = {n: int(exp(-0.05* n) * max_time) + 1 for n in range (1, max_time)}
+    tree, table = make_huffman_tree(counter)
+    return tree, table
+
+def get_beat_score_frequencies(scores):
+    # Determined using scipy optimization on a subset of data
+    # because the frequencies plot looks like a bimodal distribution
+    # which makes sense since the datas is a combination of beat and downbeat times
+    # I dont think this has to be crazily optimized
+    # but if someone finds better constants feel free to open a PR
+    x = [23.379, 21.324, 36902, 87.321, 70.501, 3560.3]
+    scores = np.exp(-.5 * (scores - x[0])**2 / x[1]**2) * x[2] + np.exp(-.5 * (scores - x[3])**2 / x[4]**2) * x[5] 
+    scores = np.ceil(scores).astype(int)
+    return scores
+    
+def get_beat_time_label_codebook(resolution: float = 44100/1024):
+    max_time = int(resolution * 600) + 1
+    scores = np.arange(1, max_time + 1)
+    # Determined using scipy optimization on a subset of data
+    # because the frequencies plot looks like a bimodal distribution
+    # which makes sense since the datas is a combination of beat and downbeat times
+    # I dont think this has to be crazily optimized
+    # but if someone finds better constants feel free to open a PR
+    x = [23.379, 21.324, 36902, 87.321, 70.501, 3560.3]
+    scores = np.exp(-.5 * (scores - x[0])**2 / x[1]**2) * x[2] + np.exp(-.5 * (scores - x[3])**2 / x[4]**2) * x[5] 
+    scores = np.ceil(scores).astype(int)
+    counter = {i: scores[i] for i in range(1, max_time)}
+    tree, table = make_huffman_tree(counter)
+    return tree, table
+
+class Int32Encoder(BitsEncoder[int]):
+    def encode(self, data: int) -> Iterator[int]:
+        assert 0 <= data < 2**32
+        yield from struct.pack('I', data)
+
+    def decode(self, data: Iterator[int]) -> int:
+        b: list[int] = []
+        for i in range(4):
+            b.append(next(data))
+        return struct.unpack('I', bytes(b))[0]
+
+class FourBitEncoder(BitsEncoder[list[int]]):
+    def __init__(self):
+        self.i32encoder = Int32Encoder()
+
+    def encode(self, bits: list[int]) -> Iterator[int]:
+        yield from self.i32encoder.encode(len(bits))
+        elems = [b for b in bits]
+        if len(elems) % 2 != 0:
+            elems.append(0)
+        for i in range(0, len(elems), 2):
+            yield (elems[i] << 4) | elems[i + 1]
+
+    def decode(self, data: Iterator[int]) -> list[int]:
+        length = self.i32encoder.decode(data)
+        b = []
+        num_elems = length // 2 if length % 2 == 0 else (length // 2) + 1
+        for _ in range(num_elems):
+            byte = next(data)
+            b.append(byte >> 4)
+            b.append(byte & 0xF)
+        b = b[:length]
+        return b
+    
+class ChordTimesEncoder(BitsEncoder[list[float]]):
+    def __init__(self, resolution: float = 10.8):
+        self.tree, self.table = get_chord_time_label_codebook(resolution)
+        self.fourbitencoder = FourBitEncoder()
         self.resolution = resolution
 
     def encode(self, data: list[float]) -> Iterator[int]:
-        timestamps = np.array(data)
-        assert np.all(0 <= timestamps) and np.all(timestamps <= 600)
-        timestamps =  np.round(timestamps * self.resolution).astype(np.uint16)
-        for time in timestamps:
-            yield time & 0xFF
-            yield (time >> 8) & 0xFF
-        yield 0xFF
-        yield 0xFF
+        assert data and data[0] == 0
+        chord_times = np.round(np.array(data) * self.resolution).astype(int)
+        diffs = np.diff(chord_times)
+        encoded = []
+        for diff in diffs:
+            encoded.extend(self.table[diff])
+        encoded.append(0xF)
+        yield from self.fourbitencoder.encode(encoded)
 
     def decode(self, data: Iterator[int]) -> list[float]:
-        beats = []
-        while True:
-            time = 0
-            for i in range(2):
-                time |= next(data) << (i * 8)
-            if time == 0xFFFF:
+        decoded = self.fourbitencoder.decode(data)
+        chord_times = [0]
+        
+        def decode_bits(data_iter, tree):
+            index = data_iter.pop(0)
+            if index == 0xF:
+                return
+            entry = tree[index]
+            if isinstance(entry, int):
+                return entry
+            else:
+                return decode_bits(data_iter, entry)
+        while decoded:
+            diff = decode_bits(decoded, self.tree)
+            if diff is None:
                 break
-            beats.append(time / self.resolution)
-        return beats
+            chord_times.append(chord_times[-1] + diff)
+        return (np.array(chord_times) / self.resolution).tolist()
+    
+class BeatTimesEncoder(BitsEncoder[list[float]]):
+    def __init__(self, resolution: float = 44100/1024):
+        self.fourbitencoder = FourBitEncoder()
+        self.timestamp_encoder = ChordTimesEncoder(resolution)
+        self.timestamp_encoder.tree, self.timestamp_encoder.table = get_beat_time_label_codebook(resolution)
+        self.resolution = resolution
+    
+    def encode(self, data: list[float]) -> Iterator[int]:
+        new_data = [0] + data
+        yield from self.timestamp_encoder.encode(new_data)
+
+    def decode(self, data: Iterator[int]) -> list[float]:
+        new_data = self.timestamp_encoder.decode(data)
+        return new_data[1:]
     
 class ChordLabelsEncoder(BitsEncoder[list[int]]):
     def encode(self, data: list[int]) -> Iterator[int]:
@@ -140,8 +282,8 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
     - Title: Null-terminated unicode string in bytes array format
     """
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
-        self.chord_time_encoder = TimeStampEncoder(chord_time_resolution)
-        self.beat_time_encoder = TimeStampEncoder(beat_time_resolution)
+        self.chord_time_encoder = ChordTimesEncoder(chord_time_resolution)
+        self.beat_time_encoder = BeatTimesEncoder(beat_time_resolution)
         self.chord_labels_encoder = ChordLabelsEncoder()
         self.genre_encoder = GenreEncoder()
         self.string_encoder = StringEncoder()
