@@ -16,14 +16,16 @@ import json
 from enum import Enum
 from ..dataset import DatasetEntry
 
+@dataclass(frozen=True)
 class BeatAnalysisResult(TimeSeries):
     """A class that represents the result of a beat analysis."""
-    def __init__(self, duration: float, beat_frames: list[float] | NDArray[np.float32], downbeat_frames: list[float] | NDArray[np.float32]):
-        # TODO: Check sortedness for the beat frames
-        assert len(beat_frames) == 0 or duration >= beat_frames[-1]
-        self.beats: np.ndarray = np.array(beat_frames, dtype=np.float32)
-        self.downbeats: np.ndarray = np.array(downbeat_frames, dtype=np.float32)
-        self.duration = duration
+    duration: float
+    beats: NDArray[np.float32]
+    downbeats: NDArray[np.float32]
+
+    def __post_init__(self):
+        assert len(self.beats) == 0 or self.duration >= self.beats[-1]
+        assert len(self.downbeats) == 0 or self.duration >= self.downbeats[-1]
 
     @property
     def tempo(self):
@@ -32,7 +34,15 @@ class BeatAnalysisResult(TimeSeries):
 
     @classmethod
     def from_data_entry(cls, data_entry: DatasetEntry):
-        return cls(data_entry.length, data_entry.beats, data_entry.downbeats)
+        return cls.from_data(data_entry.length, data_entry.beats, data_entry.downbeats)
+
+    @classmethod
+    def from_data(cls, duration: float, beats: list[float], downbeats: list[float]):
+        return cls(
+            duration,
+            np.array(beats, dtype=np.float32),
+            np.array(downbeats, dtype=np.float32)
+        )
 
     def slice_seconds(self, start: float, end: float) -> BeatAnalysisResult:
         """Slice the beat analysis result by seconds. includes start and excludes end"""
@@ -115,80 +125,64 @@ class TuningAnalysisResult:
         assert -0.5 <= tuning < 0.5
         self.tuning = tuning
 
+@dataclass(frozen=True)
 class ChordAnalysisResult(TimeSeries):
     """A class with the following attributes:
 
     labels: list[int] - The chord labels for each frame
     chords: list[str] - The chord names. `chords[labels[i]]` is the chord name for the ith frame
     times: list[float] - The times of each frame"""
+    duration: float
+    labels: list[int]
+    times: list[float]
 
-    def __init__(self, duration: float, labels: list[int], times: list[float], sanity_check: bool = False):
-        if sanity_check:
-            chords = get_idx2voca_chord()
-            assert len(labels) == len(times)
-            assert all(-1 <= label < len(chords) for label in labels) # -1 can be a shorthand for no chord
-            # Check that the times array is monotonically increasing
-            last = -1
-            for time in times:
-                assert time > last
-                last = time
+    def __post_init__(self):
+        assert self.times[0] == 0, "First chord must appear at 0"
 
-            assert len(times) > 0
+        chords = get_idx2voca_chord()
+        assert len(self.labels) == len(self.times)
+        assert all(-1 <= label < len(chords) for label in self.labels) # -1 can be a shorthand for no chord
+        # Check that the times array is monotonically increasing
+        last = -1
+        for time in self.times:
+            assert time > last
+            last = time
 
-            assert duration >= times[-1]
+        assert len(self.times) > 0
 
-        # No chord is also a chord thus we enforce this rule
-        assert times[0] == 0, "First chord must appear at 0"
+        assert self.duration >= self.times[-1]
 
-        self.labels = labels
-        self.times = times
-        self.duration = duration
-
-    def _group(self):
+    def group(self) -> ChordAnalysisResult:
+        """Group the chord analysis result by chord, and deletes the duplicate chords."""
         labels: list[int] = []
         times: list[float] = []
         for chord, time in zip(self.labels, self.times):
             if len(labels) == 0 or chord != labels[-1]:
                 labels.append(chord)
                 times.append(time)
-        self._group_labels = labels
-        self._group_times = times
-
-    @property
-    def grouped_labels(self) -> list[int]:
-        if not hasattr(self, "_group_labels"):
-            self._group()
-        return self._group_labels
-
-    @property
-    def grouped_times(self) -> list[float]:
-        if not hasattr(self, "_group_times"):
-            self._group()
-        return self._group_times
-
-    @property
-    def grouped_chords(self) -> list[str]:
-        if not hasattr(self, "_groups"):
-            self._group()
-        chords = get_idx2voca_chord()
-        return [chords[label] for label in self.grouped_labels]
+        return ChordAnalysisResult(self.duration, labels, times)
 
     @property
     def grouped_end_time_np(self):
-        if not hasattr(self, "_grouped_end_time_np"):
-            self._grouped_end_time_np = np.array(self.grouped_times[1:] + [self.duration])
-        return self._grouped_end_time_np
+        """Returns a numpy array of grouped end times. This is mostly useful for dataset search"""
+        return np.array(self.group().times[1:] + [self.duration])
 
     @property
     def grouped_labels_np(self):
-        if not hasattr(self, "_grouped_labels_np"):
-            self._grouped_labels_np = np.array(self.grouped_labels)
-        return self._grouped_labels_np
+        """Returns a numpy array of grouped labels. This is mostly useful for dataset search"""
+        return np.array(self.group().labels)
+
+    @property
+    def chords(self):
+        """Returns a list of chord labels"""
+        chords = get_idx2voca_chord()
+        chord_labels = [chords[label] for label in self.labels]
+        return chord_labels
 
     @property
     def info(self) -> list[tuple[str, float]]:
         """A utility for getting the chord info for real-time display"""
-        return list(zip(self.grouped_chords, self.grouped_times))
+        return list(zip(self.chords, self.times))
 
     def slice_seconds(self, start: float, end: float) -> ChordAnalysisResult:
         """Slice the chord analysis result by seconds and shifts the times to start from 0
@@ -245,7 +239,8 @@ class ChordAnalysisResult(TimeSeries):
 
     def __repr__(self):
         s = "ChordAnalysisResult("
-        for chord, time in zip(self.grouped_chords, self.grouped_times):
+        cr = self.group()
+        for chord, time in zip(cr.chords, cr.times):
             s += "\n\t" + chord + " " + str(time)
         s += "\n)"
         return s
@@ -291,23 +286,28 @@ def _slice_chord_result(times, labels, start, end):
     new_labels = labels[start_idx:end_idx]
     return new_times, new_labels
 
-# Time Segment result is almost the same implementation as Beat Analysis Result
+@dataclass(frozen=True)
 class TimeSegmentResult(TimeSeries):
-    def __init__(self, valid_start_points: list[float] | NDArray[np.floating], duration: float):
-        """Takes the valid starting points for the time segments"""
-        self._ba = BeatAnalysisResult(duration, valid_start_points, [])
+    """A class that represents the result of a time segment analysis. Internally this owns a beat analysis result
+    with only the beat times that are in the time segment. This is useful for aligning time segments with beats."""
+
+    _ba : BeatAnalysisResult
+
+    @classmethod
+    def from_data(cls, times: list[float], duration: float):
+        return cls(BeatAnalysisResult(duration, np.array(times, dtype=np.float32), np.array([], dtype=np.float32)))
 
     def slice_seconds(self, start: float, end: float) -> TimeSegmentResult:
         ba = self._ba.slice_seconds(start, end)
-        return TimeSegmentResult(ba.beats.tolist(), ba.get_duration())
+        return TimeSegmentResult(ba)
 
     def change_speed(self, speed: float) -> TimeSegmentResult:
         ba = self._ba.change_speed(speed)
-        return TimeSegmentResult(ba.beats, ba.get_duration())
+        return TimeSegmentResult(ba)
 
     def join(self, other: TimeSegmentResult) -> TimeSegmentResult:
         ba = self._ba.join(other._ba)
-        return TimeSegmentResult(ba.beats, ba.get_duration())
+        return TimeSegmentResult(ba)
 
     def get_duration(self):
         return self._ba.get_duration()

@@ -375,7 +375,7 @@ def pychorus(beat_result: BeatAnalysisResult, audio: Audio, work_factor: int = 1
     # closest_start_dbs = np.abs(np.array(starts).reshape(-1, 1) - beat_result.downbeats).argmin(axis=1)
     # closest_end_dbs = np.abs(np.array(ends).reshape(-1, 1) - beat_result.downbeats).argmin(axis=1)
     # chorus_bar_length = stats.mode(closest_end_dbs - closest_start_dbs).mode
-    return TimeSegmentResult(starts, beat_result.get_duration())
+    return TimeSegmentResult.from_data(starts, beat_result.get_duration())
 
 def top_k_stft(aud: Audio, k: int = 5, HOP_LENGTH: int = 4096) -> TimeSegmentResult:
 	"""
@@ -400,7 +400,7 @@ def top_k_stft(aud: Audio, k: int = 5, HOP_LENGTH: int = 4096) -> TimeSegmentRes
 	top_5_diff_stft = arg_sorted_stft[arg_sorted_stft.shape[0]-5: arg_sorted_stft.shape[0]][np.arange(4, -1, -1)]
 
 	# print top 5 derivative timestamps (in seconds)
-	return TimeSegmentResult(top_5_diff_stft * HOP_LENGTH / aud.sample_rate, aud.duration)
+	return TimeSegmentResult.from_data(top_5_diff_stft * HOP_LENGTH / aud.sample_rate, aud.duration)
 
 def top_k_rms(aud: Audio, k: int = 5, HOP_LENGTH: int = 4096) -> TimeSegmentResult:
 	"""
@@ -424,7 +424,7 @@ def top_k_rms(aud: Audio, k: int = 5, HOP_LENGTH: int = 4096) -> TimeSegmentResu
 	top_5_diff_rms = arg_sorted_rms[arg_sorted_rms.shape[0]-5: arg_sorted_rms.shape[0]][np.arange(4, -1, -1)]
 
 	# print top 5 derivative timestamps (in seconds)
-	return TimeSegmentResult(top_5_diff_rms * HOP_LENGTH / aud.sample_rate, aud.duration)
+	return TimeSegmentResult.from_data(top_5_diff_rms * HOP_LENGTH / aud.sample_rate, aud.duration)
 
 def pick_top_k_timestamps(timestamps: torch.Tensor, sliding_max_diff: torch.Tensor, sorted_args: torch.Tensor, k: int) -> list[float]:
     if timestamps.size(0) == 1:
@@ -463,7 +463,7 @@ def top_k_maxpool(vocals: Audio, kernel_size: int | None = None, stride: int = 2
     sorted_diffs = torch.argsort(sliding_max_diff, dim=1, descending=True)
     timestamps = sorted_diffs[:, :k] * stride / vocals.sample_rate
     elements = pick_top_k_timestamps(timestamps, sliding_max_diff, sorted_diffs, k)
-    return TimeSegmentResult(elements, vocals.duration)
+    return TimeSegmentResult.from_data(elements, vocals.duration)
 
 def top_k_edge_detection(vocals: Audio, kernel_size: int | None = None, stride: int = 2048, padding: int | None = None, k: int = 5) -> TimeSegmentResult:
     if kernel_size is None:
@@ -483,4 +483,4 @@ def top_k_edge_detection(vocals: Audio, kernel_size: int | None = None, stride: 
     sorted_diffs = torch.argsort(sliding_max_diff, dim=1, descending=True)
     timestamps = sorted_diffs[:, :k] * stride / vocals.sample_rate
     elements = pick_top_k_timestamps(timestamps, sliding_max_diff, sorted_diffs, k)
-    return TimeSegmentResult(elements, vocals.duration)
+    return TimeSegmentResult.from_data(elements, vocals.duration)

@@ -89,8 +89,9 @@ def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGe
     print(f"Analysing chords...")
     chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
 
-    labels = chord_result.grouped_labels
-    chord_times = chord_result.grouped_times
+    cr = chord_result.group()
+    labels = cr.labels
+    chord_times = cr.times
     if len(labels) != len(chord_times):
         print(f"Length mismatch: {video_url}")
         time.sleep(1)

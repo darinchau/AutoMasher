@@ -7,7 +7,7 @@ from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 def get_music_duration(chord_result: ChordAnalysisResult):
     """Get the duration of actual music in the chord result. This is calculated by summing the duration of all chords that are not "No chord"."""
     music_duration = 0.
-    times = chord_result.grouped_times + [chord_result.duration]
+    times = chord_result.group().times + [chord_result.duration]
     no_chord_idx = get_inv_voca_map()["No chord"]
     for chord, start, end in zip(chord_result.labels, times[:-1], times[1:]):
         if chord != no_chord_idx:
@@ -21,24 +21,25 @@ def get_normalized_chord_result(cr: ChordAnalysisResult, br: BeatAnalysisResult)
     # If the time stamp is before the first downbeat, then it should be 0.
     # If the time stamp is after the last downbeat, then it should be the number of downbeats.
     assert cr.duration == br.duration
+    cr = cr.group()
     downbeats = br.downbeats.tolist() + [br.duration]
     new_chord_times = []
     curr_downbeat, curr_downbeat_idx, next_downbeat = 0, 0, downbeats[1]
-    for chord_times in cr.grouped_times:
+    for chord_times in cr.times:
         while chord_times > next_downbeat:
             curr_downbeat_idx += 1
             curr_downbeat = next_downbeat
             next_downbeat = downbeats[curr_downbeat_idx + 1]
         normalized_time = curr_downbeat_idx + (chord_times - curr_downbeat) / (next_downbeat - curr_downbeat)
         new_chord_times.append(normalized_time)
-    return ChordAnalysisResult(len(br.downbeats), cr.grouped_labels, new_chord_times, sanity_check=True)
+    return ChordAnalysisResult(len(br.downbeats), cr.labels, new_chord_times)
 
 # Create a dataset entry from the given data
 def create_entry(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
                     *, genre: SongGenre, audio_name: str, url: str, playlist: str, views: int):
     """Creates the dataset entry from the data - performs normalization and music duration postprocessing"""
     chord_result = ChordAnalysisResult(length, chords, chord_times)
-    beat_result = BeatAnalysisResult(length, beats, downbeats)
+    beat_result = BeatAnalysisResult.from_data(length, beats, downbeats)
     normalized_cr = get_normalized_chord_result(chord_result, beat_result)
 
     # For each bar, calculate its music duration
