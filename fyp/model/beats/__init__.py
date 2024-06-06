@@ -71,4 +71,4 @@ def inference(parts: dict[str, np.ndarray], model_path: str, use_loaded_model: b
                                 ), axis=-1)   #(T, 2)
     dbn_downbeat_pred = unpack_downbeats(combined_act, beats_per_bar=[3, 4], min_bpm=55.0, max_bpm=215.0, fps=44100/1024, threshold=0.2)
     dbn_downbeat_pred = dbn_downbeat_pred[dbn_downbeat_pred[:, 1] == 1][:, 0]
-    return dbn_beat_pred, dbn_downbeat_pred
+    return dbn_beat_pred.tolist(), dbn_downbeat_pred.tolist()
