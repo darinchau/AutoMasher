@@ -32,7 +32,7 @@ class BitsEncoder(ABC, Generic[T]):
                 stream = f.read()
                 yield from stream
         return self.decode(file_stream())
-    
+
     def write_to_path(self, obj: T, path: str):
         with open(path, "wb") as f:
             f.write(bytes(self.encode(obj)))
@@ -60,7 +60,7 @@ def make_huffman_tree(counter: dict[int, int]) -> tuple:
         counter = merge(counter, first_merge_n_elems)
         while len(counter) > 0xF:
             counter = merge(counter, 0xF)
-    
+
     tree = tuple(counter.keys())
     assert len(tree) == 15
 
@@ -79,22 +79,10 @@ def get_chord_time_label_codebook(resolution: float = 10.8):
     max_time = ceil(600 * resolution) + 1
     # The distribution of chord time diffs roughly follows a power law
     # So use that to build a huffman tree and then we have a context free codebook
-
     counter = {n: int(exp(-0.05* n) * max_time) + 1 for n in range (1, max_time)}
     tree, table = make_huffman_tree(counter)
     return tree, table
 
-def get_beat_score_frequencies(scores):
-    # Determined using scipy optimization on a subset of data
-    # because the frequencies plot looks like a bimodal distribution
-    # which makes sense since the datas is a combination of beat and downbeat times
-    # I dont think this has to be crazily optimized
-    # but if someone finds better constants feel free to open a PR
-    x = [23.379, 21.324, 36902, 87.321, 70.501, 3560.3]
-    scores = np.exp(-.5 * (scores - x[0])**2 / x[1]**2) * x[2] + np.exp(-.5 * (scores - x[3])**2 / x[4]**2) * x[5] 
-    scores = np.ceil(scores).astype(int)
-    return scores
-    
 def get_beat_time_label_codebook(resolution: float = 44100/1024):
     max_time = int(resolution * 600) + 1
     scores = np.arange(1, max_time + 1)
@@ -104,7 +92,7 @@ def get_beat_time_label_codebook(resolution: float = 44100/1024):
     # I dont think this has to be crazily optimized
     # but if someone finds better constants feel free to open a PR
     x = [23.379, 21.324, 36902, 87.321, 70.501, 3560.3]
-    scores = np.exp(-.5 * (scores - x[0])**2 / x[1]**2) * x[2] + np.exp(-.5 * (scores - x[3])**2 / x[4]**2) * x[5] 
+    scores = np.exp(-.5 * (scores - x[0])**2 / x[1]**2) * x[2] + np.exp(-.5 * (scores - x[3])**2 / x[4]**2) * x[5]
     scores = np.ceil(scores).astype(int)
     counter = {i: scores[i] for i in range(1, max_time)}
     tree, table = make_huffman_tree(counter)
@@ -143,7 +131,7 @@ class FourBitEncoder(BitsEncoder[list[int]]):
             b.append(byte & 0xF)
         b = b[:length]
         return b
-    
+
 class ChordTimesEncoder(BitsEncoder[list[float]]):
     def __init__(self, resolution: float = 10.8):
         self.tree, self.table = get_chord_time_label_codebook(resolution)
@@ -163,7 +151,7 @@ class ChordTimesEncoder(BitsEncoder[list[float]]):
     def decode(self, data: Iterator[int]) -> list[float]:
         decoded = self.fourbitencoder.decode(data)
         chord_times = [0]
-        
+
         def decode_bits(data_iter, tree):
             index = data_iter.pop(0)
             if index == 0xF:
@@ -179,14 +167,14 @@ class ChordTimesEncoder(BitsEncoder[list[float]]):
                 break
             chord_times.append(chord_times[-1] + diff)
         return (np.array(chord_times) / self.resolution).tolist()
-    
+
 class BeatTimesEncoder(BitsEncoder[list[float]]):
     def __init__(self, resolution: float = 44100/1024):
         self.fourbitencoder = FourBitEncoder()
         self.timestamp_encoder = ChordTimesEncoder(resolution)
         self.timestamp_encoder.tree, self.timestamp_encoder.table = get_beat_time_label_codebook(resolution)
         self.resolution = resolution
-    
+
     def encode(self, data: list[float]) -> Iterator[int]:
         new_data = [0] + data
         yield from self.timestamp_encoder.encode(new_data)
@@ -194,7 +182,7 @@ class BeatTimesEncoder(BitsEncoder[list[float]]):
     def decode(self, data: Iterator[int]) -> list[float]:
         new_data = self.timestamp_encoder.decode(data)
         return new_data[1:]
-    
+
 class ChordLabelsEncoder(BitsEncoder[list[int]]):
     def encode(self, data: list[int]) -> Iterator[int]:
         chord_labels = np.array(data, dtype=np.uint8)
@@ -203,13 +191,19 @@ class ChordLabelsEncoder(BitsEncoder[list[int]]):
 
     def decode(self, data: Iterator[int]) -> list[int]:
         chord_labels = []
-        while True:
+        # The upper bound comes from 600 seconds * 10.8 chord resolution
+        # Just to be safe, we will break if we see more than 6480 labels
+        for _ in range(6480):
             label = next(data)
             if label == 0xFF:
                 break
+            if label >= 170:
+                raise ValueError(f"Invalid chord label {label}")
             chord_labels.append(label)
+        else:
+            raise ValueError("Too many chord labels")
         return chord_labels
-    
+
 class GenreEncoder(BitsEncoder[SongGenre]):
     def encode(self, data: SongGenre) -> Iterator[int]:
         yield data.to_int()
@@ -217,7 +211,7 @@ class GenreEncoder(BitsEncoder[SongGenre]):
     def decode(self, data: Iterator[int]) -> SongGenre:
         genre = SongGenre.from_int(next(data))
         return genre
-    
+
 class StringEncoder(BitsEncoder[str]):
     def encode(self, data: str) -> Iterator[int]:
         for byte in data.encode('utf-8'):
@@ -235,7 +229,7 @@ class StringEncoder(BitsEncoder[str]):
             b.append(byte)
 
         return bytes(b).decode('utf-8')
-    
+
 class Float32Encoder(BitsEncoder[float]):
     def encode(self, data: float) -> Iterator[int]:
         yield from struct.pack('f', data)
@@ -245,7 +239,7 @@ class Float32Encoder(BitsEncoder[float]):
         for i in range(4):
             b.append(next(data))
         return struct.unpack('f', bytes(b))[0]
-    
+
 class Int64Encoder(BitsEncoder[int]):
     def encode(self, data: int) -> Iterator[int]:
         assert 0 <= data < 2**64
@@ -256,25 +250,15 @@ class Int64Encoder(BitsEncoder[int]):
         for i in range(8):
             b.append(next(data))
         return struct.unpack('Q', bytes(b))[0]
-    
+
 class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
     """Format (bytes, in order):
     - Chord labels: a list of bytes, each byte is a chord label (0-170)
     - A EOS label (-1)
-    - Chord times: a list of 2-byte integers, each representing the time t * chord_times_resolution in seconds
-        This list will have the same length as the chord labels list
-        The integers are in little-endian format
-        EOS marker 0xFFFF
-    - Downbeats: a list of 2-byte integers, each representing the time t * beat_times_resolution in seconds
-        This makes sense because the maximum length of a song is 600 seconds,
-        so the maximum label would be 600 * 44100 / 1024 = 25839 < 2^16
-        In fact the highest bit will never be set so we will use FF FF as the EOS marker
-        Little-endian format
-    - A EOS marker 0xFFFF
-    - Beats: A list of 2-byte integers, each representing the time t * beat_times_resolution in seconds
-        Same format as downbeats really
-    - A EOS marker 0xFFFF
-    - YouTube ID: a 11-character string
+    - Chord times: The difference array of (t * chord time resolution = 10.8) in a Huffman-like encoding
+    - Downbeats: The difference array of (t * beat_times_resolution = 44100/1024) in a Huffman-like encoding
+    - Beats: Same as downbeats
+    - YouTube ID: Null-terminated unicode string in bytes array format
     - Song Genre: There are only 8 genres but lets use one byte for it
     - Views: unsigned 64 bit integer format
     - Length: Signed 32 bit floating point number
@@ -330,7 +314,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         )
 
         return entry
-    
+
 class SongDatasetEncoder(BitsEncoder[SongDataset]):
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
         self.entry_encoder = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
