@@ -443,6 +443,9 @@ class Audio(TimeSeries):
         return f"(Audio)\nDuration:\t{self.duration:5f}\nSample Rate:\t{self.sample_rate}\nChannels:\t{self.nchannels}\nNum frames:\t{self.nframes}"
 
     def change_speed(self, speed: float, n_fft: int = 512, win_length: int | None = None, hop_length: int | None = None, window: Tensor | None = None) -> Audio:
+        """Changes the speed of the audio. speed in absolute value must be greater than 0. If speed = 1, then the audio is unchanged.
+        If speed > 1, then the audio is sped up. If speed < 1, then the audio is slowed down. The pitch of the audio is not changed.
+        The audio is stretched or compressed in time. The audio is stretched by a factor of `speed`"""
         if speed == 1:
             return self.clone()
         if speed < 0:

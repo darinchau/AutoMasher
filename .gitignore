@@ -76,6 +76,7 @@ resources/*
 !resources/ckpts
 *.ipynb
 !demo.ipynb
-features/*
-!features/*.py
+scripts/*
+!scripts/*.py
+!scripts/*.ipynb
 *.lprof
