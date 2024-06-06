@@ -4,20 +4,20 @@ from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_tra
 from ..analysis import TimeSegmentResult
 from ... import Audio
 from typing import Any
-from ..dataset import SongDataset, load_song_dataset
+from ..dataset import SongDataset
 from ..separation import DemucsAudioSeparator
 from math import exp
 from .search_config import SearchConfig
-from .align import search_database
+from .align import search_database, MashabilityResult
 from ...util.combine import get_video_id
 from ..analysis.chorus import extract_chorus
 from ..base import AudioCollection
 
-def filter_first(scores: list[tuple[float, str]]) -> list[tuple[float, str]]:
+def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[float, MashabilityResult]]:
     seen = set()
     result = []
     for score in scores:
-        id = score[1][:11]
+        id = score[1].id
         if id not in seen:
             seen.add(id)
             result.append(score)
@@ -36,7 +36,7 @@ class SongSearchState:
         self._audio = audio
         self.search_config = config
         self._dataset = dataset
-        self._all_scores: list[tuple[float, str]] = []
+        self._all_scores: list[tuple[float, MashabilityResult]] = []
         self._raw_chord_result: ChordAnalysisResult | None = None
         self._raw_beat_result: BeatAnalysisResult | None = None
         self._raw_parts_result: AudioCollection | None = None
@@ -60,7 +60,7 @@ class SongSearchState:
     @property
     def dataset(self) -> SongDataset:
         if self._dataset is None:
-            self._dataset = load_song_dataset(self.search_config.dataset_path)
+            self._dataset = SongDataset.load(self.search_config.dataset_path)
         return self._dataset
 
     @property

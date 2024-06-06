@@ -1,12 +1,15 @@
 # Provides a function to load our dataset as a list of dataset entries
 # This additional data structure facilitates getting by url
 from __future__ import annotations
+import os
 from dataclasses import dataclass
 from datasets import load_dataset, Dataset
 from typing import Any, Callable, Optional
 from copy import deepcopy
 from ...util.combine import get_video_id
 from enum import Enum
+import numpy as np
+from typing import Iterable
 
 class SongGenre(Enum):
     POP = "pop"
@@ -62,6 +65,7 @@ class DatasetEntry:
 
     def __post_init__(self):
         assert len(self.chords) == len(self.chord_times) == len(self.normalized_chord_times)
+        assert len(self.downbeats) == len(self.music_duration)
         assert all(0 <= c <= 600 for c in self.chord_times)
         assert all(0 <= c <= 170 for c in self.chords)
         assert all(0 <= c <= 600 for c in self.downbeats)
@@ -112,6 +116,20 @@ class DatasetEntry:
             return False
         return True
 
+    def get_valid_starting_points(self, nbars: int, min_music_percentage: float) -> Iterable[int]:
+        """Returns a list of valid starting points based on the min_music_percentage and nbars.
+        Fundamentally this is the following code, just optimized:
+
+        [i for i in range(len(self.downbeats) - nbars) if sum(self.music_duration[i:i + nbars]) >= min_music_percentage * nbars]"""
+        cumulative_music_durations = np.cumsum(self.music_duration)
+        cumulative_music_durations[nbars:] = cumulative_music_durations[nbars:] - cumulative_music_durations[:-nbars]
+        cumulative_music_durations = cumulative_music_durations[nbars-1:-1]
+        min_music_duration = min_music_percentage * nbars
+
+        # Find the indices where the sum of the music duration is greater than the minimum music duration
+        valid_indices = np.where(cumulative_music_durations >= min_music_duration)[0]
+        return valid_indices
+
 class SongDataset:
     """Use a hashmap for now. lmk if there are more efficient ways to do this."""
     def __init__(self):
@@ -147,10 +165,53 @@ class SongDataset:
                 new_dataset.add_entry(entry)
         return new_dataset
 
+    @staticmethod
+    def load(dataset_path: str):
+        """Load the dataset from hugging face. The dataset can be in one of the following formats:
+        - A local directory with a hugging face dataset
+        - A hugging face remote path
+        - A local directory containing a bunch of compressed DatasetEntry files
+        - A file saved using the SongDatasetEncoder"""
+
+        if os.path.isfile(dataset_path):
+            from .compress import SongDatasetEncoder
+            return SongDatasetEncoder().read_from_path(dataset_path)
+
+        try:
+            return load_song_dataset_hf(dataset_path)
+        except ValueError as e:
+            pass
+
+        assert os.path.exists(dataset_path) and os.path.isdir(dataset_path), f"Invalid dataset path: {dataset_path}"
+
+        # If .data file exists, we assume that the dataset is a directory containing compressed DatasetEntry files
+        data_files = [f for f in os.listdir(dataset_path) if f.endswith(".data")]
+        if data_files:
+            from .compress import DatasetEntryEncoder
+            dataset = SongDataset()
+            for data_file in data_files:
+                dataset.add_entry(DatasetEntryEncoder().read_from_path(os.path.join(dataset_path, data_file)))
+            return dataset
+
+        raise ValueError(f"Invalid dataset path: {dataset_path}")
+
     def __repr__(self):
         return f"SongDataset({len(self)} entries)"
 
-def load_song_dataset(dataset_path: str) -> SongDataset:
+def get_genre_map() -> dict[str, SongGenre]:
+    """Gets a genre map thats used for loading the dataset for loading the legacy v1 dataset"""
+    genre_map = {genre.value: genre for genre in SongGenre}
+    genre_map["jp-anime"] = SongGenre.ANIME
+    genre_map["country"] = SongGenre.POP
+    genre_map["hip-hop"] = SongGenre.POP
+    genre_map["dance-pop"] = SongGenre.POP
+    genre_map["rock"] = SongGenre.POP
+    genre_map["folk"] = SongGenre.POP
+    genre_map["reggaeton"] = SongGenre.POP
+    return genre_map
+
+def load_song_dataset_hf(dataset_path: str) -> SongDataset:
+    """Load the song dataset from hugging face. The dataset path can be either a local path or a remote path."""
     try:
         dataset = load_dataset(dataset_path, split="train")
     except ValueError as e:
@@ -159,6 +220,7 @@ def load_song_dataset(dataset_path: str) -> SongDataset:
             dataset = Dataset.load_from_disk(dataset_path)
         else:
             raise e
+    genre_map = get_genre_map()
     song_dataset = SongDataset()
     for entry in dataset:
         entry = DatasetEntry(
@@ -166,7 +228,7 @@ def load_song_dataset(dataset_path: str) -> SongDataset:
             chord_times=entry["chord_times"],
             downbeats=entry["downbeats"],
             beats=entry["beats"],
-            genre=SongGenre(entry["genre"].strip()),
+            genre=genre_map[entry["genre"].strip()],
             audio_name=entry["audio_name"],
             url=entry["url"],
             playlist=entry["playlist"],
@@ -179,7 +241,7 @@ def load_song_dataset(dataset_path: str) -> SongDataset:
 
     return song_dataset
 
-def save_song_dataset(dataset: SongDataset, dataset_path: str):
+def save_song_dataset_hf(dataset: SongDataset, dataset_path: str):
     ds = Dataset.from_dict({
         "chords": [entry.chords for entry in dataset],
         "chord_times": [entry.chord_times for entry in dataset],

@@ -1,5 +1,6 @@
 # The module that implements the mashability score
 from ...util.note import get_chord_notes
+from dataclasses import dataclass
 from typing import Any
 from ... import Audio
 from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map, get_chord_note_inv
@@ -14,9 +15,10 @@ from numpy.typing import NDArray
 import numba
 import heapq
 import typing
-from ..dataset import SongDataset, DatasetEntry
+from ..dataset import SongDataset, DatasetEntry, SongGenre
 from ..dataset.create import get_normalized_chord_result
 from .search_config import SearchConfig
+from ..analysis.base import _slice_chord_result
 
 NO_CHORD_PENALTY = 3
 
@@ -150,55 +152,50 @@ def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: Be
 
     return factors.tolist(), boundaries.tolist()
 
-# Optimize the calls to calculate_boundaries except we don't need to calculate the boundaries and we don't need to convert the factors back to a python list
-# We can also jit this
-@numba.njit
-def _calculate_max_min_factors(db, sample_db, duration, sample_duration, max_factor, min_factor):
-    # We take everything in good faith ok so we don't need to check the input
-    submitted_beat_times = np.append(db, duration)
-    sample_beat_times = np.append(sample_db, sample_duration)
+@dataclass(frozen=True)
+class MashabilityResult:
+    id: str
+    start_bar: int
+    transpose: int
+    title: str
+    timestamp: float
+    genre: SongGenre
+    views: int
 
-    orig_lengths = submitted_beat_times[1:] - submitted_beat_times[:-1]
-    new_lengths = sample_beat_times[1:] - sample_beat_times[:-1]
-    factors = new_lengths / orig_lengths
-    return factors.max() <= max_factor and factors.min() >= min_factor
+    def __repr__(self):
+        return f"MashabilityResult({self.id}/{self.start_bar}/{self.transpose})"
 
-@numba.njit
-def _get_sliced_downbeats(downbeats, bounds):
-    downbeat_mask = (downbeats >= bounds[0]) & (downbeats < bounds[1])
-    return downbeats[downbeat_mask] - bounds[0]
+    @staticmethod
+    def get_empty():
+        return MashabilityResult("", 0, 0, "", 0., SongGenre.POP, 0)
 
 # Use a more efficient data scructure to store the scores
-class MashabilityScore:
-    """A class to store the scores of the mashability search. It is a heap that keeps the top k scores if k > 0. Otherwise this behaves like a list."""
+class MashabilityHeap:
+    """A class to store the scores of the mashability of the songs. It keeps the top k scores in a heap."""
     def __init__(self, keep_first_k: int):
         assert keep_first_k > 0, "Use a Mashability List instead"
-        self.keep_first_k = keep_first_k
-        self.heap = []
+        self.heap: list[tuple[float, MashabilityResult]] = [(float("-inf"), MashabilityResult.get_empty()) for _ in range(keep_first_k)]
 
-    def insert(self, score: float, id: str):
-        if len(self.heap) < self.keep_first_k:
-            heapq.heappush(self.heap, (-score, id))
-        else:
-            heapq.heappushpop(self.heap, (-score, id))
+    def insert(self, score: float, id: MashabilityResult):
+        heapq.heappushpop(self.heap, (-score, id))
 
     def get(self):
         return sorted([(-score, id) for score, id in self.heap])
 
 class MashabilityList:
     def __init__(self):
-        self.heap = []
+        self.heap: list[tuple[float, MashabilityResult]] = []
 
-    def insert(self, score: float, id: str):
+    def insert(self, score: float, id: MashabilityResult):
         self.heap.append((score, id))
 
     def get(self):
         return sorted(self.heap)
 
-# An optimized version of the legacy code
+from line_profiler import profile
+@profile
 def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
-                         dataset: SongDataset, first_k: int | None = None,
-                         search_config: SearchConfig | None = None) -> list[tuple[float, str]]:
+                         dataset: SongDataset, search_config: SearchConfig | None = None) -> list[tuple[float, MashabilityResult]]:
     """Find the best song in the data list that matches the given audio.
     Assuming the chord result is always short enough
     Assume t=0 is always a downbeat
@@ -208,7 +205,6 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
     assert submitted_chord_result.duration == submitted_beat_result.duration
     search_config = search_config or SearchConfig()
 
-    # Normalize the submitted chord result with the submitted beat result
     submitted_normalized_cr = get_normalized_chord_result(submitted_chord_result, submitted_beat_result)
     times1 = submitted_normalized_cr.grouped_end_time_np
     chords1 = submitted_normalized_cr.grouped_labels_np
@@ -223,69 +219,56 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
         chords1 = new_chord_result.grouped_labels_np
         transposed_crs.append((k, times1, chords1))
 
-    # Calculate chord distances
+    # Precalculate chord distances as a numpy array to take advantage of jit
     distances = calculate_distance_array()
-
-    scores = MashabilityScore(keep_first_k=search_config.keep_first_k)
-    num_calculated = 0
-
-    # At this point both the submitted and sample are normalized
+    scores = MashabilityHeap(keep_first_k=search_config.keep_first_k) if search_config.keep_first_k > 0 else MashabilityList()
     nbars = len(submitted_beat_result.downbeats)
 
     # Initiate progress bar
-    total: int = first_k if first_k is not None else len(dataset)
-    for entry in tqdm(dataset, total=total, desc="Searching database", disable=not search_config.verbose):
-        # Early exit if needed
-        if first_k is not None and num_calculated >= first_k:
-            break
-
+    for entry in tqdm(dataset, desc="Searching database", disable=not search_config.verbose):
         # Create and normalize the sample chord result and beat result
-        id = entry.url[-11:]
-        downbeats = entry.downbeats
+        id = entry.url_id
+        sample_downbeats = np.array(entry.downbeats, dtype=np.float32)
 
-        sample_beat_result = BeatAnalysisResult.from_data_entry(entry)
-        sample_normalized_cr = ChordAnalysisResult(len(downbeats), entry.chords, entry.normalized_chord_times)
-        sample_music_duration = entry.music_duration
+        sample_normalized_chords = np.array(entry.chords)
+        sample_normalized_chord_times = np.array(entry.normalized_chord_times)
+        submitted_beat_times = np.append(submitted_beat_result.downbeats, submitted_beat_result.duration)
+        submitted_beat_times_diff = submitted_beat_times[1:] - submitted_beat_times[:-1]
 
         # Calculate the scores for each bar
-        for i in range(len(downbeats) - nbars):
-            if sum(sample_music_duration[i:i + nbars]) < search_config.min_music_percentage * nbars:
-                continue
-
+        for i in entry.get_valid_starting_points(nbars, search_config.min_music_percentage):
             # Calculate the boundaries
-            start_downbeat = downbeats[i]
-            end_downbeat = downbeats[i + nbars]
-            start_end = np.array([start_downbeat, end_downbeat], dtype = np.float32)
-
-            trimmed_downbeats = _get_sliced_downbeats(sample_beat_result.downbeats, start_end)
-            is_bpm_within_tolerance =  _calculate_max_min_factors(submitted_beat_result.downbeats, trimmed_downbeats,
-                                              submitted_beat_result.duration, end_downbeat - start_downbeat,
-                                              search_config.max_delta_bpm, search_config.min_delta_bpm)
+            is_bpm_within_tolerance = _calculate_tolerance(submitted_beat_times_diff, sample_downbeats, search_config.max_delta_bpm, search_config.min_delta_bpm, nbars, i)
             if not is_bpm_within_tolerance:
                 continue
 
-            times2, chords2 = sample_normalized_cr.get_sliced_np(i, i+nbars)
+            times2, chords2 = _slice_chord_result(sample_normalized_chord_times, sample_normalized_chords, i, i+nbars)
 
             for k, times1, chords1 in transposed_crs:
                 new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
-
-                if search_config.extra_info:
-                    timestamp = f"{downbeats[i]//60}:{downbeats[i]%60:.2f}"
-                    views = f"{entry.views//1e9}B" if entry.views > 1e9 else f"{entry.views//1e6}M" if entry.views > 1e6 else f"{entry.views//1e3}K"
-                    title = entry.audio_name if len(entry.audio_name) < 40 else entry.audio_name[:37] + "..."
-                    info_ = search_config.extra_info.format(
-                        title = title,
-                        timestamp = timestamp,
-                        genre = entry.genre,
-                        views = views
-                    )
-                    new_id = f"{id}/{i}/{k}/{info_}"
-                else:
-                    new_id = f"{id}/{i}/{k}"
+                new_id = MashabilityResult(
+                    id=id,
+                    start_bar=i,
+                    transpose=k,
+                    title=entry.audio_name,
+                    timestamp=sample_downbeats[i],
+                    genre=entry.genre,
+                    views=entry.views
+                )
                 scores.insert(new_score, new_id)
-        num_calculated += 1
     scores_list = scores.get()
     return scores_list
+
+@numba.njit
+def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray, max_delta_bpm: float, min_delta_bpm: float, nbars: int, i: int):
+    """An optimized version of the calculate_tolerance function that, given the downbeats, finds if the sample downbeats are within the tolerance of the submitted downbeats.
+    This does the slicing and everything in numpy, which is much faster than the original implementation."""
+    downbeat_mask = (sample_downbeats >= sample_downbeats[i]) & (sample_downbeats < sample_downbeats[i+nbars])
+    downbeats_ = sample_downbeats[downbeat_mask] - sample_downbeats[i]
+    downbeats_ = np.append(downbeats_, sample_downbeats[i+nbars] - sample_downbeats[i])
+    new_lengths = downbeats_[1:] - downbeats_[:-1]
+    factors = new_lengths / orig_lengths
+    return factors.max() <= max_delta_bpm and factors.min() >= min_delta_bpm
 
 # Also export function for distance of chord results
 def distance_of_chord_results(submitted_chord_result: ChordAnalysisResult, sample_chord_result: ChordAnalysisResult) -> float:

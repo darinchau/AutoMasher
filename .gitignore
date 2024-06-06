@@ -78,3 +78,4 @@ resources/*
 !demo.ipynb
 features/*
 !features/*.py
+*.lprof

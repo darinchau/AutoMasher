@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable
 from .. import Audio, AudioCollection
-from ..dataset import DatasetEntry
+from ..dataset import DatasetEntry, SongDataset
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from tqdm.auto import tqdm
 from typing import Any
@@ -29,10 +29,6 @@ class SearchConfig:
 
         max_score: The maximum similarity percentage that the song should get to be included in the results. Default is 100.
 
-        extra_info: Extra information to be included in the score_id for better display. We will use format string
-            to include the extra information in the search. Available format strings are title, timestamp, genre, views.
-            Default is an empty string.
-
         pychorus_work_factor: The work factor for the pychorus library. Must be between 10 and 20. The higher the number,
             the less accurate but also the less runtime. This parameter scales (inverse) exponentially to the runtime i.e.
             A work factor of 13 ought to have twice the runtime compared to work factor of 14. Default is 14.
@@ -54,6 +50,8 @@ class SearchConfig:
 
         dataset_path: The path to the dataset. Default is "hkust-fypho2", which is the dataset path on hugging face.
             Feel free to keep this default value because hugging face will handle caching for us.
+            This path will be directly passed into SongDataset.load, so it should be a valid path for that function.
+            Refer to the SongDataset.load documentation for more information.
 
         chord_model_path: The path to the chord model. Default is "resources/ckpts/btc_model_large_voca.pt", which is the
             model path on a fresh clone of the repository from the root
@@ -74,7 +72,6 @@ class SearchConfig:
     keep_first_k: int = 20
     min_score: int = 0
     max_score: int = 100
-    extra_info: str = ""
     pychorus_work_factor: int = 14
     progress_bar: bool = True
     bar_number: int | None = None
@@ -87,10 +84,3 @@ class SearchConfig:
     cache_dir: str | None = "./"
     cache: bool = True
     verbose: bool = False
-
-    def clone(self, **kwargs: Any):
-        """Clones the SearchConfig with the new attributes"""
-        new_kwargs = deepcopy(vars(self))
-        new_kwargs.update(kwargs)
-        new_config = SearchConfig(**new_kwargs)
-        return new_config

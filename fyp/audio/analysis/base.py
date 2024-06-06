@@ -21,8 +21,8 @@ class BeatAnalysisResult(TimeSeries):
     def __init__(self, duration: float, beat_frames: list[float] | NDArray[np.float32], downbeat_frames: list[float] | NDArray[np.float32]):
         # TODO: Check sortedness for the beat frames
         assert len(beat_frames) == 0 or duration >= beat_frames[-1]
-        self.beats = np.array(beat_frames, dtype=np.float32)
-        self.downbeats = np.array(downbeat_frames, dtype=np.float32)
+        self.beats: np.ndarray = np.array(beat_frames, dtype=np.float32)
+        self.downbeats: np.ndarray = np.array(downbeat_frames, dtype=np.float32)
         self.duration = duration
 
     @property
@@ -185,10 +185,6 @@ class ChordAnalysisResult(TimeSeries):
             self._grouped_labels_np = np.array(self.grouped_labels)
         return self._grouped_labels_np
 
-    def get_sliced_np(self, start: float, end: float):
-        """This function exists to optimize calls to slice_seconds, then grouped_labels_np and grouped_end_time_np"""
-        return _slice_chord_result(np.array(self.times), np.array(self.labels), start, end)
-
     @property
     def info(self) -> list[tuple[str, float]]:
         """A utility for getting the chord info for real-time display"""
@@ -283,6 +279,7 @@ class ChordAnalysisResult(TimeSeries):
 
 @numba.jit(nopython=True)
 def _slice_chord_result(times, labels, start, end):
+    """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
     start_idx = np.searchsorted(times, start, side='right') - 1
     end_idx = np.searchsorted(times, end, side='right')
 
