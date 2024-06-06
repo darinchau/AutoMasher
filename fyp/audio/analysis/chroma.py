@@ -43,7 +43,7 @@ def preprocess(x: np.ndarray):
     fNorm = np.max(np.abs(x))
     if fNorm == 0:
         fNorm = 1
-        
+
     x = x / fNorm
 
     return x

@@ -93,7 +93,7 @@ def count_overlapping_lines(lines, margin, min_length_samples):
                 line_scores[line_1] += 1
 
     # Sorting the scores first by chorus matches, then by duration
-    res = [] 
+    res = []
 
     for l in line_scores:
         res.append((l, line_scores[l], l.end - l.start))
@@ -113,8 +113,8 @@ def line_scores(audio: Audio, clip_length: float, decay: float, n_fft: int, smoo
         song_length_sec: length in seconds of the song (lost in processing chroma)
         clip_length: minimum length in seconds we want our chorus to be (at least 10-15s)
 
-    Returns: 
-        line_scores: valid line scores computed, 
+    Returns:
+        line_scores: valid line scores computed,
         chorma_sr: is used to find each chorus section start by line_scores[0][i].start/chorma_sr
     """
     chroma = chroma_stft_nfft(audio, n_fft)
@@ -162,15 +162,15 @@ def bin_search(t, segs):
         res = segs[0] if l_dist < r_dist else segs[1]
 
         return res
-    
+
     elif len(segs) == 1:
         return segs[0]
-    
+
     else:
         mid = len(segs)//2
         res = bin_search(t, segs[:mid]) if t < segs[mid] else bin_search(t, segs[mid+1:])
         return res
-    
+
 
 def find_first_downbeat(first_down: float, all: NDArray[np.floating]) -> int:
     return int(np.argmin(np.abs(all-first_down)))
@@ -325,23 +325,23 @@ def get_all_segments(beat_res: BeatAnalysisResult, audio: Audio, work_factor: in
                  min_lines: int = 8,
                  num_iter: int = 8,
                  overlap_margin: float = 0.2,
-                 decay: float = 0.95):        
+                 decay: float = 0.95):
         required_length = 60 / beat_res.tempo * 4 * 16
 
         if required_length > 30:
             required_length /= 2
-        elif required_length < 15: 
+        elif required_length < 15:
             required_length *=2
 
         # Find the chorus by using the line scores
-        scores, ratio = line_scores(audio, required_length, decay, n_fft, 
+        scores, ratio = line_scores(audio, required_length, decay, n_fft,
                              smoothing_size, overlap_margin,
-                             line_theshold, num_iter, 
+                             line_theshold, num_iter,
                              min_lines)
-        
+
         if len(scores) == 0:
             return [0, audio.duration]
-        
+
         # Determine all starting positions
         starts: list[float] = []
         for m in scores:
@@ -371,7 +371,7 @@ def pychorus(beat_result: BeatAnalysisResult, audio: Audio, work_factor: int = 1
     # Extract the start and end times
     starts = segs[1:-1:2]
     # ends = segs[2:-1:2]
-    
+
     # closest_start_dbs = np.abs(np.array(starts).reshape(-1, 1) - beat_result.downbeats).argmin(axis=1)
     # closest_end_dbs = np.abs(np.array(ends).reshape(-1, 1) - beat_result.downbeats).argmin(axis=1)
     # chorus_bar_length = stats.mode(closest_end_dbs - closest_start_dbs).mode
@@ -394,11 +394,11 @@ def top_k_stft(aud: Audio, k: int = 5, HOP_LENGTH: int = 4096) -> TimeSegmentRes
 	# result from using RMS with STFT spectrogram
 	stft, phase = librosa.magphase(librosa.stft(aud_np, hop_length=HOP_LENGTH))
 	result_stft = librosa.feature.rms(S=stft, hop_length=HOP_LENGTH).reshape(-1)
-	
+
 	# get derivative and find top 5 timestamps with largest derivative
 	arg_sorted_stft = np.diff(result_stft).argsort()
 	top_5_diff_stft = arg_sorted_stft[arg_sorted_stft.shape[0]-5: arg_sorted_stft.shape[0]][np.arange(4, -1, -1)]
-	
+
 	# print top 5 derivative timestamps (in seconds)
 	return TimeSegmentResult(top_5_diff_stft * HOP_LENGTH / aud.sample_rate, aud.duration)
 
@@ -418,18 +418,18 @@ def top_k_rms(aud: Audio, k: int = 5, HOP_LENGTH: int = 4096) -> TimeSegmentResu
 
 	# result from using RMS without STFT spectrogram
 	result_rms = librosa.feature.rms(y=aud_np, hop_length=HOP_LENGTH).reshape(-1)
-	
+
 	# get derivative and find top 5 timestamps with largest derivative
 	arg_sorted_rms = np.diff(result_rms).argsort()
 	top_5_diff_rms = arg_sorted_rms[arg_sorted_rms.shape[0]-5: arg_sorted_rms.shape[0]][np.arange(4, -1, -1)]
-	
+
 	# print top 5 derivative timestamps (in seconds)
 	return TimeSegmentResult(top_5_diff_rms * HOP_LENGTH / aud.sample_rate, aud.duration)
 
 def pick_top_k_timestamps(timestamps: torch.Tensor, sliding_max_diff: torch.Tensor, sorted_args: torch.Tensor, k: int) -> list[float]:
     if timestamps.size(0) == 1:
         return timestamps.tolist()
-    
+
     elements = []
     for i in range(k):
         if timestamps[0, i] == timestamps[1, i]:
@@ -437,7 +437,7 @@ def pick_top_k_timestamps(timestamps: torch.Tensor, sliding_max_diff: torch.Tens
             if len(elements) >= k:
                 break
             continue
-        
+
         dif1 = sliding_max_diff[0, sorted_args[0, i]]
         dif2 = sliding_max_diff[1, sorted_args[1, i]]
         ts1, ts2 = timestamps[0, i].item(), timestamps[1, i].item()

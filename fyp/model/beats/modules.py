@@ -2,8 +2,8 @@ import torch
 from typing import Any
 from torch.nn import TransformerEncoderLayer as torchTransformerEncoderLayer
 import math
-import torch 
-import torch.nn.functional as F 
+import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.nn.modules.normalization import LayerNorm
 
@@ -20,26 +20,26 @@ class DemixedDilatedTransformerModel(nn.Module):
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(5, 3), stride=1, padding=(2, 0))#126
         self.maxpool1 = nn.MaxPool2d(kernel_size=(1, 3), stride=(1, 3))#42
         self.dropout1 = nn.Dropout(p=dropout)
-        
+
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(1, 12), stride=1, padding=(0, 0))#31
         self.maxpool2 = nn.MaxPool2d(kernel_size=(1, 3), stride=(1, 3))#10
         self.dropout2 = nn.Dropout(p=dropout)
-        
+
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=dmodel, kernel_size=(3, 6), stride=1, padding=(1, 0))#5
         self.maxpool3 = nn.MaxPool2d(kernel_size=(1, 3), stride=(1, 3))#1
         self.dropout3 = nn.Dropout(p=dropout)
-        
+
         self.Transformer_layers = nn.ModuleDict({})
         for idx in range(nlayers):
             self.Transformer_layers[f'time_attention_{idx}'] = DilatedTransformerLayer(dmodel, nhead, d_hid, dropout, Er_provided=False, attn_len=attn_len, norm_first=norm_first)
             if (idx >= 3) and (idx <= 5):
                 self.Transformer_layers[f'instr_attention_{idx}'] = torchTransformerEncoderLayer(dmodel, nhead, d_hid, dropout, batch_first=True, norm_first=norm_first)
-            
+
         self.out_linear = nn.Linear(dmodel, ntoken)
 
         self.dropout_t = nn.Dropout(p=.5)
         self.out_linear_t = nn.Linear(dmodel, 300)
-        
+
     def forward(self, x):
         #x: (batch, instr, time, dmodel), FloatTensor
         batch, instr, time, melbin = x.shape
@@ -66,7 +66,7 @@ class DemixedDilatedTransformerModel(nn.Module):
             x, skip = self.Transformer_layers[f'time_attention_{layer}'](x, layer=layer)
             skip = skip.reshape(batch, instr, time, self.dmodel)
             t.append(skip.mean(1))
-  
+
             if (layer >= 3) and (layer <= 5):
                 x = x.reshape(batch, instr, time, self.dmodel)
                 x = x.permute(0, 2, 1, 3)
@@ -77,7 +77,7 @@ class DemixedDilatedTransformerModel(nn.Module):
                 x = x.reshape(batch, time, instr, self.dmodel)
                 x = x.permute(0, 2, 1, 3)
                 x = x.reshape(-1, time, self.dmodel)
-            
+
         x = torch.relu(x)
         x = x.reshape(batch, instr, time, self.dmodel)
         x = x.mean(1)
@@ -122,7 +122,7 @@ class DemixedDilatedTransformerModel(nn.Module):
             t.append(skip.mean(1))
 
             attn.append(torch.matmul(attn[-1], layer_attn.transpose(-2, -1)))
-  
+
             if (layer >= 3) and (layer <= 5):
                 x = x.reshape(batch, instr, time, self.dmodel)
                 x = x.permute(0, 2, 1, 3)
@@ -133,7 +133,7 @@ class DemixedDilatedTransformerModel(nn.Module):
                 x = x.reshape(batch, time, instr, self.dmodel)
                 x = x.permute(0, 2, 1, 3)
                 x = x.reshape(-1, time, self.dmodel)
-            
+
         x = torch.relu(x)
         x = x.reshape(batch, instr, time, self.dmodel)
         x = x.mean(1)
@@ -162,7 +162,7 @@ class DilatedMultiheadSelfAttentionWithRelativePositionalEmbedding(nn.Module):
         self.query = nn.Linear(dmodel, dmodel)
         self.dropout = nn.Dropout(dropout)
         self.Er_provided = Er_provided
-        
+
         if not Er_provided:
             self.Er = nn.Parameter(torch.randn(num_heads, self.head_dim, attn_len))
 
@@ -182,11 +182,11 @@ class DilatedMultiheadSelfAttentionWithRelativePositionalEmbedding(nn.Module):
                         self.kv_roll(k[:, 4: 5], layer, padding_value=0, shift=-2),
                         self.kv_roll(k[:, 5: 6], layer, padding_value=0, shift=-1),
                         self.kv_roll(k[:, 6: 7], layer, padding_value=0, shift=1),
-                        self.kv_roll(k[:, 6: 7], layer, padding_value=0, shift=2)   
+                        self.kv_roll(k[:, 6: 7], layer, padding_value=0, shift=2)
                         ),
                     dim=1
                     )   #we define 4 symmetrical heads and 4 skewed heads
-                        #The last line should be k[:, 7: 8]. This is a bug in my code. 
+                        #The last line should be k[:, 7: 8]. This is a bug in my code.
                         #This bug should not have impacted model performance though.
 
         v = torch.cat(
@@ -199,7 +199,7 @@ class DilatedMultiheadSelfAttentionWithRelativePositionalEmbedding(nn.Module):
                         ),
                     dim=1
                     )   #we define 4 symmetrical heads and 4 skewed heads
-        
+
         Er_t = self.Er.unsqueeze(1).unsqueeze(0)  #(1, num_head, 1, head_dim, attn_len)
 
         qk = torch.matmul(q, k.transpose(-2, -1))
@@ -216,10 +216,10 @@ class DilatedMultiheadSelfAttentionWithRelativePositionalEmbedding(nn.Module):
         #tensor: (batch, num_head, time, 1, head_dim)
         batch, num_head, time, _, head_dim = tensor.shape
 
-        tensor = F.pad(tensor, (0, 0, 0, 0, (2**layer)*(self.attn_len//2), (2**layer)*(self.attn_len//2)), mode='constant', value=padding_value) 
+        tensor = F.pad(tensor, (0, 0, 0, 0, (2**layer)*(self.attn_len//2), (2**layer)*(self.attn_len//2)), mode='constant', value=padding_value)
         #(batch, num_head, time+(2**layer)*(self.attn_len//2), 1, head_dim)
 
-        tensor = torch.cat([torch.roll(tensor, shifts=-i*(2**layer), dims=2) for i in range(shift, self.attn_len+shift)], dim=-2) 
+        tensor = torch.cat([torch.roll(tensor, shifts=-i*(2**layer), dims=2) for i in range(shift, self.attn_len+shift)], dim=-2)
         #(batch, num_head, time+(2**layer)*(self.attn_len//2), attn_len, head_dim)
 
         return tensor[:, :, :time, :, :]    #(batch, num_head, time, attn_len, head_dim)

@@ -92,7 +92,7 @@ def inference(audio: Audio, model_path: str, *, use_loaded_model: bool = True) -
         else:
             feature = np.concatenate((feature, tmp), axis=1)
         currunt_sec_hz = end_idx
-    
+
     # Concatenate the last part of the audio onto the feature
     tmp = librosa.cqt(original_wav[currunt_sec_hz:], sr=sr, n_bins=config.feature['n_bins'], bins_per_octave=config.feature['bins_per_octave'], hop_length=config.feature['hop_length'])
     if currunt_sec_hz == 0:

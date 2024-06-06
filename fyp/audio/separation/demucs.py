@@ -20,14 +20,14 @@ class DemucsModelStructure(Enum):
 class DemucsAudioSeparator(AudioSeparator):
     def __init__(self, model_name: DemucsModelStructure = DemucsModelStructure.HTDEMUCS, repo: Path | None = None, segment: float | None = None):
         """ Preloads the model
-        
+
         segment (float): duration of the chunks of audio to ideally evaluate the model on.
             This is used by `demucs.apply.apply_model`."""
         try:
             model = get_model(model_name.value, repo)
         except ModelLoadingError as error:
             raise RuntimeError(f"Failed to get model from args {error}")
-        
+
         if segment is not None and segment < 8:
             raise RuntimeError("Segment must greater than 8.")
 
@@ -47,7 +47,7 @@ class DemucsAudioSeparator(AudioSeparator):
     def sample_rate(self) -> int:
         """Sample rate of the audio the model expects."""
         return self.model.samplerate
-    
+
     @property
     def nchannels(self) -> int:
         """Number of channels that the model expects"""
@@ -60,10 +60,10 @@ class DemucsAudioSeparator(AudioSeparator):
             jobs: int = 0,
             overlap: float = 0.25,
             show_progress: bool = False):
-        """Performs the demucs audio separation pipeline. 
-        
+        """Performs the demucs audio separation pipeline.
+
         Feel free to play around with different hyperparameters
-        audio: Tensor of shape (nchannels, T) representing an audio with channels equal to self.nchannels, 
+        audio: Tensor of shape (nchannels, T) representing an audio with channels equal to self.nchannels,
             and sample rate equal to self.sample_rate
         name: name of the model structure. Use the DemucsModelStructure to get all the different model structures.
         shifts (int): if > 0, will shift in time `mix` by a random amount between 0 and 0.5 sec
@@ -85,12 +85,12 @@ class DemucsAudioSeparator(AudioSeparator):
 
         ref = audio.mean(0)
         wav = (audio - ref.mean()) / ref.std()
-        components = apply_model(model, wav[None], 
-                                 shifts=shifts, 
-                                 split=split, 
-                                 overlap=overlap, 
-                                 progress=show_progress, 
-                                 num_workers=jobs, 
+        components = apply_model(model, wav[None],
+                                 shifts=shifts,
+                                 split=split,
+                                 overlap=overlap,
+                                 progress=show_progress,
+                                 num_workers=jobs,
                                  device=device)[0]
         components = components * ref.std() + ref.mean()
 
@@ -99,10 +99,10 @@ class DemucsAudioSeparator(AudioSeparator):
         return components, name_indices
 
     def separate_audio(self, audio: Audio, **kwargs) -> AudioCollection:
-        """Performs the demucs audio separation pipeline. 
+        """Performs the demucs audio separation pipeline.
         Play with hyperparameters with the pipeline() method.
         All kwargs will be forwarded to pipeline.
-        
+
         Returns: a dictionary with keys: vocals, bass, other, drums
         The returned audio is guaranteed to have the same sample rate as the original audio"""
         audio_ = audio.resample(self.sample_rate).to_nchannels(AudioMode.MONO if self.nchannels == 1 else AudioMode.STEREO)

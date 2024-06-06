@@ -29,11 +29,11 @@ class BeatAnalysisResult(TimeSeries):
     def tempo(self):
         bpm = float(np.average(1 / (self.beats[1:] - self.beats[:-1]) * 60))
         return bpm
-    
+
     @classmethod
     def from_data_entry(cls, data_entry: DatasetEntry):
         return cls(data_entry.length, data_entry.beats, data_entry.downbeats)
-    
+
     def slice_seconds(self, start: float, end: float) -> BeatAnalysisResult:
         """Slice the beat analysis result by seconds. includes start and excludes end"""
         assert start >= 0.
@@ -48,23 +48,23 @@ class BeatAnalysisResult(TimeSeries):
         downbeats = self.downbeats[downbeat_mask] - start
 
         return BeatAnalysisResult(end - start, beats, downbeats)
-    
+
     def change_speed(self, speed: float) -> BeatAnalysisResult:
         """Change the speed of the beat analysis result"""
         beats = self.beats / speed
         downbeats = self.downbeats / speed
         return BeatAnalysisResult(self.duration / speed, beats, downbeats)
-    
+
     def join(self, other: BeatAnalysisResult) -> BeatAnalysisResult:
         """Join two beat analysis results. shift_amount is the amount to shift the times of the second beat analysis result by."""
         shift_amount = self.duration
         beats = np.concatenate([self.beats, other.beats + shift_amount])
         downbeats = np.concatenate([self.downbeats, other.downbeats + shift_amount])
         return BeatAnalysisResult(self.duration + other.duration, beats, downbeats)
-    
+
     def get_duration(self):
         return self.duration
-    
+
     def make_click_track(self, audio: Audio):
         click_track = librosa.clicks(times=self.beats, sr=audio.sample_rate, length=audio.nframes)
         down_click_track = librosa.clicks(times=self.downbeats, sr=audio.sample_rate, length=audio.nframes, click_freq=1500)
@@ -72,7 +72,7 @@ class BeatAnalysisResult(TimeSeries):
         click_track = audio.numpy() * 0.5 + click_track + down_click_track
         click_track = torch.tensor([click_track])
         return Audio(click_track, audio.sample_rate)
-    
+
     def save(self, path: str):
         json_dict = {
             "duration": self.duration,
@@ -88,18 +88,18 @@ class BeatAnalysisResult(TimeSeries):
         with open(path, "r") as f:
             data = json.load(f)
         return cls(data["duration"], data["beats"], data["downbeats"])
-    
+
 @dataclass(frozen=True)
 class KeyAnalysisResult:
     """Has the following properties:
-    
+
     key_correlation: list[float] - The correlation of each key."""
     key_correlation: list[float]
 
     @property
     def key(self):
         return int(np.argmax(np.array(self.key_correlation)))
-    
+
     @property
     def key_name(self):
         return get_keys()[self.key]
@@ -107,7 +107,7 @@ class KeyAnalysisResult:
 @dataclass(init=False)
 class TuningAnalysisResult:
     """A data class with the following
-    
+
     "tuning" (float -0.5 <= x < 0.5): The tuning correlation in terms of semitones"""
     tuning: float
 
@@ -117,7 +117,7 @@ class TuningAnalysisResult:
 
 class ChordAnalysisResult(TimeSeries):
     """A class with the following attributes:
-    
+
     labels: list[int] - The chord labels for each frame
     chords: list[str] - The chord names. `chords[labels[i]]` is the chord name for the ith frame
     times: list[float] - The times of each frame"""
@@ -134,7 +134,7 @@ class ChordAnalysisResult(TimeSeries):
                 last = time
 
             assert len(times) > 0
-            
+
             assert duration >= times[-1]
 
         # No chord is also a chord thus we enforce this rule
@@ -153,38 +153,38 @@ class ChordAnalysisResult(TimeSeries):
                 times.append(time)
         self._group_labels = labels
         self._group_times = times
-        
+
     @property
     def grouped_labels(self) -> list[int]:
         if not hasattr(self, "_group_labels"):
             self._group()
         return self._group_labels
-    
+
     @property
     def grouped_times(self) -> list[float]:
         if not hasattr(self, "_group_times"):
             self._group()
         return self._group_times
-    
+
     @property
     def grouped_chords(self) -> list[str]:
         if not hasattr(self, "_groups"):
             self._group()
         chords = get_idx2voca_chord()
         return [chords[label] for label in self.grouped_labels]
-    
+
     @property
     def grouped_end_time_np(self):
         if not hasattr(self, "_grouped_end_time_np"):
             self._grouped_end_time_np = np.array(self.grouped_times[1:] + [self.duration])
         return self._grouped_end_time_np
-    
+
     @property
     def grouped_labels_np(self):
         if not hasattr(self, "_grouped_labels_np"):
             self._grouped_labels_np = np.array(self.grouped_labels)
         return self._grouped_labels_np
-    
+
     def get_sliced_np(self, start: float, end: float):
         """This function exists to optimize calls to slice_seconds, then grouped_labels_np and grouped_end_time_np"""
         return _slice_chord_result(np.array(self.times), np.array(self.labels), start, end)
@@ -219,7 +219,7 @@ class ChordAnalysisResult(TimeSeries):
                 chords.append(self.labels[i])
 
         return ChordAnalysisResult(end - start, chords, times)
-    
+
     def join(self, other: ChordAnalysisResult) -> ChordAnalysisResult:
         """Join two chord analysis results. shift_amount is the amount to shift the times of the second chord analysis result by."""
         shift_amount = self.duration
@@ -246,25 +246,25 @@ class ChordAnalysisResult(TimeSeries):
         labels = self.labels.copy()
         times = self.times.copy()
         return ChordAnalysisResult(self.duration, labels, times)
-    
+
     def __repr__(self):
         s = "ChordAnalysisResult("
         for chord, time in zip(self.grouped_chords, self.grouped_times):
             s += "\n\t" + chord + " " + str(time)
         s += "\n)"
         return s
-    
+
     def transpose(self, semitones: int) -> ChordAnalysisResult:
         """Transpose the chords by semitones"""
         voca = get_idx2voca_chord()
         inv_map = get_inv_voca_map()
         labels = [inv_map[transpose_chord(voca[label], semitones)] for label in self.labels]
         return ChordAnalysisResult(self.duration, labels, self.times)
-    
+
     @classmethod
     def from_data_entry(cls, entry: DatasetEntry):
         return cls(entry.length, entry.chords, entry.chord_times)
-    
+
     def save(self, path: str):
         json_dict = {
             "duration": self.duration,
@@ -287,7 +287,7 @@ def _slice_chord_result(times, labels, start, end):
     end_idx = np.searchsorted(times, end, side='right')
 
     new_times = times[start_idx:end_idx] - start
-    
+
     # shift index by 1 and add the duration at the end for the ending times
     new_times[:-1] = new_times[1:]
     new_times[-1] = end - start
@@ -307,14 +307,14 @@ class TimeSegmentResult(TimeSeries):
     def change_speed(self, speed: float) -> TimeSegmentResult:
         ba = self._ba.change_speed(speed)
         return TimeSegmentResult(ba.beats, ba.get_duration())
-    
+
     def join(self, other: TimeSegmentResult) -> TimeSegmentResult:
         ba = self._ba.join(other._ba)
         return TimeSegmentResult(ba.beats, ba.get_duration())
-    
+
     def get_duration(self):
         return self._ba.get_duration()
-    
+
     def align_with_closest_downbeats(self, beat_result: BeatAnalysisResult) -> list[int]:
         """Align the time segments with the closest downbeats"""
         diffs = self._ba.beats[None, :] - beat_result.downbeats[:, None]

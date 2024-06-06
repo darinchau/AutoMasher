@@ -26,7 +26,7 @@ def correlations_from_chromograph(chromograph: NDArray) -> list[float]:
     """Inner function for calculating correlations. Expect chromograph to be ndarray of shape (12, N)"""
     assert chromograph.shape[0] == 12
     chroma = np.sum(chromograph, axis = 1)
-    
+
     maj_profile = get_major_profile()
     min_profile = get_minor_profile()
 

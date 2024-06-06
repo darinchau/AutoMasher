@@ -33,11 +33,11 @@ class SongGenre(Enum):
 
     def to_int(self) -> int:
         return self.mapping[self]
-    
+
     @staticmethod
     def from_int(i: int) -> SongGenre:
         return list(SongGenre)[i]
-    
+
 def _is_sorted(ls: list[float]):
     return all(a <= b for a, b in zip(ls, ls[1:]))
 
@@ -77,10 +77,10 @@ class DatasetEntry:
     def url_id(self):
         # return self.url[-11:]
         return get_video_id(self.url)
-    
+
     def __repr__(self):
         return f"DatasetEntry({self.audio_name} [{self.url_id}])"
-    
+
     def equal(self, value: DatasetEntry, *, eps: float = 1e-5) -> bool:
         """Check if the given value is equal to this entry. This is useful for testing purposes.
         This is a bit more lenient than __eq__ as it allows for some floating point error."""
@@ -119,7 +119,7 @@ class SongDataset:
 
     def get_by_url(self, url: str) -> DatasetEntry | None:
         return self._data.get(url, None)
-    
+
     def __getitem__(self, url: str | int) -> DatasetEntry:
         if isinstance(url, str):
             return self._data[url]
@@ -130,13 +130,13 @@ class SongDataset:
 
     def __len__(self):
         return len(self._data)
-    
+
     def __iter__(self):
         return iter(self._data.values())
-    
+
     def add_entry(self, entry: DatasetEntry):
         self._data[entry.url] = entry
-    
+
     def filter(self, filter_func: Callable[[DatasetEntry], bool] | None):
         """Returns a new dataset with the entries that satisfy the filter function. If filter_func is None, return yourself"""
         if filter_func is None:
@@ -146,7 +146,7 @@ class SongDataset:
             if filter_func(entry):
                 new_dataset.add_entry(entry)
         return new_dataset
-    
+
     def __repr__(self):
         return f"SongDataset({len(self)} entries)"
 

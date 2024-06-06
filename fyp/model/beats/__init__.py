@@ -6,6 +6,7 @@ import librosa
 from scipy.signal.windows import hann
 from librosa.core import stft
 import torch
+from typing import Iterable
 from .modules import DemixedDilatedTransformerModel
 from .tracker import unpack_beats, unpack_downbeats, require_madmom
 
@@ -51,7 +52,7 @@ def inference(parts: dict[str, np.ndarray], model_path: str, use_loaded_model: b
     x = np.transpose(x, (0, 2, 1))
     x = np.stack([librosa.power_to_db(x[i], ref=np.max) for i in range(len(x))])
     x = np.transpose(x, (0, 2, 1))
-    
+
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model = get_model(model_path, device, use_loaded_model)
 

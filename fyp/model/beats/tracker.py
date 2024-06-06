@@ -11,10 +11,10 @@ def require_madmom():
     except ImportError:
         raise ImportError("Please install madmom to use this function. Install madmom from `pip install git+https://github.com/darinchau/madmom`")
 
-def unpack_beats(activations: np.ndarray, *, 
+def unpack_beats(activations: np.ndarray, *,
                  min_bpm: float, max_bpm: float, fps: float, threshold: float,
                  num_tempi: int | None = None,
-                 transition_lambda: float = 100, 
+                 transition_lambda: float = 100,
                  observation_lambda: float = 6
                  ) -> np.ndarray:
     from madmom.features import DBNBeatTrackingProcessor

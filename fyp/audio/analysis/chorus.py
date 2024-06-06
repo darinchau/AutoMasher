@@ -13,7 +13,7 @@ def extract_chorus(parts: AudioCollection, beat_result: BeatAnalysisResult, audi
 	except Exception as e:
 		print("Error in pychorus:", e)
 		pychorus_result = TimeSegmentResult([], duration=audio.duration)
-	
+
 	vocals = parts['vocals']
 	time_segment_results = [
 		pychorus_result,

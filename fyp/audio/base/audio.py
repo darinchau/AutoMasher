@@ -52,9 +52,9 @@ class Audio(TimeSeries):
         assert len(self._data.shape) == 2
         assert 1 <= self._data.size(0) <= 2
         assert self._data.dtype == torch.float32
-    
+
     def __init__(self, data: Tensor, sample_rate: int):
-        """Data should be moved in - i.e. holding additional references of 
+        """Data should be moved in - i.e. holding additional references of
         data outside of the class and modifying it could lead to assertion errors"""
         self._data = data.detach()
         self._sample_rate = sample_rate
@@ -69,7 +69,7 @@ class Audio(TimeSeries):
         """The sample rate of the audio. Use the resample() method to change the sample rate"""
         self.sanity_check()
         return self._sample_rate
-    
+
     @property
     def nchannels(self) -> AudioMode:
         """Number of channels of the audio. Returns an AudioMode enum"""
@@ -81,40 +81,40 @@ class Audio(TimeSeries):
         """Return the duration (s) of the audio"""
         self.sanity_check()
         return self._data.size(1)/self._sample_rate
-    
+
     @property
     def volume(self) -> float:
         """Return a nonnegative float number that represents the volume of the thing (the RMS of the audio)"""
         self.sanity_check()
         return self._data.square().mean().sqrt().item()
-    
+
     @volume.setter
     def volume(self, value: float):
         """Set the volume of the audio to a certain value"""
         self.sanity_check()
         current_volume = self.volume
         self._data = self._data * value / current_volume
-    
+
     @property
     def device(self) -> torch.device:
         """Accessor for the device that the data is sitting on. Currently it is guaranteed to be cpu but we do not make this guarantee in the future"""
         self.sanity_check()
         return self._data.device
-    
+
     @property
     def nframes(self):
         """The length of the audio in terms of number of frames."""
         return int(self._data.size(1))
-    
+
     def get_data(self):
         """Returns a copy of the underlying audio data of the Audio object."""
         self.sanity_check()
         return self._data.clone()
-    
+
     def clone(self):
         """Returns an identical copy of self"""
         return Audio(self.get_data(), self._sample_rate)
-    
+
     def pad(self, target: int, front: bool = False) -> Audio:
         """Returns a new audio with the given number of frames and the same sample rate as self.
         If n < self.nframes, we will trim the audio; if n > self.nframes, we will perform zero padding
@@ -130,11 +130,11 @@ class Audio(TimeSeries):
                 new_data = self._data[:, -target:].clone()
             else:
                 new_data = torch.nn.functional.pad(self._data, [target - length, 0])
-        
+
         assert new_data.size(1) == target
 
         return Audio(new_data, self._sample_rate)
-    
+
     def to_nchannels(self, target: AudioMode | int) -> Audio:
         """Return self with the correct target. If you use int, you must guarantee the value is 1 or 2, otherwise you get an error"""
         if not isinstance(target, AudioMode) and not isinstance(target, int):
@@ -148,16 +148,16 @@ class Audio(TimeSeries):
         match (self.nchannels, target):
             case (AudioMode.MONO, AudioMode.MONO):
                 return self.clone()
-            
+
             case (AudioMode.STEREO, AudioMode.STEREO):
                 return self.clone()
-            
+
             case (AudioMode.MONO, AudioMode.STEREO):
                 return self.mix_to_stereo(left_mix=0.)
-            
+
             case (AudioMode.STEREO, AudioMode.MONO):
                 return Audio(self._data.mean(dim = 0, keepdim=True), self._sample_rate)
-        
+
         assert False, "Unreachable"
 
     def resample(self, target_sr: int, **kwargs) -> Audio:
@@ -165,13 +165,13 @@ class Audio(TimeSeries):
         self.sanity_check()
         if self._sample_rate == target_sr:
             return self.clone()
-        
+
         data = F.resample(self._data, self._sample_rate, target_sr, **kwargs)
         return Audio(data, target_sr)
-    
+
     def slice(self, start_frame: int = 0, end_frame: int = -1) -> Audio:
         """Takes the current audio and splice the audio between start (frames) and end (frames). Returns a new copy.
-        
+
         Specify end = -1 to take everything alll the way until the end"""
         assert start_frame >= 0
         assert end_frame == -1 or (end_frame > start_frame and end_frame <= self.nframes)
@@ -181,13 +181,13 @@ class Audio(TimeSeries):
             data = self._data[:, start_frame:]
         if end_frame > 0:
             data = self._data[:, start_frame:end_frame]
-        
+
         assert data is not None
         return Audio(data.clone(), self.sample_rate)
-    
+
     def slice_seconds(self, start: float = 0, end: float = -1) -> Audio:
         """Takes the current audio and splice the audio between start (seconds) and end (seconds). Returns a new copy.
-        
+
         Specify end = -1 to take everything alll the way until the end"""
         assert start >= 0
         start_frame = int(start * self._sample_rate)
@@ -246,7 +246,7 @@ class Audio(TimeSeries):
             print("Finished recording")
         recording = torch.as_tensor(recording, dtype = torch.float32).flatten().unsqueeze(0)
         return cls(recording, sample_rate)
-    
+
     def play(self, blocking: bool = False, info: list[tuple[str, float]] | None = None):
         """Plays audio in a separate thread. Use the stop() function or wait() function to let the audio stop playing.
         info is a list of stuff you want to print. Each element is a tuple of (str, float) where the float is the time in seconds
@@ -282,7 +282,7 @@ class Audio(TimeSeries):
             with stream:
                 event.wait()
                 self._stop_audio = True
-        
+
         if info is not None:
             blocking = True # Otherwise jupyter notebook will behave weirdly
         else:
@@ -300,18 +300,18 @@ class Audio(TimeSeries):
             self.wait()
 
     def stop(self):
-        """Attempts to stop the audio that's currently playing. If the audio is not playing, this does nothing."""        
+        """Attempts to stop the audio that's currently playing. If the audio is not playing, this does nothing."""
         self._stop_audio = True
         self.wait()
-    
+
     def wait(self):
         """Wait for the audio to stop playing. If the audio is not playing, this does nothing."""
         if self._thread is None:
             return
-        
+
         if not self._thread.is_alive():
             return
-        
+
         self._thread.join()
         self._thread = None
         self._stop_audio = False # Reset the state
@@ -329,7 +329,7 @@ class Audio(TimeSeries):
 
         if self.nchannels == other.nchannels == new_nchannels:
             return Audio(self._data + other._data, self._sample_rate)
-        
+
         # Make a recursive call to save space
         return self.to_nchannels(new_nchannels) + other.to_nchannels(new_nchannels)
 
@@ -348,7 +348,7 @@ class Audio(TimeSeries):
     def plot_waveform(self, keep_sr = False):
         """Plots the audio as a waveform. If keep_sr is true, then we plot the audio with the original sample rate. Otherwise we plot the audio with a lower sample rate to save time."""
         audio = self if keep_sr else self.resample(1000)
-        
+
         waveform = audio.numpy(keep_dims=True)
 
         num_channels = audio.nchannels.value
@@ -370,13 +370,13 @@ class Audio(TimeSeries):
         `self` and `other` must have the same sample rate"""
 
         nframe = int(nframe)
-        
+
         if self.sample_rate != other.sample_rate:
             raise RuntimeError(f"self ({self.sample_rate}) and other ({other.sample_rate}) has a different sample rate")
-        
+
         if nframe < 0:
             return other.add_to_frame(self, -nframe)
-        
+
         # see whether need to pad self or pad other
         # ------ self ------
         # (nframes) --- other ---
@@ -390,12 +390,12 @@ class Audio(TimeSeries):
         else:
             newother = other.pad(self.nframes)
             newself = self
-        
+
         return newself + newother
-    
+
     def join(self, other: Audio) -> Audio:
-        """Joins two audio back to back. Two audios must have the same sample rate. 
-        
+        """Joins two audio back to back. Two audios must have the same sample rate.
+
         Returns the new audio with the same sample rate and nframes equal to the sum of both"""
         assert self.sample_rate == other.sample_rate
 
@@ -425,10 +425,10 @@ class Audio(TimeSeries):
             return data.numpy()
         except Exception as e:
             return data.detach().cpu().numpy()
-    
+
     def apply(self, transform: AudioTransform, keep_dims = True) -> Audio:
         """Applies a transform to the audio and returns the transformed audio
-        
+
         if keep_dims is true, then if the sample rate of the transformed audio is different from the original audio, we will resample the audio to the original sample rate."""
         x = transform.apply(self._data, self._sample_rate)
         if not isinstance(x, tuple):
@@ -447,9 +447,9 @@ class Audio(TimeSeries):
             return self.clone()
         if speed < 0:
             raise ValueError("Speed must be nonnegative")
-        
+
         PI = 3.1415926535897932
-        
+
         audio = self._data
         audio_length = audio.size(-1)
 
@@ -459,7 +459,7 @@ class Audio(TimeSeries):
             win_length = n_fft
         if window is None:
             window = torch.hann_window(window_length = win_length, device = audio.device)
-        
+
         # Apply stft
         spectrogram = torch.stft(
             input = audio,
@@ -481,19 +481,19 @@ class Audio(TimeSeries):
 
         # Inverse the stft
         waveform_stretch = torch.istft(
-            stretched_spectrogram, 
-            n_fft = n_fft, 
-            hop_length = hop_length, 
-            win_length = win_length, 
-            window = window, 
+            stretched_spectrogram,
+            n_fft = n_fft,
+            hop_length = hop_length,
+            win_length = win_length,
+            window = window,
             length = len_stretch
         )
 
         return Audio(waveform_stretch, self.sample_rate)
-        
+
     def get_duration(self) -> float:
         return self.duration
-    
+
     def show_spectrogram(self):
         plt.style.use('dark_background')
         y = self.numpy()
@@ -508,9 +508,9 @@ class Audio(TimeSeries):
         ax.label_outer()
         fig.colorbar(img, ax=ax, format="%+2.f dB")
         return fig
-    
+
     def mix_to_stereo(self, left_mix: float = 0.) -> Audio:
-        """Mix a mono audio to stereo audio. The left_mix is the amount of left pan of the audio. 
+        """Mix a mono audio to stereo audio. The left_mix is the amount of left pan of the audio.
         Must be -1 <= left_mix <= 1. If -1 then the audio is completely on the left, if 1 then the audio is completely on the right"""
         if self.nchannels == AudioMode.STEREO:
             audio = self.to_nchannels(1)

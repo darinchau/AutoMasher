@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 import numba
 import heapq
-import typing 
+import typing
 from ..dataset import SongDataset, DatasetEntry
 from ..dataset.create import get_normalized_chord_result
 from .search_config import SearchConfig
@@ -31,31 +31,31 @@ def _calculate_distance_of_two_chords(chord1: str, chord2: str) -> tuple[int, st
     match (chord1, chord2):
         case ("No chord", "No chord"):
             score, result = 0, "No chord"
-        
+
         case ("No chord", "Unknown"):
             score, result = NO_CHORD_PENALTY, "Unknown"
-        
+
         case ("Unknown", "No chord"):
             score, result = NO_CHORD_PENALTY, "Unknown"
-        
+
         case ("Unknown", "Unknown"):
             score, result = 3, "Unknown"
-        
+
         case (_, "No chord"):
             score, result = NO_CHORD_PENALTY, chord1
-        
+
         case (_, "Unknown"):
             score, result = 3, "Unknown"
-        
+
         case ("No chord", _):
             score, result = NO_CHORD_PENALTY, chord2
-        
+
         case ("Unknown", _):
             score, result = 3, "Unknown"
-        
+
         case (_, _):
             score, result = distance_of_two_nonempty_chord(chord1, chord2)
-        
+
     assert result in chord_notes_map, f"{result} not a recognised chord"
     return score, result
 
@@ -68,7 +68,7 @@ def distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
     # Rule 0. If the chords are the same, distance is 0
     if chord1 == chord2:
         return 0, chord1
-    
+
     notes1 = chord_notes_map[chord1]
     notes2 = chord_notes_map[chord2]
 
@@ -78,12 +78,12 @@ def distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
 
     if notes2 <= notes1:
         return 1, chord1
-    
+
     # Rule 2. If the union of two chords is the same as the notes of one chord, distance is 1
     notes_union = notes1 | notes2
     if notes_union in chord_notes_inv:
         return 1, chord_notes_inv[notes_union]
-    
+
     # Rule 3. If the union of two chords is the same as the notes of one chord, distance is the number of notes in the symmetric difference
     diff = set(notes1) ^ set(notes2)
     return len(diff), "Unknown"
@@ -161,7 +161,7 @@ def _calculate_max_min_factors(db, sample_db, duration, sample_duration, max_fac
     orig_lengths = submitted_beat_times[1:] - submitted_beat_times[:-1]
     new_lengths = sample_beat_times[1:] - sample_beat_times[:-1]
     factors = new_lengths / orig_lengths
-    return factors.max() <= max_factor and factors.min() >= min_factor 
+    return factors.max() <= max_factor and factors.min() >= min_factor
 
 @numba.njit
 def _get_sliced_downbeats(downbeats, bounds):
@@ -184,7 +184,7 @@ class MashabilityScore:
 
     def get(self):
         return sorted([(-score, id) for score, id in self.heap])
-    
+
 class MashabilityList:
     def __init__(self):
         self.heap = []
@@ -196,7 +196,7 @@ class MashabilityList:
         return sorted(self.heap)
 
 # An optimized version of the legacy code
-def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult, 
+def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
                          dataset: SongDataset, first_k: int | None = None,
                          search_config: SearchConfig | None = None) -> list[tuple[float, str]]:
     """Find the best song in the data list that matches the given audio.
@@ -207,7 +207,7 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
     assert submitted_beat_result.downbeats[0] == 0.
     assert submitted_chord_result.duration == submitted_beat_result.duration
     search_config = search_config or SearchConfig()
-    
+
     # Normalize the submitted chord result with the submitted beat result
     submitted_normalized_cr = get_normalized_chord_result(submitted_chord_result, submitted_beat_result)
     times1 = submitted_normalized_cr.grouped_end_time_np
@@ -258,8 +258,8 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
             start_end = np.array([start_downbeat, end_downbeat], dtype = np.float32)
 
             trimmed_downbeats = _get_sliced_downbeats(sample_beat_result.downbeats, start_end)
-            is_bpm_within_tolerance =  _calculate_max_min_factors(submitted_beat_result.downbeats, trimmed_downbeats, 
-                                              submitted_beat_result.duration, end_downbeat - start_downbeat, 
+            is_bpm_within_tolerance =  _calculate_max_min_factors(submitted_beat_result.downbeats, trimmed_downbeats,
+                                              submitted_beat_result.duration, end_downbeat - start_downbeat,
                                               search_config.max_delta_bpm, search_config.min_delta_bpm)
             if not is_bpm_within_tolerance:
                 continue
@@ -268,7 +268,7 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
 
             for k, times1, chords1 in transposed_crs:
                 new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
-                
+
                 if search_config.extra_info:
                     timestamp = f"{downbeats[i]//60}:{downbeats[i]%60:.2f}"
                     views = f"{entry.views//1e9}B" if entry.views > 1e9 else f"{entry.views//1e6}M" if entry.views > 1e6 else f"{entry.views//1e3}K"

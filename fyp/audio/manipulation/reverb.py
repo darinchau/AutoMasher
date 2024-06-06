@@ -11,7 +11,7 @@ from torchaudio.utils import download_asset
 
 class ReverbSettings(Enum):
     """Contains several preset settings for reverb to support fast prototyping.
-    
+
     (Dev) Note: Python does not support using functions or audios as enum values. My suspicion is
     because neither functions nor audios are hashable. Use the get_method function to get the load method for reverb settings
     If you want to add more default settings, it is your responsibility now to add your own enum value
@@ -46,7 +46,7 @@ class ReverbSettings(Enum):
 
 class Reverb(AudioTransform):
     def __init__(self, aux: ReverbSettings | Any, conv_mode: str = "full"):
-        """The init method should take an audio object - please move in the audio ok. `conv_mode` specifies whether to trim the audio 
+        """The init method should take an audio object - please move in the audio ok. `conv_mode` specifies whether to trim the audio
         if the aux audio is too long. Check Conv1D for the specifications of this arg."""
         assert conv_mode in ('full', 'valid', 'same'), f"Convolution mode must be one of ('full', 'valid', 'same') but got '{conv_mode}'"
         self._mode = conv_mode

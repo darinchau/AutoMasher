@@ -22,4 +22,3 @@ class HighpassFilter(AudioTransform):
 
     def apply(self, audio: Tensor, sample_rate: int) -> Tensor:
         return F.highpass_biquad(audio, sample_rate, self.cutoff_freq, self.Q)
-    

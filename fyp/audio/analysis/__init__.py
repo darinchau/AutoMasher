@@ -60,7 +60,7 @@ def compare_bpm_trend(audio: Audio, beatanalysers: list[Callable[[Audio], BeatAn
 
         # Plot the x-y pairs
         plt.plot(bpm_diff_x, bpm_diff, label=name)
-    
+
     # Add labels and legends
     plt.xlabel("Frame")
     plt.ylabel("BPM")

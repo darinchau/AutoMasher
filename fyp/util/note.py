@@ -195,7 +195,7 @@ def get_chord_quality(chord: str) -> tuple[str, str]:
     assert chord in get_chord_notes(), f"{chord} not a recognised chord"
     if chord in ["No chord", "Unknown"]:
         return "", chord
-    
+
     if ":" in chord:
         note, quality = chord.split(":")
         return note, quality
@@ -206,9 +206,9 @@ def get_chord_quality(chord: str) -> tuple[str, str]:
 def transpose_chord(chord: str, semitone: int) -> str:
     if chord in ["No chord", "Unknown"]:
         return chord
-    
+
     if ":" in chord:
         root, quality = chord.split(":")
         return f"{move_semitone(root, semitone)}:{quality}"
-    
+
     return move_semitone(chord, semitone)

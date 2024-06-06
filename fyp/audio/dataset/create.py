@@ -46,7 +46,7 @@ def create_entry(length: float, beats: list[float], downbeats: list[float], chor
     for i in range(len(downbeats)):
         bar_cr = normalized_cr.slice_seconds(i, i + 1)
         music_duration.append(get_music_duration(bar_cr))
-    
+
     return DatasetEntry(
         chords=chords,
         chord_times=chord_times,

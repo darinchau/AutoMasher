@@ -13,10 +13,10 @@ class SearchConfig:
     The configuration for the search.
 
     Attributes:
-        max_transpose: The maximum number of semitones to transpose the audio. If a tuple, 
-            it will represent the range of transposition. If an integer, it will represent 
+        max_transpose: The maximum number of semitones to transpose the audio. If a tuple,
+            it will represent the range of transposition. If an integer, it will represent
             the maximum transposition (equivalent to (-k, k)). Default is 3.
-        
+
         min_music_percentage: The minimum percentage of music in the audio. Default is 0.8.
 
         max_delta_bpm: The maximum bpm deviation allowed for the queried song. Default is 1.25.
@@ -87,7 +87,7 @@ class SearchConfig:
     cache_dir: str | None = "./"
     cache: bool = True
     verbose: bool = False
-    
+
     def clone(self, **kwargs: Any):
         """Clones the SearchConfig with the new attributes"""
         new_kwargs = deepcopy(vars(self))

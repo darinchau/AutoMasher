@@ -17,7 +17,7 @@ class AudioCollection(TimeSeries, dict[str, Audio]):
             else:
                 raise ValueError(f"Expected Audio but found {type(v)}")
         return super().__new__(cls, *args, **kwargs)
-    
+
     def slice_seconds(self, start: float, end: float) -> AudioCollection:
         """Slice whatever we have between start and end seconds. After the slice, start becomes t=0"""
         return self.map(lambda x: x.slice_seconds(start, end))
@@ -33,7 +33,7 @@ class AudioCollection(TimeSeries, dict[str, Audio]):
         if len(self) == 0:
             raise NotImplementedError("Cannot get the duration of an empty audio collection")
         return list(self.values())[0].get_duration()
-    
+
     def __setitem__(self, __key: str, __value: Audio) -> None:
         if len(self) > 0:
             # assert __value.get_duration() == self.get_duration(), f"Duration mismatch: {__value.get_duration()} != {self.get_duration()}"
@@ -47,7 +47,7 @@ class AudioCollection(TimeSeries, dict[str, Audio]):
         if len(self) == 0:
             raise NotImplementedError("Cannot get the sample rate of an empty audio collection")
         return list(self.values())[0].sample_rate
-    
+
     @property
     def nframes(self):
         if len(self) == 0:

@@ -18,7 +18,7 @@ def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose = Tru
         return wav_filename
     except Exception as e:
         return "Error converting to wav", e
-    
+
 # Download video from YouTube given a URL and an output path
 def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
     def progress_callback(stream, chunk, bytes_remaining):
@@ -29,7 +29,7 @@ def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
         # Remake the youtube object for the progess bar
         if verbose:
             print(f"Downloading: {yt.title}")
-        
+
         video = YouTube(yt.watch_url, on_progress_callback=progress_callback).streams.filter(file_extension='mp4').get_lowest_resolution()
         progress_bar = tqdm(total=video.filesize, unit='B', unit_scale=True, ncols=100, disable=not verbose)
         video.download(output_path=output_path, timeout=timeout)
@@ -70,7 +70,7 @@ def download_audio_with_pytube(link: str, output_dir: str, verbose=True, timeout
     video_path = download_video(yt, output_dir, verbose=verbose, timeout=timeout)
     if isinstance(video_path, tuple):
         raise RuntimeError(f"Error downloading video: {video_path[1]}")
-    
+
     audio_path = convert_to_wav(video_path, output_dir, verbose = False)
     if isinstance(audio_path, tuple):
         raise RuntimeError(f"Error converting to wav: {audio_path[1]}")

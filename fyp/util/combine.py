@@ -19,7 +19,7 @@ def get_url(link_or_video_id: str):
 def show_audio_spectrogram(audio, link: str):
     from .. import Audio
     assert isinstance(audio, Audio)
-    
+
     plt.style.use('dark_background')
     y = audio.numpy()
     sr = audio.sample_rate

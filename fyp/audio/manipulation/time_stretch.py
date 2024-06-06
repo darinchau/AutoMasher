@@ -9,11 +9,11 @@ PI = 3.1415926535897932
 
 class TimeStretch(AudioTransform):
     """Stretchs the audio by a factor of `delta` without changing the pitch. If delta = 1.1, then this corresponds to making audio 10% faster"""
-    def __init__(self, delta: float, 
-                 n_fft: int = 512, 
-                 win_length: int | None = None, 
-                 hop_length: int | None = None, 
-                 window: Tensor | None = None, 
+    def __init__(self, delta: float,
+                 n_fft: int = 512,
+                 win_length: int | None = None,
+                 hop_length: int | None = None,
+                 window: Tensor | None = None,
                  ):
         """delta(float): How much to shift the audio"""
         self._delta = delta

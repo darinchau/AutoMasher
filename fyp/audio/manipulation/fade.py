@@ -7,10 +7,10 @@ from .base import AudioTransform
 from torch import Tensor
 
 class FadeType(Enum):
-    QUARTER_SINE = "quarter_sine" 
+    QUARTER_SINE = "quarter_sine"
     HALF_SINE = "half_sine"
     LINEAR = "linear"
-    LOGARITHMIC = "logarithmic" 
+    LOGARITHMIC = "logarithmic"
     EXPONENTIAL = "exponential"
 
 class FadeExact(AudioTransform):
@@ -19,7 +19,7 @@ class FadeExact(AudioTransform):
         self.mode = mode
         self.fadein = fade_in_frames
         self.fadeout = fade_out_frames
-    
+
     def apply(self, audio: Tensor, sample_rate: int) -> Tensor:
         fade = T.Fade(fade_in_len = self.fadein, fade_out_len = self.fadeout, fade_shape = self.mode.value)
         return fade(audio)
@@ -30,7 +30,7 @@ class Fade(AudioTransform):
         self.fadein = fade_in_seconds
         self.fadeout = fade_out_seconds
         self.mode = mode
-    
+
     def apply(self, audio: Tensor, sample_rate: int) -> Tensor:
         fadein = int(self.fadein * sample_rate)
         fadeout = int(self.fadeout * sample_rate)

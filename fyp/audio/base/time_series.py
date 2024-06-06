@@ -53,7 +53,7 @@ class TimeSeries(metaclass=ABCMeta):
             segments.append(ending)
 
         return self.join_all(segments)
-    
+
     def align_from_boundaries(self: T, factors: list[float], boundaries: list[float]) -> T:
         """Align the segments to the boundaries"""
         assert len(factors) == len(boundaries)
