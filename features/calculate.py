@@ -15,10 +15,9 @@ from fyp.audio.dataset.create import create_entry
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import tempfile
 
-# Return true if this song should be processed, false otherwise
-# Duplicate handling should not be queried here
 def filter_song(yt: YouTube) -> bool:
-    if yt.length > 600 or yt.length < 120:
+    """Returns True if the song should be processed, False otherwise."""
+    if yt.length >= 600 or yt.length < 120:
         return False
 
     if yt.age_restricted:
@@ -75,6 +74,13 @@ def cleanup_temp_dir():
                 print(f"Deleted {filename}")
             except Exception as e:
                 print(f"Failed to delete file: {file_path}")
+
+def get_processed_urls(dataset_path: str) -> set[str]:
+    processed_urls = set()
+    for file in os.listdir(dataset_path):
+        if file.endswith(".data"):
+            processed_urls.add(file[:-5])
+    return processed_urls
 
 def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGenre) -> DatasetEntry | None:
     print(f"Audio length: {audio.duration} ({YouTube(video_url).length})")

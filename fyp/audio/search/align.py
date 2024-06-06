@@ -192,8 +192,6 @@ class MashabilityList:
     def get(self):
         return sorted(self.heap)
 
-from line_profiler import profile
-@profile
 def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
                          dataset: SongDataset, search_config: SearchConfig | None = None) -> list[tuple[float, MashabilityResult]]:
     """Find the best song in the data list that matches the given audio.
