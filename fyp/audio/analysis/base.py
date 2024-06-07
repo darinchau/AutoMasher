@@ -26,6 +26,8 @@ class BeatAnalysisResult(TimeSeries):
     def __post_init__(self):
         assert len(self.beats) == 0 or self.duration >= self.beats[-1]
         assert len(self.downbeats) == 0 or self.duration >= self.downbeats[-1]
+        assert isinstance(self.beats, np.ndarray)
+        assert isinstance(self.downbeats, np.ndarray)
 
     @property
     def tempo(self):
@@ -97,7 +99,7 @@ class BeatAnalysisResult(TimeSeries):
     def load(cls, path: str):
         with open(path, "r") as f:
             data = json.load(f)
-        return cls(data["duration"], data["beats"], data["downbeats"])
+        return cls.from_data(data["duration"], data["beats"], data["downbeats"])
 
 @dataclass(frozen=True)
 class KeyAnalysisResult:

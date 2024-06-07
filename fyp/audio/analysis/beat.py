@@ -82,7 +82,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
         beat_frames = [x for x in beat_frames if x < duration]
         downbeat_frames = [x for x in downbeat_frames if x < duration]
 
-        result = BeatAnalysisResult(duration, beat_frames, downbeat_frames)
+        result = BeatAnalysisResult.from_data(duration, beat_frames, downbeat_frames)
         return result
 
     if cache_path is not None and os.path.isfile(cache_path):
