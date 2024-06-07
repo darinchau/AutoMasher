@@ -38,7 +38,7 @@ def clear_output():
     except (ImportError, NameError) as e:
         os.system("cls" if "nt" in os.name else "clear")
 
-def write_error(error: str, exec: Exception, error_file: str = "./features/error.txt"):
+def write_error(error: str, exec: Exception, error_file: str = "./scripts/error.txt"):
     with open(error_file, "a") as file:
         file.write(f"{error}: {exec}\n")
         file.write("".join(traceback.format_exception(exec)))
@@ -287,9 +287,9 @@ def clean_playlist_queue(queue_path: str):
 
 # Main function
 def main():
-    queue_path = "./features/playlist_queue.txt"
+    queue_path = "./scripts/playlist_queue.txt"
     dataset_path = "./resources/dataset/audio-infos-v2"
-    error_file = "./features/error.txt"
+    error_file = "./scripts/error.txt"
 
     # Sanity check
     if not os.path.exists(queue_path):
