@@ -101,10 +101,10 @@ def calculate_distance_array():
     for i in range(n):
         for j in range(n):
             distance_array[i][j], _ = _calculate_distance_of_two_chords(chord_mapping[i], chord_mapping[j])
-    return np.array(distance_array)
+    return np.array(distance_array, dtype = np.int32)
 
 # Calculates the distance of chord results except we only put everything as np arrays for numba jit
-@numba.njit
+@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.int32[:], numba.int32[:], numba.int32[:, :]), nopython=True)
 def _dist_chord_results(times1, times2, chords1, chords2, distances):
     """A jitted version of the chord result distance calculation, which is defined to be the sum of distances times time
     between the two chord results. The distance between two chords is defined to be the distance between the two chords.
@@ -169,29 +169,44 @@ class MashabilityResult:
     def get_empty():
         return MashabilityResult("", 0, 0, "", 0., SongGenre.POP, 0)
 
+MashabilityResultType = tuple[int, int, Any, DatasetEntry]
+
 # Use a more efficient data scructure to store the scores
 class MashabilityHeap:
     """A class to store the scores of the mashability of the songs. It keeps the top k scores in a heap."""
     def __init__(self, keep_first_k: int):
         assert keep_first_k > 0, "Use a Mashability List instead"
-        self.heap: list[tuple[float, MashabilityResult]] = [(float("-inf"), MashabilityResult.get_empty()) for _ in range(keep_first_k)]
+        self.heap: list[tuple[float, tuple]] = [(float("-inf"), ()) for _ in range(keep_first_k)]
 
-    def insert(self, score: float, id: MashabilityResult):
+    def insert(self, score: float, id: MashabilityResultType):
         heapq.heappushpop(self.heap, (-score, id))
 
-    def get(self):
-        return sorted([(-score, id) for score, id in self.heap])
+    def get(self) -> list[tuple[float, MashabilityResult]]:
+        entries = [(-score, id) for score, id in self.heap if len(id) > 0]
+        ls = MashabilityList()
+        ls.heap = entries
+        return ls.get()
 
 class MashabilityList:
     def __init__(self):
-        self.heap: list[tuple[float, MashabilityResult]] = []
+        self.heap: list[tuple[float, MashabilityResultType]] = []
 
-    def insert(self, score: float, id: MashabilityResult):
+    def insert(self, score: float, id: MashabilityResultType):
         self.heap.append((score, id))
 
-    def get(self):
-        return sorted(self.heap)
+    def get(self) -> list[tuple[float, MashabilityResult]]:
+        return sorted([(score, MashabilityResult(
+            id=entry.url_id,
+            start_bar=i,
+            transpose=k,
+            title=entry.audio_name,
+            timestamp=start,
+            genre=entry.genre,
+            views=entry.views
+        )) for score, (i, k, start, entry) in self.heap])
 
+from line_profiler import profile
+@profile
 def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
                          dataset: SongDataset, search_config: SearchConfig | None = None) -> list[tuple[float, MashabilityResult]]:
     """Find the best song in the data list that matches the given audio.
@@ -208,14 +223,14 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
     chords1 = submitted_normalized_cr.grouped_labels_np
 
     # Transpose the submitted chord result in the opposite direction to speed up calculation
-    transposed_crs = []
+    transposed_crs: list[tuple[int, NDArray, NDArray]] = []
     if isinstance(search_config.max_transpose, int):
         max_transpose = (-search_config.max_transpose, search_config.max_transpose)
-    for k in range(max_transpose[0], max_transpose[1] + 1):
-        new_chord_result = submitted_normalized_cr.transpose(-k)
+    for transpose_semitone in range(max_transpose[0], max_transpose[1] + 1):
+        new_chord_result = submitted_normalized_cr.transpose(-transpose_semitone)
         times1 = new_chord_result.grouped_end_time_np
         chords1 = new_chord_result.grouped_labels_np
-        transposed_crs.append((k, times1, chords1))
+        transposed_crs.append((transpose_semitone, times1, chords1))
 
     # Precalculate chord distances as a numpy array to take advantage of jit
     distances = calculate_distance_array()
@@ -225,10 +240,9 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
     # Initiate progress bar
     for entry in tqdm(dataset, desc="Searching database", disable=not search_config.verbose):
         # Create and normalize the sample chord result and beat result
-        id = entry.url_id
         sample_downbeats = np.array(entry.downbeats, dtype=np.float32)
 
-        sample_normalized_chords = np.array(entry.chords)
+        sample_normalized_chords = np.array(entry.chords, dtype = np.int32)
         sample_normalized_chord_times = np.array(entry.normalized_chord_times)
         submitted_beat_times = np.append(submitted_beat_result.downbeats, submitted_beat_result.duration)
         submitted_beat_times_diff = submitted_beat_times[1:] - submitted_beat_times[:-1]
@@ -242,16 +256,13 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
 
             times2, chords2 = _slice_chord_result(sample_normalized_chord_times, sample_normalized_chords, i, i+nbars)
 
-            for k, times1, chords1 in transposed_crs:
+            for transpose_semitone, times1, chords1 in transposed_crs:
                 new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
-                new_id = MashabilityResult(
-                    id=id,
-                    start_bar=i,
-                    transpose=k,
-                    title=entry.audio_name,
-                    timestamp=sample_downbeats[i],
-                    genre=entry.genre,
-                    views=entry.views
+                new_id = (
+                    i,
+                    transpose_semitone,
+                    sample_downbeats[i],
+                    entry
                 )
                 scores.insert(new_score, new_id)
     scores_list = scores.get()
