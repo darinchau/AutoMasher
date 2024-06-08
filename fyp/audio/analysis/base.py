@@ -167,12 +167,12 @@ class ChordAnalysisResult(TimeSeries):
     @property
     def grouped_end_time_np(self):
         """Returns a numpy array of grouped end times. This is mostly useful for dataset search"""
-        return np.array(self.group().times[1:] + [self.duration])
+        return np.array(self.group().times[1:] + [self.duration], dtype=np.float64)
 
     @property
     def grouped_labels_np(self):
         """Returns a numpy array of grouped labels. This is mostly useful for dataset search"""
-        return np.array(self.group().labels)
+        return np.array(self.group().labels, dtype=np.int32)
 
     @property
     def chords(self):

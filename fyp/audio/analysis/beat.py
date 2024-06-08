@@ -16,7 +16,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
                                 parts: AudioCollection | Callable[[], AudioCollection] | None = None,
                                 separator: AudioSeparator | None = None,
                                 do_normalization: bool = False, cache_path: str | None = None,
-                                model_path: str = "../../resources/ckpts/beat_transformer.pt",
+                                model_path: str = "./resources/ckpts/beat_transformer.pt",
                                 use_loaded_model: bool = True) -> BeatAnalysisResult:
     """Beat transformer but runs locally using Demucs and some uh workarounds
 
@@ -27,7 +27,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
         separator (AudioSeparator, optional): The separator to use. Defaults to None.
         do_normalization (bool, optional): Whether to normalize the downbeat frames to the closest beat frame. Defaults to False.
         cache_path (str, optional): The path to save the cache. Defaults to None.
-        model_path (str, optional): The path to the model. Defaults to "../../resources/ckpts/beat_transformer.pt"."""
+        model_path (str, optional): The path to the model. Defaults to "./resources/ckpts/beat_transformer.pt"."""
     def calculate_beats():
         # Handle audio/parts case
         duration = -1.

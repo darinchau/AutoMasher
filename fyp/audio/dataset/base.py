@@ -78,14 +78,20 @@ class DatasetEntry:
     def get_playlist_prepend():
         return "https://www.youtube.com/playlist?list="
 
+    @staticmethod
+    def get_url_prepend():
+        return "https://www.youtube.com/watch?v="
+
     def __post_init__(self):
         assert len(self.chords) == len(self.chord_times) == len(self.normalized_chord_times)
         assert len(self.downbeats) == len(self.music_duration)
-        assert all(0 <= c <= 600 for c in self.chord_times)
-        assert all(0 <= c <= 170 for c in self.chords)
-        assert all(0 <= c <= 600 for c in self.downbeats)
-        assert all(0 <= c <= 600 for c in self.beats)
+        assert all(0 <= c < 600 for c in self.chord_times)
+        assert all(0 <= c < 170 for c in self.chords)
+        assert all(0 <= c < 600 for c in self.downbeats)
+        assert all(0 <= c < 600 for c in self.beats)
         assert self.playlist.startswith(self.get_playlist_prepend())
+        assert self.url.startswith(self.get_url_prepend())
+        assert len(self.url) > 11
         assert self.views >= 0
         assert self.length > 0
         assert _is_sorted(self.chord_times)

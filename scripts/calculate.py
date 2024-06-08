@@ -4,7 +4,9 @@ from pytube import Playlist
 from fyp import Audio
 from fyp.audio.separation import DemucsAudioSeparator
 from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transformer
-from fyp.audio.dataset import DatasetEntry, SongGenre, DatasetEntryEncoder, create_entry
+from fyp.audio.dataset import DatasetEntry, SongGenre
+from fyp.audio.dataset.compress import DatasetEntryEncoder
+from fyp.audio.dataset.create import create_entry
 from fyp.util import is_ipython, clear_cuda
 from fyp.util.combine import get_video_id, get_url
 import time

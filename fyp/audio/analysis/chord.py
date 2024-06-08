@@ -8,7 +8,7 @@ from ...model import chord_inference as inference
 from ...util.note import get_idx2voca_chord
 from ...util.note import get_inv_voca_map
 
-def analyse_chord_transformer(audio: Audio, *, model_path: str = "../../resources/ckpts/btc_model_large_voca.pt",
+def analyse_chord_transformer(audio: Audio, *, model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
                               use_loaded_model: bool = True,
                               cache_path: str | None = None) -> ChordAnalysisResult:
     def calculate_chord():

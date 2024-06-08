@@ -218,11 +218,11 @@ class MashabilityList:
             timestamp=start,
             genre=entry.genre,
             views=entry.views
-        )) for score, (i, k, start, entry) in self.heap])
+        )) for score, (i, k, start, entry) in self.heap], key=lambda x: x[0])
 
-def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
+def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
                          dataset: SongDataset, search_config: SearchConfig | None = None) -> list[tuple[float, MashabilityResult]]:
-    """Find the best song in the data list that matches the given audio.
+    """Calculate the mashability of the submitted song with the dataset.
     Assuming the chord result is always short enough
     Assume t=0 is always a downbeat
     Returns the best score and the best entry in the dataset."""
@@ -232,13 +232,13 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
     search_config = search_config or SearchConfig()
 
     submitted_normalized_cr = get_normalized_chord_result(submitted_chord_result, submitted_beat_result)
-    times1 = submitted_normalized_cr.grouped_end_time_np
-    chords1 = submitted_normalized_cr.grouped_labels_np
 
     # Transpose the submitted chord result in the opposite direction to speed up calculation
     transposed_crs: list[tuple[int, NDArray, NDArray]] = []
     if isinstance(search_config.max_transpose, int):
         max_transpose = (-search_config.max_transpose, search_config.max_transpose)
+    else:
+        max_transpose = search_config.max_transpose
     for transpose_semitone in range(max_transpose[0], max_transpose[1] + 1):
         new_chord_result = submitted_normalized_cr.transpose(-transpose_semitone)
         times1 = new_chord_result.grouped_end_time_np
@@ -252,9 +252,9 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
 
     # Initiate progress bar
     for entry in tqdm(dataset, desc="Searching database", disable=not search_config.verbose):
-        sample_downbeats = np.array(entry.downbeats, dtype=np.float32)
+        sample_downbeats = np.array(entry.downbeats, dtype=np.float64)
         sample_normalized_chords = np.array(entry.chords, dtype = np.int32)
-        sample_normalized_chord_times = np.array(entry.normalized_chord_times)
+        sample_normalized_chord_times = np.array(entry.normalized_chord_times, dtype = np.float64)
         submitted_beat_times = np.append(submitted_beat_result.downbeats, submitted_beat_result.duration)
         submitted_beat_times_diff = submitted_beat_times[1:] - submitted_beat_times[:-1]
 
