@@ -7,12 +7,12 @@ from abc import ABC, abstractmethod
 from typing import Iterator, TypeVar, Generic
 from .base import DatasetEntry, SongDataset, SongGenre
 from ...util.combine import get_url
-from .create import create_entry
 from collections import Counter
 import numpy as np
 from math import ceil, exp
 from typing import Iterator
 import struct
+from .create import create_entry
 
 T = TypeVar('T')
 class BitsEncoder(ABC, Generic[T]):

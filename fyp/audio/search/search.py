@@ -5,7 +5,8 @@ from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_tra
 from ..analysis import TimeSegmentResult
 from ... import Audio
 from typing import Any
-from ..dataset import SongDataset, DatasetEntry, create_entry, SongGenre
+from ..dataset import SongDataset, DatasetEntry, SongGenre
+from ..dataset.create import create_entry
 from ..separation import DemucsAudioSeparator
 from math import exp
 from .search_config import SearchConfig
@@ -221,7 +222,8 @@ def search_song(state: SongSearchState) -> list[tuple[float, MashabilityResult]]
     scores = [s for s in scores if state.search_config.min_score <= s[0] <= state.search_config.max_score]
     return scores
 
-def calculate_self_similarity_from_analysis(ct: ChordAnalysisResult, bt: BeatAnalysisResult, nbars: int = 4):
+def calculate_self_similarity(ct: ChordAnalysisResult, bt: BeatAnalysisResult, nbars: int):
+    """Calculate the self-similarity of the song on a downbeat level."""
     entries = SongDataset()
     entries.add_entry(create_entry(
         length=ct.get_duration(),
@@ -245,10 +247,37 @@ def calculate_self_similarity_from_analysis(ct: ChordAnalysisResult, bt: BeatAna
 
     return np.array(scores)
 
+def calculate_self_similarity_beat(ct: ChordAnalysisResult, bt: BeatAnalysisResult, nbars: int):
+    """Calculate the self-similarity of the song on a beat level."""
+    entries = SongDataset()
+    entries.add_entry(create_entry(
+        length=ct.get_duration(),
+        chords=ct.labels,
+        chord_times=ct.times,
+        beats=bt.beats.tolist(),
+        downbeats=bt.beats.tolist(),
+        url="dummy_url",
+        views=1234,
+        genre=SongGenre.POP,
+        audio_name="dummy_audio",
+        playlist="dummy_playlist"
+    ))
+
+    start = len(bt.beats) - nbars
+    scores = []
+
+    bt2 = BeatAnalysisResult(beats=bt.beats, downbeats=bt.beats, duration=bt.duration)
+
+    for i in range(start):
+        score = restrictive_search(ct, bt2, entries, i, 0, nbars)
+        scores.append(score)
+
+    return np.array(scores)
+
 
 def restrictive_search(chord_result: ChordAnalysisResult, beat_result: BeatAnalysisResult,
                    dataset: SongDataset, start_bar_number: int, transpose: int, nbars: int):
-    """Search for the best score with the given parameters. This is a helper function for the Ford Fulkerson algorithm."""
+    """Search for the best score with the given parameters."""
     new_search_config = SearchConfig(
         max_transpose=(transpose, transpose),
         bar_number=start_bar_number,
