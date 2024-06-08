@@ -46,6 +46,21 @@ def _is_sorted(ls: list[float]):
 
 @dataclass(frozen=True)
 class DatasetEntry:
+    """A single entry in the dataset. This is a dataclass that represents a single entry in the dataset.
+    Typically we use the create_entry function to create a DatasetEntry object.
+
+    chords: list[int] - The chord progression of the song
+    chord_times: list[float] - The time in seconds where the chord changes
+    downbeats: list[float] - The time in seconds where the downbeats are
+    beats: list[float] - The time in seconds where the beats are
+    genre: SongGenre - The genre of the song
+    audio_name: str - The name of the audio file
+    url: str - The url of the youtube video
+    playlist: str - The url of the youtube playlist this song is taken from
+    views: int - The number of views of the video at the time of scraping
+    length: float - The length of the song in seconds
+    normalized_chord_times: list[float] - The normalized chord times
+    music_duration: list[float] - The percentage of the music at each bar"""
     chords: list[int]
     chord_times: list[float]
     downbeats: list[float]

@@ -104,7 +104,16 @@ def calculate_distance_array():
     return np.array(distance_array, dtype = np.int32)
 
 # Calculates the distance of chord results except we only put everything as np arrays for numba jit
-@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.int32[:], numba.int32[:], numba.int32[:, :]), nopython=True)
+@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.int32[:], numba.int32[:], numba.int32[:, :]), locals={
+    "score": numba.float64,
+    "cumulative_duration": numba.float64,
+    "idx1": numba.int32,
+    "idx2": numba.int32,
+    "len_t1": numba.int32,
+    "len_t2": numba.int32,
+    "min_time": numba.float64,
+    "new_score": numba.float64
+},nopython=True)
 def _dist_chord_results(times1, times2, chords1, chords2, distances):
     """A jitted version of the chord result distance calculation, which is defined to be the sum of distances times time
     between the two chord results. The distance between two chords is defined to be the distance between the two chords.
@@ -114,8 +123,10 @@ def _dist_chord_results(times1, times2, chords1, chords2, distances):
 
     idx1 = 0
     idx2 = 0
+    len_t1 = len(times1)
+    len_t2 = len(times2)
 
-    while idx1 < len(times1) and idx2 < len(times2):
+    while idx1 < len_t1 and idx2 < len_t2:
         # Find the duration of the next segment to calculate
         min_time = min(times1[idx1], times2[idx2])
 
@@ -154,6 +165,14 @@ def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: Be
 
 @dataclass(frozen=True)
 class MashabilityResult:
+    """A class to store the result of the mashability of the songs.
+    id: The id of the song in the dataset (aka the 11 character url id)
+    start_bar: The starting bar of the song
+    transpose: Number of semitones to transpose the sample song to match the submitted song
+    title: The title of the song
+    timestamp: The timestamp of the song in the Audio
+    genre: The genre of the song
+    views: The number of views of the song as of the time of the dataset creation"""
     id: str
     start_bar: int
     transpose: int
@@ -164,10 +183,6 @@ class MashabilityResult:
 
     def __repr__(self):
         return f"MashabilityResult({self.id}/{self.start_bar}/{self.transpose})"
-
-    @staticmethod
-    def get_empty():
-        return MashabilityResult("", 0, 0, "", 0., SongGenre.POP, 0)
 
 MashabilityResultType = tuple[int, int, Any, DatasetEntry]
 
@@ -205,8 +220,6 @@ class MashabilityList:
             views=entry.views
         )) for score, (i, k, start, entry) in self.heap])
 
-from line_profiler import profile
-@profile
 def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
                          dataset: SongDataset, search_config: SearchConfig | None = None) -> list[tuple[float, MashabilityResult]]:
     """Find the best song in the data list that matches the given audio.
@@ -239,29 +252,29 @@ def search_database(submitted_chord_result: ChordAnalysisResult, submitted_beat_
 
     # Initiate progress bar
     for entry in tqdm(dataset, desc="Searching database", disable=not search_config.verbose):
-        # Create and normalize the sample chord result and beat result
         sample_downbeats = np.array(entry.downbeats, dtype=np.float32)
-
         sample_normalized_chords = np.array(entry.chords, dtype = np.int32)
         sample_normalized_chord_times = np.array(entry.normalized_chord_times)
         submitted_beat_times = np.append(submitted_beat_result.downbeats, submitted_beat_result.duration)
         submitted_beat_times_diff = submitted_beat_times[1:] - submitted_beat_times[:-1]
 
-        # Calculate the scores for each bar
         for i in entry.get_valid_starting_points(nbars, search_config.min_music_percentage):
-            # Calculate the boundaries
             is_bpm_within_tolerance = _calculate_tolerance(submitted_beat_times_diff, sample_downbeats, search_config.max_delta_bpm, search_config.min_delta_bpm, nbars, i)
             if not is_bpm_within_tolerance:
                 continue
 
             times2, chords2 = _slice_chord_result(sample_normalized_chord_times, sample_normalized_chords, i, i+nbars)
-
+            starting_downbeat = sample_downbeats[i]
             for transpose_semitone, times1, chords1 in transposed_crs:
                 new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
+                # Use a tuple instead of a dataclass for now, will change it back to a dataclass in scores.get
+                # This is because using tuple literal syntax skips the step to find the dataclass constructor name
+                # in global scope. We profiled the code line by line and found this to save around 30% of runtime
+                # Since this gets hit so many times, it's worth it
                 new_id = (
                     i,
                     transpose_semitone,
-                    sample_downbeats[i],
+                    starting_downbeat,
                     entry
                 )
                 scores.insert(new_score, new_id)

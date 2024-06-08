@@ -1,10 +1,11 @@
 from __future__ import annotations
 import os
+import numpy as np
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
 from ..analysis import TimeSegmentResult
 from ... import Audio
 from typing import Any
-from ..dataset import SongDataset
+from ..dataset import SongDataset, DatasetEntry, create_entry, SongGenre
 from ..separation import DemucsAudioSeparator
 from math import exp
 from .search_config import SearchConfig
@@ -25,8 +26,6 @@ def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[fl
 
 def curve_score(score: float) -> float:
     """Returns the curve score"""
-    # # Unnormalize the score back to its original duration
-    # score_ = score * bar_length
     return round(100 * exp(-.05 * score), 2)
 
 class SongSearchState:
@@ -177,15 +176,14 @@ class SongSearchState:
         return self._submitted_parts
 
     def _chorus_analysis(self):
-        """Extracts the chorus and returns the start bar and the number of bars"""
+        """Calculates the start bar and the number of bars of the slice. If the bar number is provided, it will use that instead."""
         if self.search_config.bar_number is not None:
-            self._slice_start_bar = self.search_config.bar_number
-            self._slice_nbar = self.search_config.nbars if self.search_config.nbars is not None else 8
+            _slice_start_bar = self.search_config.bar_number
+            _slice_nbar = self.search_config.nbars if self.search_config.nbars is not None else 8
+            if _slice_start_bar + _slice_nbar >= len(self.raw_beat_result.downbeats):
+                raise ValueError(f"Bar number out of bounds: {_slice_start_bar + _slice_nbar} >= {len(self.raw_beat_result.downbeats)}")
+            return _slice_start_bar, _slice_nbar
 
-            if self._slice_start_bar + self._slice_nbar >= len(self.raw_beat_result.downbeats):
-                raise ValueError(f"Bar number out of bounds: {self._slice_start_bar + self._slice_nbar} >= {len(self.raw_beat_result.downbeats)}")
-
-            return self._slice_start_bar, self._slice_nbar
         slice_ranges = extract_chorus(self.raw_parts_result, self.raw_beat_result, self.audio, work_factor=self.search_config.pychorus_work_factor)
         slice_nbar = 8
         slice_start_bar = 0
@@ -198,11 +196,9 @@ class SongSearchState:
         slice_nbar = self.search_config.nbars if self.search_config.nbars is not None else slice_nbar
 
         assert slice_start_bar + slice_nbar < len(self.raw_beat_result.downbeats)
-        self._slice_start_bar = slice_start_bar
-        self._slice_nbar = slice_nbar
         return slice_start_bar, slice_nbar
 
-def search_song(state: SongSearchState):
+def search_song(state: SongSearchState) -> list[tuple[float, MashabilityResult]]:
     """Searches for songs that match the audio. Returns a list of tuples, where the first element is the score and the second element is the url.
 
     :param link: The link of the audio
@@ -220,10 +216,63 @@ def search_song(state: SongSearchState):
     if state.search_config.filter_first:
         scores_ = filter_first(scores_)
 
-    # bar_length = 60 / self.submitted_beat_result.tempo
-
-    ## Curve the scores
     scores = [(curve_score(x[0]), x[1]) for x in scores_]
     state._all_scores = scores
     scores = [s for s in scores if state.search_config.min_score <= s[0] <= state.search_config.max_score]
     return scores
+
+def calculate_self_similarity_from_analysis(ct: ChordAnalysisResult, bt: BeatAnalysisResult, nbars: int = 4):
+    entries = SongDataset()
+    entries.add_entry(create_entry(
+        length=ct.get_duration(),
+        chords=ct.labels,
+        chord_times=ct.times,
+        beats=bt.beats.tolist(),
+        downbeats=bt.downbeats.tolist(),
+        url="dummy_url",
+        views=1234,
+        genre=SongGenre.POP,
+        audio_name="dummy_audio",
+        playlist="dummy_playlist"
+    ))
+
+    start = len(bt.downbeats) - nbars
+    scores = []
+
+    for i in range(start):
+        score = restrictive_search(ct, bt, entries, i, 0, nbars)
+        scores.append(score)
+
+    return np.array(scores)
+
+
+def restrictive_search(chord_result: ChordAnalysisResult, beat_result: BeatAnalysisResult,
+                   dataset: SongDataset, start_bar_number: int, transpose: int, nbars: int):
+    """Search for the best score with the given parameters. This is a helper function for the Ford Fulkerson algorithm."""
+    new_search_config = SearchConfig(
+        max_transpose=(transpose, transpose),
+        bar_number=start_bar_number,
+        filter_first=False,
+        nbars=nbars,
+        min_music_percentage=0,
+        max_delta_bpm=float('inf'),
+        min_delta_bpm=0,
+        progress_bar=False,
+    )
+
+    search_state = SongSearchState(
+        link="dummy_url",
+        config=new_search_config,
+        dataset=dataset
+    )
+
+    # Inject the searcher with our chord and beat informations
+    search_state._raw_beat_result = beat_result
+    search_state._raw_chord_result = chord_result
+    scores = search_song(search_state)
+
+    # Collect the scores
+    new_scores = [0.] * len(scores)
+    for score in scores:
+        new_scores[score[1].start_bar] = score[0]
+    return new_scores
