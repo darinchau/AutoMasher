@@ -74,6 +74,7 @@ nohup.out
 
 resources/*
 !resources/ckpts
+!resources/*.db
 *.ipynb
 !demo.ipynb
 scripts/*

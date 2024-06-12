@@ -3,7 +3,6 @@
 from __future__ import annotations
 import os
 from dataclasses import dataclass
-from datasets import load_dataset, Dataset
 from typing import Any, Callable, Optional
 from copy import deepcopy
 from ...util.combine import get_video_id
@@ -199,7 +198,8 @@ class SongDataset:
             return SongDatasetEncoder().read_from_path(dataset_path)
 
         try:
-            return load_song_dataset_hf(dataset_path)
+            from .v1 import load_dataset_v1
+            return load_dataset_v1(dataset_path)
         except ValueError as e:
             pass
 
@@ -210,72 +210,17 @@ class SongDataset:
         if data_files:
             from .compress import DatasetEntryEncoder
             dataset = SongDataset()
+            encoder = DatasetEntryEncoder()
             for data_file in data_files:
-                dataset.add_entry(DatasetEntryEncoder().read_from_path(os.path.join(dataset_path, data_file)))
+                try:
+                    entry = encoder.read_from_path(os.path.join(dataset_path, data_file))
+                except Exception as e:
+                    print(f"Error reading {data_file}: {e}")
+                    continue
+                dataset.add_entry(entry)
             return dataset
 
         raise ValueError(f"Invalid dataset path: {dataset_path}")
 
     def __repr__(self):
         return f"SongDataset({len(self)} entries)"
-
-def get_genre_map() -> dict[str, SongGenre]:
-    """Gets a genre map thats used for loading the dataset for loading the legacy v1 dataset"""
-    genre_map = {genre.value: genre for genre in SongGenre}
-    genre_map["jp-anime"] = SongGenre.ANIME
-    genre_map["country"] = SongGenre.POP
-    genre_map["hip-hop"] = SongGenre.POP
-    genre_map["dance-pop"] = SongGenre.POP
-    genre_map["rock"] = SongGenre.POP
-    genre_map["folk"] = SongGenre.POP
-    genre_map["reggaeton"] = SongGenre.POP
-    return genre_map
-
-def load_song_dataset_hf(dataset_path: str) -> SongDataset:
-    """Load the song dataset from hugging face. The dataset path can be either a local path or a remote path."""
-    try:
-        dataset = load_dataset(dataset_path, split="train")
-    except ValueError as e:
-        expected_message = "You are trying to load a dataset that was saved using `save_to_disk`. Please use `load_from_disk` instead."
-        if e.args[0] == expected_message:
-            dataset = Dataset.load_from_disk(dataset_path)
-        else:
-            raise e
-    genre_map = get_genre_map()
-    song_dataset = SongDataset()
-    for entry in dataset:
-        entry = DatasetEntry(
-            chords=entry["chords"],
-            chord_times=entry["chord_times"],
-            downbeats=entry["downbeats"],
-            beats=entry["beats"],
-            genre=genre_map[entry["genre"].strip()],
-            audio_name=entry["audio_name"],
-            url=entry["url"],
-            playlist=entry["playlist"],
-            views=entry["views"],
-            length=entry["length"],
-            normalized_chord_times=entry["normalized_chord_times"],
-            music_duration=entry["music_duration"]
-        )
-        song_dataset.add_entry(entry)
-
-    return song_dataset
-
-def save_song_dataset_hf(dataset: SongDataset, dataset_path: str):
-    ds = Dataset.from_dict({
-        "chords": [entry.chords for entry in dataset],
-        "chord_times": [entry.chord_times for entry in dataset],
-        "downbeats": [entry.downbeats for entry in dataset],
-        "beats": [entry.beats for entry in dataset],
-        "genre": [entry.genre.value for entry in dataset],
-        "audio_name": [entry.audio_name for entry in dataset],
-        "url": [entry.url for entry in dataset],
-        "playlist": [entry.playlist for entry in dataset],
-        "views": [entry.views for entry in dataset],
-        "length": [entry.length for entry in dataset],
-        "normalized_chord_times": [entry.normalized_chord_times for entry in dataset],
-        "music_duration": [entry.music_duration for entry in dataset]
-    })
-
-    ds.save_to_disk(dataset_path)

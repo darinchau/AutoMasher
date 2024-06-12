@@ -13,6 +13,7 @@ from math import ceil, exp
 from typing import Iterator
 import struct
 from .create import create_entry
+import zlib
 
 T = TypeVar('T')
 class BitsEncoder(ABC, Generic[T]):
@@ -213,6 +214,9 @@ class GenreEncoder(BitsEncoder[SongGenre]):
         return genre
 
 class StringEncoder(BitsEncoder[str]):
+    def __init__(self, limit: int = 1000):
+        self.limit = limit
+
     def encode(self, data: str) -> Iterator[int]:
         for byte in data.encode('utf-8'):
             yield byte
@@ -221,12 +225,14 @@ class StringEncoder(BitsEncoder[str]):
     def decode(self, data: Iterator[int]) -> str:
         i = 0
         b: list[int] = []
-        while True:
+        for _ in range(self.limit):
             byte = next(data)
             i += 1
             if byte == 0:
                 break
             b.append(byte)
+        else:
+            raise ValueError("String possibly too long")
 
         return bytes(b).decode('utf-8')
 
@@ -319,16 +325,29 @@ class SongDatasetEncoder(BitsEncoder[SongDataset]):
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
         self.entry_encoder = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
         self.int64_encoder = Int64Encoder()
+        self.checksum_encoder = Int32Encoder()
 
     def encode(self, data: SongDataset) -> Iterator[int]:
-        yield from self.int64_encoder.encode(len(data))
-        for entry in data:
-            yield from self.entry_encoder.encode(entry)
+        def inner():
+            yield from self.int64_encoder.encode(len(data))
+            for entry in data:
+                yield from self.entry_encoder.encode(entry)
+        data_binary = bytes(inner())
+        data_compressed = zlib.compress(data_binary, level=9)
+        checksum = zlib.adler32(data_compressed)
+        yield from self.checksum_encoder.encode(checksum)
+        yield from data_compressed
 
     def decode(self, data: Iterator[int]) -> SongDataset:
-        dataset_len = self.int64_encoder.decode(data)
+        checksum = self.checksum_encoder.decode(data)
+        data_compressed = bytes(data)
+        if checksum != zlib.adler32(data_compressed):
+            raise ValueError("Checksum mismatch")
+        data_binary = zlib.decompress(data_compressed)
+        data_binary = iter(data_binary)
         dataset = SongDataset()
-        for _ in range(dataset_len):
-            entry = self.entry_encoder.decode(data)
+        length = self.int64_encoder.decode(data_binary)
+        for _ in range(length):
+            entry = self.entry_encoder.decode(data_binary)
             dataset.add_entry(entry)
         return dataset

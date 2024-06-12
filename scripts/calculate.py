@@ -1,3 +1,5 @@
+# python -m scripts.calculate from root directory to run the script
+
 import os
 from pytube import YouTube
 from pytube import Playlist
