@@ -144,11 +144,7 @@ class ChordAnalysisResult(TimeSeries):
         chords = get_idx2voca_chord()
         assert len(self.labels) == len(self.times)
         assert all(-1 <= label < len(chords) for label in self.labels) # -1 can be a shorthand for no chord
-        # Check that the times array is monotonically increasing
-        last = -1
-        for time in self.times:
-            assert time > last
-            last = time
+        # assert all(t1 < t2 for t1, t2 in zip(self.times, self.times[1:])) # Check monotonicity
 
         assert len(self.times) > 0
 

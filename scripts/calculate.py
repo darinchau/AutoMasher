@@ -99,8 +99,13 @@ def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGe
         time.sleep(1)
         return None
 
+
     if not chord_times or chord_times[-1] > length:
         print(f"Chord times error: {video_url}")
+        return None
+
+    if not all([t1 < t2 for t1, t2 in zip(chord_times, chord_times[1:])]):
+        print(f"Chord times not sorted monotonically: {video_url}")
         return None
 
     print("Separating audio...")
