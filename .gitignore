@@ -72,9 +72,12 @@ nohup.out
 # VS code
 .vscode
 
-resources/*
+/resources/*
+!resources/dataset/
 !resources/ckpts
-!resources/*.db
+!resources/dataset/*
+resources/dataset/*/
+
 *.ipynb
 !demo.ipynb
 scripts/*

@@ -8,7 +8,7 @@ from fyp.audio.dataset.compress import DatasetEntryEncoder, SongDatasetEncoder
 
 def main():
     path_in = "./resources/dataset/audio-infos-v2"
-    path_out = "./resources/audio-infos-v2.db"
+    path_out = "./resources/dataset/audio-infos-v2.db"
 
     audio_datas = os.listdir(path_in)
     dataset = SongDataset()

@@ -19,8 +19,6 @@ from .chroma import (
 )
 from .beat import BeatAnalysisResult
 from .key import KeyAnalysisResult
-from .tuning import analyse_tuning
-from .tuning import TuningAnalysisResult
 
 from .base import *
 from ...audio import Audio
