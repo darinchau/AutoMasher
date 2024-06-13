@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 from copy import deepcopy
-from ...util.combine import get_video_id
+from ...util.combine import get_video_id, get_url
 from enum import Enum
 import numpy as np
 from typing import Iterable
@@ -160,6 +160,7 @@ class SongDataset:
 
     def __getitem__(self, url: str | int) -> DatasetEntry:
         if isinstance(url, str):
+            url = get_url(url)
             return self._data[url]
         elif isinstance(url, int):
             return list(self._data.values())[url]
@@ -184,6 +185,10 @@ class SongDataset:
             if filter_func(entry):
                 new_dataset.add_entry(entry)
         return new_dataset
+
+    @property
+    def urls(self):
+        return sorted(self._data.keys())
 
     @staticmethod
     def load(dataset_path: str):

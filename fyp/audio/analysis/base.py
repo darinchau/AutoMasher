@@ -116,17 +116,6 @@ class KeyAnalysisResult:
     def key_name(self):
         return get_keys()[self.key]
 
-@dataclass(init=False)
-class TuningAnalysisResult:
-    """A data class with the following
-
-    "tuning" (float -0.5 <= x < 0.5): The tuning correlation in terms of semitones"""
-    tuning: float
-
-    def __init__(self, tuning: float):
-        assert -0.5 <= tuning < 0.5
-        self.tuning = tuning
-
 @dataclass(frozen=True)
 class ChordAnalysisResult(TimeSeries):
     """A class with the following attributes:
@@ -269,20 +258,6 @@ class ChordAnalysisResult(TimeSeries):
         with open(path, "r") as f:
             data = json.load(f)
         return cls(data["duration"], data["labels"], data["times"])
-
-@numba.jit(nopython=True)
-def _slice_chord_result(times, labels, start, end):
-    """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
-    start_idx = np.searchsorted(times, start, side='right') - 1
-    end_idx = np.searchsorted(times, end, side='right')
-
-    new_times = times[start_idx:end_idx] - start
-
-    # shift index by 1 and add the duration at the end for the ending times
-    new_times[:-1] = new_times[1:]
-    new_times[-1] = end - start
-    new_labels = labels[start_idx:end_idx]
-    return new_times, new_labels
 
 @dataclass(frozen=True)
 class TimeSegmentResult(TimeSeries):

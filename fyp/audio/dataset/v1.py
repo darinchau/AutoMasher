@@ -16,7 +16,6 @@ def _get_genre_map() -> dict[str, SongGenre]:
 
 def load_dataset_v1(dataset_path: str) -> SongDataset:
     """Load the song dataset v1 from hugging face. The dataset path can be either a local path or a remote path."""
-
     try:
         dataset = load_dataset(dataset_path, split="train")
     except ValueError as e:

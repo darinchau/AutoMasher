@@ -18,8 +18,6 @@ import typing
 from ..dataset import SongDataset, DatasetEntry, SongGenre
 from ..dataset.create import get_normalized_chord_result
 from .search_config import SearchConfig
-from ..analysis.base import _slice_chord_result
-
 NO_CHORD_PENALTY = 3
 
 # Gets the distance of two chords and the closest approximating chord
@@ -56,13 +54,13 @@ def _calculate_distance_of_two_chords(chord1: str, chord2: str) -> tuple[int, st
             score, result = 3, "Unknown"
 
         case (_, _):
-            score, result = distance_of_two_nonempty_chord(chord1, chord2)
+            score, result = _distance_of_two_nonempty_chord(chord1, chord2)
 
     assert result in chord_notes_map, f"{result} not a recognised chord"
     return score, result
 
 # Gets the distance of two chords and the closest approximating chord
-def distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
+def _distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
     """Gives the distance between two non-empty chords and the closest approximating chord."""
     chord_notes_map = get_chord_notes()
     chord_notes_inv = get_chord_note_inv()
@@ -91,7 +89,7 @@ def distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
     return len(diff), "Unknown"
 
 @lru_cache(maxsize=1)
-def calculate_distance_array():
+def _get_distance_array():
     """Calculates the distance array for all chords. The distance array is a 2D array where the (i, j)th element is the distance between the ith and jth chords.
     This will be cached and used for all future calculations."""
     chord_mapping = get_idx2voca_chord()
@@ -246,7 +244,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
         transposed_crs.append((transpose_semitone, times1, chords1))
 
     # Precalculate chord distances as a numpy array to take advantage of jit
-    distances = calculate_distance_array()
+    distances = _get_distance_array()
     scores = MashabilityHeap(keep_first_k=search_config.keep_first_k) if search_config.keep_first_k > 0 else MashabilityList()
     nbars = len(submitted_beat_result.downbeats)
 
@@ -292,6 +290,20 @@ def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray,
     factors = new_lengths / orig_lengths
     return factors.max() <= max_delta_bpm and factors.min() >= min_delta_bpm
 
+@numba.jit(nopython=True)
+def _slice_chord_result(times: NDArray[np.floating], labels: NDArray[np.integer], start: float, end: float):
+    """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
+    start_idx = np.searchsorted(times, start, side='right') - 1
+    end_idx = np.searchsorted(times, end, side='right')
+
+    new_times = times[start_idx:end_idx] - start
+
+    # shift index by 1 and add the duration at the end for the ending times
+    new_times[:-1] = new_times[1:]
+    new_times[-1] = end - start
+    new_labels = labels[start_idx:end_idx]
+    return new_times, new_labels
+
 # Also export function for distance of chord results
 def distance_of_chord_results(submitted_chord_result: ChordAnalysisResult, sample_chord_result: ChordAnalysisResult) -> float:
     """Calculate the distance between two chord results."""
@@ -301,5 +313,5 @@ def distance_of_chord_results(submitted_chord_result: ChordAnalysisResult, sampl
     times2 = sample_chord_result.grouped_end_time_np
     chords2 = sample_chord_result.grouped_labels_np
 
-    distances = calculate_distance_array()
+    distances = _get_distance_array()
     return _dist_chord_results(times1, times2, chords1, chords2, distances)

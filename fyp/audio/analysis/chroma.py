@@ -34,16 +34,3 @@ def chroma_cens(audio: Audio, hop: int = 512, *, bins_per_octave = 24, fmin = 27
     audio_array = audio.numpy()
     chroma = librosa.feature.chroma_cens(y=audio_array, sr=audio.sample_rate, hop_length = hop, bins_per_octave=bins_per_octave, fmin = fmin, **kwargs)
     return chroma
-
-def preprocess(x: np.ndarray):
-    """Normalize the audio signal to have a maximum absolute value of 1."""
-    if x.ndim > 1:
-        x = x.mean(axis=1)
-
-    fNorm = np.max(np.abs(x))
-    if fNorm == 0:
-        fNorm = 1
-
-    x = x / fNorm
-
-    return x

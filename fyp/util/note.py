@@ -12,14 +12,14 @@ from typing import Any
 from functools import lru_cache
 
 @lru_cache(maxsize=1)
-def get_quality_list():
+def _get_quality_list():
     return ['min', 'maj', 'dim', 'aug', 'min6', 'maj6', 'min7', 'minmaj7', 'maj7', '7', 'dim7', 'hdim7', 'sus2', 'sus4']
 
 @lru_cache(maxsize=1)
 def get_idx2voca_chord() -> list[str]:
     """A more comprehensive chord list"""
     root_list = get_pitch_names()
-    quality_list = get_quality_list()
+    quality_list = _get_quality_list()
     idx2voca_chord = [""] * 170
     idx2voca_chord[169] = 'No chord'
     idx2voca_chord[168] = 'Unknown'
@@ -39,13 +39,14 @@ def get_idx2voca_chord() -> list[str]:
 
 @lru_cache(maxsize=1)
 def get_inv_voca_map() -> dict[str, int]:
-    """Get a mapping from chord names to indices"""
+    """Get a mapping from chord names to indices. The inverse of get_idx2voca_chord()"""
     idx2voca_chord = get_idx2voca_chord()
     inv_voca_map = {v: i for i, v in enumerate(idx2voca_chord)}
     return inv_voca_map
 
 @lru_cache(maxsize=1)
 def notes_to_idx(note: str):
+    """Return the index given the note name. The index is the number of semitones from C."""
     mapping = {
         "C": 0,
         "C#": 1,
@@ -69,6 +70,7 @@ def notes_to_idx(note: str):
 
 @lru_cache(maxsize=None)
 def idx_to_notes(idx: int):
+    """Return the note name given the index. The index is the number of semitones from C."""
     mapping = {
         0: "C",
         1: "C#",
@@ -82,12 +84,12 @@ def idx_to_notes(idx: int):
         9: "A",
         10: "A#",
         11: "B",
-        12: "C"
     }
     return mapping[idx % 12]
 
 @lru_cache(maxsize=128)
 def move_semitone(note: str, semitone: int):
+    """Move a note by a number of semitones. Returns the new note. If the note is a black key, then the note is always sharp instead of flat."""
     return idx_to_notes(notes_to_idx(note) + semitone)
 
 def fix_enharmonic_equivs(mapping: dict[str, Any]):
@@ -146,7 +148,7 @@ def get_keys():
 
 @lru_cache(maxsize=1)
 def get_chord_notes() -> dict[str, frozenset[str]]:
-    """Get a dictionary of chord notes."""
+    """Get a dictionary of chord notes. The keys are the voca chords and the values are the notes in the chord."""
     base_chord_notes = {
         "C:min": ["C", "Eb", "G"],
         "C": ["C", "E", "G"],
@@ -184,7 +186,7 @@ def get_chord_notes() -> dict[str, frozenset[str]]:
 
 @lru_cache(maxsize=1)
 def get_chord_note_inv() -> dict[frozenset[str], str]:
-    """Get a dictionary of chord notes."""
+    """Get a dictionary of chord notes. The inverse of get_chord_notes()"""
     chord_notes_map = get_chord_notes()
     chord_notes_inv = {v: k for k, v in chord_notes_map.items()}
     return chord_notes_inv
@@ -204,11 +206,19 @@ def get_chord_quality(chord: str) -> tuple[str, str]:
 
 @lru_cache(maxsize=None)
 def transpose_chord(chord: str, semitone: int) -> str:
+    """Transpose a chord by a number of semitones. Returns the new chord.
+    The chord is in the format of "root:quality" or "root".
+    If the chord is "No chord" or "Unknown", it will return the same chord.
+
+    The chord does not have to be one of the voca chords. It can be like Eb:7
+    """
     if chord in ["No chord", "Unknown"]:
         return chord
 
     if ":" in chord:
         root, quality = chord.split(":")
-        return f"{move_semitone(root, semitone)}:{quality}"
+        transposed = f"{move_semitone(root, semitone)}:{quality}"
+        if transposed not in get_idx2voca_chord():
+            raise ValueError(f"Invalid chord: {chord} (Transposed: {transposed})")
 
     return move_semitone(chord, semitone)
