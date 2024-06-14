@@ -220,5 +220,6 @@ def transpose_chord(chord: str, semitone: int) -> str:
         transposed = f"{move_semitone(root, semitone)}:{quality}"
         if transposed not in get_idx2voca_chord():
             raise ValueError(f"Invalid chord: {chord} (Transposed: {transposed})")
+        return transposed
 
     return move_semitone(chord, semitone)

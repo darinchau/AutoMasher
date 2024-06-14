@@ -151,7 +151,7 @@ class DatasetEntry:
         return valid_indices
 
 class SongDataset:
-    """Use a hashmap for now. lmk if there are more efficient ways to do this."""
+    """A data structure that holds a bunch of dataset entries for query. Use a hashmap for now. lmk if there are more efficient ways to do this."""
     def __init__(self):
         self._data: dict[str, DatasetEntry] = {}
 

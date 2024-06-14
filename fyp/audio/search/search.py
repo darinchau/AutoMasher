@@ -12,7 +12,7 @@ from math import exp
 from .search_config import SearchConfig
 from .align import calculate_mashability, MashabilityResult
 from ...util.combine import get_video_id
-from ..analysis.chorus import extract_chorus
+from ..analysis import extract_chorus
 from ..base import AudioCollection
 
 def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[float, MashabilityResult]]:
