@@ -1,3 +1,19 @@
+from __future__ import annotations
+import os
+import numpy as np
+from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
+from ... import Audio
+from typing import Any
+from ..dataset import SongDataset, DatasetEntry, SongGenre
+from ..dataset.create import create_entry
+from ..separation import DemucsAudioSeparator
+from .search_config import SearchConfig
+from .align import MashabilityResult
+from ...util.combine import get_video_id
+from ..analysis import extract_chorus
+from ..base import AudioCollection
+from pytube import YouTube
+
 class SongSearchState:
     """A state object for song searching that caches the results of the search and every intermediate step."""
     def __init__(self, link: str, config: SearchConfig, audio: Audio | None = None, dataset: SongDataset | None = None):
@@ -167,3 +183,29 @@ class SongSearchState:
 
         assert slice_start_bar + slice_nbar < len(self.raw_beat_result.downbeats)
         return slice_start_bar, slice_nbar
+
+    def to_dataset_entry(self, genre: SongGenre, *,
+                         audio_name: str | None = None,
+                         playlist: str | None = None,
+                         views: int | None = None) -> DatasetEntry:
+        """Converts the search state to a dataset entry or future use. Will figure out the audio and views if not provided, and will assume the
+        "No playlist" option if playlist not provided."""
+        if audio_name is None or views is None:
+            yt = YouTube(self.link)
+            if audio_name is None:
+                audio_name = yt.title
+            if views is None:
+                views = yt.views
+
+        return create_entry(
+            length = self.audio.duration,
+            beats = self.raw_beat_result.beats.tolist(),
+            downbeats = self.raw_beat_result.downbeats.tolist(),
+            chords = self.raw_chord_result.labels,
+            chord_times = self.raw_chord_result.times,
+            genre = genre,
+            audio_name = audio_name,
+            url = self.link,
+            playlist = playlist,
+            views = views
+        )

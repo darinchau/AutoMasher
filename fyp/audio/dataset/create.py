@@ -36,7 +36,7 @@ def get_normalized_chord_result(cr: ChordAnalysisResult, br: BeatAnalysisResult)
 
 # Create a dataset entry from the given data
 def create_entry(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
-                    *, genre: SongGenre, audio_name: str, url: str, playlist: str, views: int):
+                    *, genre: SongGenre, audio_name: str, url: str, playlist: str | None, views: int):
     """Creates the dataset entry from the data - performs normalization and music duration postprocessing"""
     chord_result = ChordAnalysisResult(length, chords, chord_times)
     beat_result = BeatAnalysisResult.from_data(length, beats, downbeats)

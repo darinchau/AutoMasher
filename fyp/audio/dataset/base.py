@@ -67,7 +67,7 @@ class DatasetEntry:
     genre: SongGenre
     audio_name: str
     url: str
-    playlist: str
+    playlist: str | None
     views: int
     length: float
     normalized_chord_times: list[float]
@@ -88,7 +88,7 @@ class DatasetEntry:
         assert all(0 <= c < 170 for c in self.chords)
         assert all(0 <= c < 600 for c in self.downbeats)
         assert all(0 <= c < 600 for c in self.beats)
-        assert self.playlist.startswith(self.get_playlist_prepend())
+        assert self.playlist is None or self.playlist.startswith(self.get_playlist_prepend())
         assert self.url.startswith(self.get_url_prepend())
         assert len(self.url) > 11
         assert self.views >= 0
