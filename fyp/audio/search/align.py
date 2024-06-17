@@ -171,7 +171,7 @@ class MashabilityResult:
     timestamp: The timestamp of the song in the Audio
     genre: The genre of the song
     views: The number of views of the song as of the time of the dataset creation"""
-    id: str
+    url_id: str
     start_bar: int
     transpose: int
     title: str
@@ -180,7 +180,7 @@ class MashabilityResult:
     views: int
 
     def __repr__(self):
-        return f"MashabilityResult({self.id}/{self.start_bar}/{self.transpose})"
+        return f"MashabilityResult({self.url_id}/{self.start_bar}/{self.transpose})"
 
 MashabilityResultType = tuple[int, int, Any, DatasetEntry]
 
@@ -209,7 +209,7 @@ class MashabilityList:
 
     def get(self) -> list[tuple[float, MashabilityResult]]:
         return sorted([(score, MashabilityResult(
-            id=entry.url_id,
+            url_id=entry.url_id,
             start_bar=i,
             transpose=k,
             title=entry.audio_name,
@@ -265,6 +265,8 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
             starting_downbeat = sample_downbeats[i]
             for transpose_semitone, times1, chords1 in transposed_crs:
                 new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
+                if new_score > search_config.max_score:
+                    continue
                 # Use a tuple instead of a dataclass for now, will change it back to a dataclass in scores.get
                 # This is because using tuple literal syntax skips the step to find the dataclass constructor name
                 # in global scope. We profiled the code line by line and found this to save around 30% of runtime

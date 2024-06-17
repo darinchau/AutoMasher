@@ -19,7 +19,7 @@ def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[fl
     seen = set()
     result = []
     for score in scores:
-        id = score[1].id
+        id = score[1].url_id
         if id not in seen:
             seen.add(id)
             result.append(score)
@@ -219,7 +219,6 @@ def search_song(state: SongSearchState) -> list[tuple[float, MashabilityResult]]
 
     scores = [(curve_score(x[0]), x[1]) for x in scores_]
     state._all_scores = scores
-    scores = [s for s in scores if state.search_config.min_score <= s[0] <= state.search_config.max_score]
     return scores
 
 def create_dummy_entry(ct: ChordAnalysisResult, bt: BeatAnalysisResult):

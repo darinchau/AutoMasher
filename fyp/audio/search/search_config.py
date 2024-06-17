@@ -25,9 +25,7 @@ class SearchConfig:
 
         keep_first_k: The number of top results to keep. Default is 20. Set to -1 to keep all results.
 
-        min_score: The minimum similarity percentage that the song should get to be included in the results. Default is 0.
-
-        max_score: The maximum similarity percentage that the song should get to be included in the results. Default is 100.
+        max_score: The maximum mashability score allowed for the queried song. Default is infinity.
 
         pychorus_work_factor: The work factor for the pychorus library. Must be between 10 and 20. The higher the number,
             the less accurate but also the less runtime. This parameter scales (inverse) exponentially to the runtime i.e.
@@ -70,8 +68,7 @@ class SearchConfig:
     max_delta_bpm: float = 1.25
     min_delta_bpm: float = 0.8
     keep_first_k: int = 20
-    min_score: int = 0
-    max_score: int = 100
+    max_score: float = float("inf")
     pychorus_work_factor: int = 14
     progress_bar: bool = True
     bar_number: int | None = None

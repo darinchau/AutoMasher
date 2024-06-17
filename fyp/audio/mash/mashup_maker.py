@@ -13,7 +13,7 @@ class MashupMaker(ABC):
     def __init__(self, search_state: SongSearchState, score: MashabilityResult):
         self._submitted_song = search_state
         self._sample_song = SongSearchState(
-            link=get_url(score.id),
+            link=get_url(score.url_id),
             config=SearchConfig(
                 bar_number=score.start_bar,
                 nbars=search_state.slice_nbar,
@@ -24,7 +24,7 @@ class MashupMaker(ABC):
 
     @property
     def sample_url_id(self):
-        return self._score.id
+        return self._score.url_id
 
     @property
     def sample_start_idx(self):
