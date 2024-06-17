@@ -18,7 +18,7 @@ def analyse_chord_transformer(audio: Audio, *, model_path: str = "./resources/ck
         inv_voca = get_inv_voca_map()
         labels = [inv_voca[chords[r[1]]] for r in results]
 
-        cr = ChordAnalysisResult(
+        cr = ChordAnalysisResult.from_data(
             audio.duration,
             labels = labels,
             times = times,

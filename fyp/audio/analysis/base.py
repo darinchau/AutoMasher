@@ -124,8 +124,8 @@ class ChordAnalysisResult(TimeSeries):
     chords: list[str] - The chord names. `chords[labels[i]]` is the chord name for the ith frame
     times: list[float] - The times of each frame"""
     duration: float
-    labels: list[int]
-    times: list[float]
+    labels: NDArray[np.uint8]
+    times: NDArray[np.float64]
 
     def __post_init__(self):
         assert self.times[0] == 0, "First chord must appear at 0"
@@ -139,28 +139,51 @@ class ChordAnalysisResult(TimeSeries):
 
         assert self.duration >= self.times[-1]
 
+    @classmethod
+    def from_data(cls, duration: float, labels: list[int], times: list[float]):
+        """Construct a ChordAnalysisResult from native python types. Should function identically as the old constructor."""
+        return cls(duration, np.array(labels, dtype=np.uint8), np.array(times, dtype=np.float64))
+
     def group(self) -> ChordAnalysisResult:
         """Group the chord analysis result by chord, and deletes the duplicate chords."""
-        labels: list[int] = []
-        times: list[float] = []
-        for chord, time in zip(self.labels, self.times):
-            if len(labels) == 0 or chord != labels[-1]:
-                labels.append(chord)
-                times.append(time)
-        return ChordAnalysisResult(self.duration, labels, times)
+        labels = np.zeros_like(self.labels)
+        times = np.zeros_like(self.times)
+        idx = 0
+        for i in range(self.labels.shape[0]):
+            if idx == 0 or self.labels[i] != labels[idx - 1]:
+                labels[idx] = self.labels[i]
+                times[idx] = self.times[i]
+                idx += 1
+        return ChordAnalysisResult(self.duration, labels[:idx], times[:idx])
 
     @property
     def grouped_end_time_np(self):
         """Returns a numpy array of grouped end times. This is mostly useful for dataset search"""
-        return np.array(self.group().times[1:] + [self.duration], dtype=np.float64)
+        import warnings
+        warnings.warn("grouped_end_time_np is deprecated. Use grouped_end_times_labels instead", DeprecationWarning)
+        ct = self.group()
+        end_times = ct.times
+        end_times[:-1] = end_times[1:]
+        end_times[-1] = self.duration
+        return end_times
 
     @property
     def grouped_labels_np(self):
         """Returns a numpy array of grouped labels. This is mostly useful for dataset search"""
-        return np.array(self.group().labels, dtype=np.int32)
+        import warnings
+        warnings.warn("grouped_labels_np is deprecated. Use grouped_end_times_labels instead", DeprecationWarning)
+        return self.group().labels
+
+    def grouped_end_times_labels(self):
+        """Returns a tuple of grouped end times and grouped labels. This is mostly useful for dataset search"""
+        ct = self.group()
+        end_times = ct.times
+        end_times[:-1] = end_times[1:]
+        end_times[-1] = self.duration
+        return end_times, ct.labels
 
     @property
-    def chords(self):
+    def chords(self) -> list[str]:
         """Returns a list of chord labels"""
         chords = get_idx2voca_chord()
         chord_labels = [chords[label] for label in self.labels]
@@ -169,7 +192,7 @@ class ChordAnalysisResult(TimeSeries):
     @property
     def info(self) -> list[tuple[str, float]]:
         """A utility for getting the chord info for real-time display"""
-        return list(zip(self.chords, self.times))
+        return list(zip(self.chords, self.times.tolist()))
 
     def slice_seconds(self, start: float, end: float) -> ChordAnalysisResult:
         """Slice the chord analysis result by seconds and shifts the times to start from 0
@@ -178,51 +201,23 @@ class ChordAnalysisResult(TimeSeries):
         if abs(end - self.duration) < 1e-6 or end == -1:
             end = self.duration
         assert end > start and end <= self.duration
-
-        # Find the first chord on or before start
-        start_idx = 0
-        if start > 0:
-            while start_idx < len(self.times) and self.times[start_idx] < start:
-                start_idx += 1
-            if start_idx >= len(self.times) or self.times[start_idx] > start:
-                start_idx -= 1
-
-        times, chords = [0.], [self.labels[start_idx]]
-        for i in range(start_idx + 1, len(self.times)):
-            if self.times[i] >= end:
-                break
-            if self.times[i] >= start:
-                times.append(self.times[i] - start)
-                chords.append(self.labels[i])
-
-        return ChordAnalysisResult(end - start, chords, times)
+        new_times, new_labels = _slice_chord_result(self.times, self.labels, start, end)
+        return ChordAnalysisResult(end - start, new_labels, new_times)
 
     def join(self, other: ChordAnalysisResult) -> ChordAnalysisResult:
         """Join two chord analysis results. shift_amount is the amount to shift the times of the second chord analysis result by."""
         shift_amount = self.duration
-        self_infos = [(label, time) for label, time in zip(self.labels, self.times)]
-        other_infos = [(label, time) for label, time in zip(other.labels, other.times)]
-
-        infos = self_infos + [(label, time + shift_amount) for label, time in other_infos]
-        infos.sort(key=lambda x: x[1])
-        labels = [info[0] for info in infos]
-        times = [info[1] for info in infos]
+        labels = np.concatenate([self.labels, other.labels])
+        times = np.concatenate([self.times, other.times + shift_amount])
         return ChordAnalysisResult(self.duration + other.duration, labels, times)
 
     def change_speed(self, speed: float) -> ChordAnalysisResult:
         """Change the speed of the chord analysis result"""
-        labels = self.labels
-        times = [time / speed for time in self.times]
-        return ChordAnalysisResult(self.duration / speed, labels, times)
+        times = self.times / speed
+        return ChordAnalysisResult(self.duration / speed, self.labels, times)
 
     def get_duration(self):
         return self.duration
-
-    def copy(self):
-        # Its fine to do a shallow copy because the underlying data is immutable
-        labels = self.labels.copy()
-        times = self.times.copy()
-        return ChordAnalysisResult(self.duration, labels, times)
 
     def __repr__(self):
         s = "ChordAnalysisResult("
@@ -237,17 +232,18 @@ class ChordAnalysisResult(TimeSeries):
         voca = get_idx2voca_chord()
         inv_map = get_inv_voca_map()
         labels = [inv_map[transpose_chord(voca[label], semitones)] for label in self.labels]
-        return ChordAnalysisResult(self.duration, labels, self.times)
+        np_labels = np.array(labels, dtype=np.uint8)
+        return ChordAnalysisResult(self.duration, np_labels, self.times)
 
     @classmethod
     def from_data_entry(cls, entry: DatasetEntry):
-        return cls(entry.length, entry.chords, entry.chord_times)
+        return cls.from_data(entry.length, entry.chords, entry.chord_times)
 
     def save(self, path: str):
         json_dict = {
             "duration": self.duration,
-            "labels": self.labels,
-            "times": self.times
+            "labels": self.labels.tolist(),
+            "times": self.times.tolist()
         }
 
         with open(path, "w") as f:
@@ -257,7 +253,18 @@ class ChordAnalysisResult(TimeSeries):
     def load(cls, path: str):
         with open(path, "r") as f:
             data = json.load(f)
-        return cls(data["duration"], data["labels"], data["times"])
+        return cls.from_data(data["duration"], data["labels"], data["times"])
+
+@numba.jit(nopython=True)
+def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], start: float, end: float):
+    """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
+    start_idx = np.searchsorted(times, start, side='right') - 1
+    end_idx = np.searchsorted(times, end, side='right')
+    new_times = times[start_idx:end_idx] - start
+    # Set the start to 0 if the first chord is before the start
+    new_times[0] = 0.
+    new_labels = labels[start_idx:end_idx]
+    return new_times, new_labels
 
 @dataclass(frozen=True)
 class TimeSegmentResult(TimeSeries):

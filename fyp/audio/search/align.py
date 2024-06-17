@@ -232,15 +232,14 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
     submitted_normalized_cr = get_normalized_chord_result(submitted_chord_result, submitted_beat_result)
 
     # Transpose the submitted chord result in the opposite direction to speed up calculation
-    transposed_crs: list[tuple[int, NDArray, NDArray]] = []
+    transposed_crs: list[tuple[int, NDArray[np.float64], NDArray[np.uint8]]] = []
     if isinstance(search_config.max_transpose, int):
         max_transpose = (-search_config.max_transpose, search_config.max_transpose)
     else:
         max_transpose = search_config.max_transpose
     for transpose_semitone in range(max_transpose[0], max_transpose[1] + 1):
         new_chord_result = submitted_normalized_cr.transpose(-transpose_semitone)
-        times1 = new_chord_result.grouped_end_time_np
-        chords1 = new_chord_result.grouped_labels_np
+        times1, chords1 = new_chord_result.grouped_end_times_labels()
         transposed_crs.append((transpose_semitone, times1, chords1))
 
     # Precalculate chord distances as a numpy array to take advantage of jit
@@ -251,7 +250,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
     # Initiate progress bar
     for entry in tqdm(dataset, desc="Searching database", disable=not search_config.verbose):
         sample_downbeats = np.array(entry.downbeats, dtype=np.float64)
-        sample_normalized_chords = np.array(entry.chords, dtype = np.int32)
+        sample_normalized_chords = np.array(entry.chords, dtype = np.uint8)
         sample_normalized_chord_times = np.array(entry.normalized_chord_times, dtype = np.float64)
         submitted_beat_times = np.append(submitted_beat_result.downbeats, submitted_beat_result.duration)
         submitted_beat_times_diff = submitted_beat_times[1:] - submitted_beat_times[:-1]
@@ -293,7 +292,7 @@ def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray,
     return factors.max() <= max_delta_bpm and factors.min() >= min_delta_bpm
 
 @numba.jit(nopython=True)
-def _slice_chord_result(times: NDArray[np.floating], labels: NDArray[np.integer], start: float, end: float):
+def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], start: float, end: float) -> tuple[NDArray[np.float64], NDArray[np.uint8]]:
     """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
     start_idx = np.searchsorted(times, start, side='right') - 1
     end_idx = np.searchsorted(times, end, side='right')
@@ -310,10 +309,7 @@ def _slice_chord_result(times: NDArray[np.floating], labels: NDArray[np.integer]
 def distance_of_chord_results(submitted_chord_result: ChordAnalysisResult, sample_chord_result: ChordAnalysisResult) -> float:
     """Calculate the distance between two chord results."""
     assert submitted_chord_result.duration == sample_chord_result.duration
-    times1 = submitted_chord_result.grouped_end_time_np
-    chords1 = submitted_chord_result.grouped_labels_np
-    times2 = sample_chord_result.grouped_end_time_np
-    chords2 = sample_chord_result.grouped_labels_np
-
+    times1, chords1 = submitted_chord_result.grouped_end_times_labels()
+    times2, chords2 = sample_chord_result.grouped_end_times_labels()
     distances = _get_distance_array()
     return _dist_chord_results(times1, times2, chords1, chords2, distances)

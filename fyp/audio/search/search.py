@@ -225,8 +225,8 @@ def create_dummy_entry(ct: ChordAnalysisResult, bt: BeatAnalysisResult):
     """Create a dummy entry for the dataset."""
     return create_entry(
         length=ct.get_duration(),
-        chords=ct.labels,
-        chord_times=ct.times,
+        chords=ct.labels.tolist(),
+        chord_times=ct.times.tolist(),
         beats=bt.beats.tolist(),
         downbeats=bt.downbeats.tolist(),
         url=f"{DatasetEntry.get_url_prepend()}dQw4w9WgXcQ",
