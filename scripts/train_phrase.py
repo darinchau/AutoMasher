@@ -228,7 +228,8 @@ CONFIG = {
     "hidden_sizes": [256, 256, 512],
     "output_size": 512,
     "dropouts": [0.1, 0.1, 0.1],
-    "margin": 0.5,
+    "margin": 1,
+    "epochs": 10,
     "save_dir": "./resources/models",
     "log_every": 50,
     "save_every": 1000,
@@ -254,37 +255,38 @@ def main():
             name = f"Trial 1",
             config = CONFIG
         ) as run:
-            train_model(model, dataloader, optimizer, log_every=CONFIG["log_every"], save_every=CONFIG["save_every"], save_path=save_path, run=run)
+            train_model(model, dataloader, optimizer, log_every=CONFIG["log_every"], save_every=CONFIG["save_every"], epochs=CONFIG["epochs"], save_path=save_path, run=run)
     else:
-        train_model(model, dataloader, optimizer, log_every=CONFIG["log_every"], save_every=CONFIG["save_every"], save_path=save_path, run=None)
+        train_model(model, dataloader, optimizer, log_every=CONFIG["log_every"], save_every=CONFIG["save_every"], epochs=CONFIG["epochs"], save_path=save_path, run=None)
 
 
 
 def train_model(model: nn.Module, dataloader: DataLoader, optimizer: torch.optim.Optimizer, *,
-                log_every: int, save_every: int, save_path: str, run):
+                epochs: int, log_every: int, save_every: int, save_path: str, run):
     model = model.cuda()
     losses = []
     samples = 0
-    for anchor, positive, negative in tqdm(dataloader, total=len(dataloader), desc="Training"):
-        anchor = anchor.cuda()
-        positive = positive.cuda()
-        negative = negative.cuda()
-        optimizer.zero_grad()
-        loss = model(anchor, positive, negative)
-        loss.backward()
-        optimizer.step()
-        losses.append(loss.item())
-        samples += 1
+    for epoch in range(epochs):
+        for anchor, positive, negative in tqdm(dataloader, total=len(dataloader), desc="Training"):
+            anchor = anchor.cuda()
+            positive = positive.cuda()
+            negative = negative.cuda()
+            optimizer.zero_grad()
+            loss = model(anchor, positive, negative)
+            loss.backward()
+            optimizer.step()
+            losses.append(loss.item())
+            samples += 1
 
-        if len(losses) % log_every == 0:
-            if run is not None:
-                run.log({"loss": np.mean(losses)})
-            losses.clear()
+            if len(losses) % log_every == 0:
+                if run is not None:
+                    run.log({"loss": np.mean(losses)})
+                losses.clear()
 
-        if samples % save_every == 0 and samples > 0:
-            torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
+            if samples % save_every == 0 and samples > 0:
+                torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
 
-    torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
+        torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
 
 if __name__ == "__main__":
     main()
