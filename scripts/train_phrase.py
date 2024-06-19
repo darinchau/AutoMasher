@@ -142,6 +142,8 @@ def get_prev_input(ct: ChordAnalysisResult, slice_time: int, *, n: int):
     # Get previous n chords. Prepad the first n chords with empty chords
     no_chord_notes = chord_notes[-1]
     prev_chords: list[tuple[frozenset[str], float]] =  [(no_chord_notes, -1)] * n
+    if slice_time <= 0:
+        return prev_chords
     t = 0.
     ct_prev = ct.slice_seconds(0, slice_time)
     end_times, labels = ct_prev.grouped_end_times_labels()
@@ -220,17 +222,20 @@ def unvectorize_input(inputs: list[float] | torch.Tensor | NDArray[np.float32]):
     return ct
 
 CONFIG = {
+    "dataset_id": "./resources/dataset/audio-infos-v2.db",
     "input_size": 14 * 2 * 10,
     "hidden_sizes": [256, 256, 512],
     "output_size": 512,
     "dropouts": [0.1, 0.1, 0.1],
     "margin": 0.1,
     "save_dir": "./resources/models",
-    "log_every": 500,
+    "log_every": 50,
+    "save_every": 1000,
+    "use_wandb": True,
 }
 
 def main():
-    ds = SongDataset.load("./resources/dataset/audio-infos-v2.db")
+    ds = SongDataset.load(CONFIG["dataset_id"])
     ds = ds.filter(lambda e: len(e.downbeats) > 32)
 
     model = PhraseModel(CONFIG)
@@ -238,31 +243,43 @@ def main():
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    LOG_EVERY = 500
-    save_path = "./resources/models/phrase_model.pt"
+    save_path = CONFIG["save_dir"]
+    os.makedirs(save_path, exist_ok=True)
 
-    wandb.login(key=os.environ["WANDB_API_KEY"])
-    with wandb.init(
-        project = f"automasher-phrase",
-        name = f"Trial 1",
-        config = CONFIG
-    ) as run:
-        losses = []
-        samples = 0
-        for anchor, positive, negative in tqdm(dataloader, total=len(dataloader), desc="Training"):
-            optimizer.zero_grad()
-            loss = model(anchor, positive, negative)
-            loss.backward()
-            optimizer.step()
-            losses.append(loss.item())
-            samples += 1
+    if CONFIG["use_wandb"]:
+        wandb.login(key=os.environ["WANDB_API_KEY"])
+        with wandb.init(
+            project = f"automasher-phrase",
+            name = f"Trial 1",
+            config = CONFIG
+        ) as run:
+            train_model(model, dataloader, optimizer, log_every=CONFIG["log_every"], save_every=CONFIG["save_every"], save_path=save_path, run=run)
+    else:
+        train_model(model, dataloader, optimizer, log_every=CONFIG["log_every"], save_every=CONFIG["save_every"], save_path=save_path, run=None)
 
-            if len(losses) % LOG_EVERY == 0:
+
+
+def train_model(model: nn.Module, dataloader: DataLoader, optimizer: torch.optim.Optimizer, *,
+                log_every: int, save_every: int, save_path: str, run):
+    losses = []
+    samples = 0
+    for anchor, positive, negative in tqdm(dataloader, total=len(dataloader), desc="Training"):
+        optimizer.zero_grad()
+        loss = model(anchor, positive, negative)
+        loss.backward()
+        optimizer.step()
+        losses.append(loss.item())
+        samples += 1
+
+        if len(losses) % log_every == 0:
+            if run is not None:
                 run.log({"loss": np.mean(losses)})
-                losses.clear()
-                torch.save(model.state_dict(), f"phrase_model_{samples}.pt")
+            losses.clear()
 
-    torch.save(model.state_dict(), save_path)
+        if samples % save_every == 0 and samples > 0:
+            torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
+
+    torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
 
 if __name__ == "__main__":
     main()
