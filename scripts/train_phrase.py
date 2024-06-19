@@ -16,6 +16,7 @@ import random
 import torch.utils
 import wandb
 import os
+import torch.nn.functional as F
 from tqdm.auto import tqdm
 import dotenv
 
@@ -62,7 +63,7 @@ class PhraseModel(nn.Module):
         )
         self.loss_fct =  nn.TripletMarginWithDistanceLoss(
             margin=config["margin"],
-            distance_function=nn.CosineSimilarity(dim=1)
+            distance_function=lambda x, y: 1 - F.cosine_similarity(x, y, dim=-1)
         )
 
     def forward(self, anchor: torch.Tensor, positive: torch.Tensor | None = None, negative: torch.Tensor | None = None):
@@ -227,7 +228,7 @@ CONFIG = {
     "hidden_sizes": [256, 256, 512],
     "output_size": 512,
     "dropouts": [0.1, 0.1, 0.1],
-    "margin": 0.1,
+    "margin": 0.5,
     "save_dir": "./resources/models",
     "log_every": 50,
     "save_every": 1000,
@@ -261,9 +262,13 @@ def main():
 
 def train_model(model: nn.Module, dataloader: DataLoader, optimizer: torch.optim.Optimizer, *,
                 log_every: int, save_every: int, save_path: str, run):
+    model = model.cuda()
     losses = []
     samples = 0
     for anchor, positive, negative in tqdm(dataloader, total=len(dataloader), desc="Training"):
+        anchor = anchor.cuda()
+        positive = positive.cuda()
+        negative = negative.cuda()
         optimizer.zero_grad()
         loss = model(anchor, positive, negative)
         loss.backward()
