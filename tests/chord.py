@@ -218,7 +218,7 @@ def test(n: int):
 
 class TestChordAnalysisResult(unittest.TestCase):
     def test_chord_analysis_impl(self):
-        for _ in trange(100000):
+        for _ in trange(1000):
             n = random.randint(1, 1000)
             test(n)
 

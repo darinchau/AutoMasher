@@ -281,7 +281,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         self.int64_encoder = Int64Encoder()
 
     def encode(self, data: DatasetEntry) -> Iterator[int]:
-        playlist_id = data.playlist[len(DatasetEntry.get_playlist_prepend()):]
+        playlist_id = data.playlist[len(DatasetEntry.get_playlist_prepend()):] if data.playlist else ""
 
         yield from self.chord_labels_encoder.encode(data.chords)
         yield from self.chord_time_encoder.encode(data.chord_times)

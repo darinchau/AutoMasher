@@ -102,7 +102,7 @@ def _get_distance_array():
     return np.array(distance_array, dtype = np.int32)
 
 # Calculates the distance of chord results except we only put everything as np arrays for numba jit
-@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.int32[:], numba.int32[:], numba.int32[:, :]), locals={
+@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.uint8[:], numba.uint8[:], numba.int32[:, :]), locals={
     "score": numba.float64,
     "cumulative_duration": numba.float64,
     "idx1": numba.int32,

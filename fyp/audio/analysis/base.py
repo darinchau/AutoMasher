@@ -131,12 +131,9 @@ class ChordAnalysisResult(TimeSeries):
         assert self.times[0] == 0, "First chord must appear at 0"
 
         chords = get_idx2voca_chord()
-        assert len(self.labels) == len(self.times)
-        assert all(-1 <= label < len(chords) for label in self.labels) # -1 can be a shorthand for no chord
-        # assert all(t1 < t2 for t1, t2 in zip(self.times, self.times[1:])) # Check monotonicity
-
-        assert len(self.times) > 0
-
+        assert self.labels.shape[0] == self.times.shape[0]
+        assert np.all(self.labels < len(chords))
+        assert self.times.shape[0] > 0
         assert self.duration >= self.times[-1]
 
     @classmethod
