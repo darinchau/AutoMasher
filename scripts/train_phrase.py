@@ -62,18 +62,18 @@ class PhraseDataset(Dataset):
 
 CONFIG = {
     "dataset_id": "./resources/dataset/audio-infos-v2.db",
-    "hidden_sizes": [256, 128, 128],
-    "output_size": 128,
+    "hidden_sizes": [300, 256, 256],
+    "output_size": 256,
     "dropouts": [0.1, 0.1, 0.1],
     "margin": 1,
     "epochs": 20,
     "save_dir": "./resources/models",
     "log_every": 50,
-    "save_every": 1000,
+    "save_every": 10000,
     "use_wandb": True,
     "nbar_phrases": 8,
     "n_chords": 20,
-    "distance_function": "euclidean"
+    "distance_function": "cosine"
 }
 
 def main():
