@@ -68,7 +68,7 @@ CONFIG = {
     "margin": 1,
     "epochs": 20,
     "save_dir": "./resources/models",
-    "log_every": 50,
+    "log_every": 500,
     "save_every": 10000,
     "use_wandb": True,
     "nbar_phrases": 8,

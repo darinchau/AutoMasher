@@ -228,7 +228,18 @@ class Audio(TimeSeries):
                 a.save(cache_path)
             return a
 
-        wav, sr = torchaudio.load(fpath)
+        try:
+            wav, sr = torchaudio.load(fpath)
+        except Exception as e:
+            wav, sr = librosa.load(fpath, mono=False)
+            sr = int(sr)
+            if len(wav.shape) > 1:
+                wav = wav.reshape(-1, wav.shape[-1])
+            else:
+                wav = wav.reshape(1, -1)
+
+            wav = torch.tensor(wav).float()
+
         if wav.dtype != torch.float32:
             wav = wav.to(dtype = torch.float32)
         return cls(wav, sr)
