@@ -323,7 +323,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
 
 class SongDatasetEncoder(BitsEncoder[SongDataset]):
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
-        self.entry_encoder = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
+        self.entry_encoder: BitsEncoder[DatasetEntry] = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
         self.int64_encoder = Int64Encoder()
         self.checksum_encoder = Int32Encoder()
 
@@ -351,3 +351,103 @@ class SongDatasetEncoder(BitsEncoder[SongDataset]):
             entry = self.entry_encoder.decode(data_binary)
             dataset.add_entry(entry)
         return dataset
+
+class Float32ListEncoder(BitsEncoder[list[float]]):
+    def __init__(self):
+        self.float_encoder = Float32Encoder()
+        self.len_encoder = Int32Encoder()
+
+    def encode(self, data: list[float]) -> Iterator[int]:
+        yield from self.len_encoder.encode(len(data))
+        for f in data:
+            yield from self.float_encoder.encode(f)
+
+    def decode(self, data: Iterator[int]) -> list[float]:
+        length = self.len_encoder.decode(data)
+        floats = []
+        for _ in range(length):
+            floats.append(self.float_encoder.decode(data))
+        return floats
+
+class FastDatasetEntryEncoder(BitsEncoder[DatasetEntry]):
+    """Format (bytes, in order):
+    - Chord labels: a list of bytes, each byte is a chord label (0-170)
+    - A EOS label (-1)
+    - Chord times: The difference array of (t * chord time resolution = 10.8) in a Huffman-like encoding
+    - Downbeats: The difference array of (t * beat_times_resolution = 44100/1024) in a Huffman-like encoding
+    - Beats: Same as downbeats
+    - YouTube ID: Null-terminated unicode string in bytes array format
+    - Song Genre: There are only 8 genres but lets use one byte for it
+    - Views: unsigned 64 bit integer format
+    - Length: Signed 32 bit floating point number
+    - Playlist ID: Null-terminated unicode string in bytes array format
+    - Title: Null-terminated unicode string in bytes array format
+    """
+    def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
+        self.chord_time_encoder = ChordTimesEncoder(chord_time_resolution)
+        self.beat_time_encoder = BeatTimesEncoder(beat_time_resolution)
+        self.chord_labels_encoder = ChordLabelsEncoder()
+        self.genre_encoder = GenreEncoder()
+        self.string_encoder = StringEncoder()
+        self.float32_encoder = Float32Encoder()
+        self.int64_encoder = Int64Encoder()
+        self.list_float_encoder = Float32ListEncoder()
+
+    def encode(self, data: DatasetEntry) -> Iterator[int]:
+        playlist_id = data.playlist[len(DatasetEntry.get_playlist_prepend()):] if data.playlist else ""
+
+        yield from self.chord_labels_encoder.encode(data.chords)
+        yield from self.chord_time_encoder.encode(data.chord_times)
+        yield from self.beat_time_encoder.encode(data.downbeats)
+        yield from self.beat_time_encoder.encode(data.beats)
+        yield from self.string_encoder.encode(data.url_id)
+        yield from self.genre_encoder.encode(data.genre)
+        yield from self.int64_encoder.encode(data.views)
+        yield from self.float32_encoder.encode(data.length)
+        yield from self.string_encoder.encode(playlist_id)
+        yield from self.string_encoder.encode(data.audio_name)
+        yield from self.list_float_encoder.encode(data.music_duration)
+        yield from self.list_float_encoder.encode(data.normalized_chord_times)
+
+    def decode(self, data: Iterator[int]) -> DatasetEntry:
+        chords = self.chord_labels_encoder.decode(data)
+        chord_times = self.chord_time_encoder.decode(data)
+        downbeats = self.beat_time_encoder.decode(data)
+        beats = self.beat_time_encoder.decode(data)
+        youtube_id = self.string_encoder.decode(data)
+        genre = self.genre_encoder.decode(data)
+        views = self.int64_encoder.decode(data)
+        length = self.float32_encoder.decode(data)
+        playlist_id = self.string_encoder.decode(data)
+        audio_name = self.string_encoder.decode(data)
+        music_duration = self.list_float_encoder.decode(data)
+        normalized_chord_times = self.list_float_encoder.decode(data)
+
+        entry = DatasetEntry(
+            length=length,
+            beats=beats,
+            downbeats=downbeats,
+            chords=chords,
+            chord_times=chord_times,
+            genre=genre,
+            views=views,
+            audio_name=audio_name,
+            url=get_url(youtube_id),
+            playlist=f"{DatasetEntry.get_playlist_prepend()}{playlist_id}",
+            music_duration=music_duration,
+            normalized_chord_times=normalized_chord_times
+        )
+
+        return entry
+
+class FastSongDatasetEncoder(BitsEncoder[SongDataset]):
+    def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
+        self.encoder = SongDatasetEncoder(chord_time_resolution, beat_time_resolution)
+        self.dataset_entry_encoder = FastDatasetEntryEncoder()
+        self.encoder.entry_encoder = self.dataset_entry_encoder
+
+    def encode(self, data: SongDataset) -> Iterator[int]:
+        return self.encoder.encode(data)
+
+    def decode(self, data: Iterator[int]) -> SongDataset:
+        return self.encoder.decode(data)

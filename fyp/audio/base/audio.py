@@ -355,13 +355,24 @@ class Audio(TimeSeries):
         """Saves the audio at the provided file path. WAV is (almost certainly) guaranteed to work"""
         self.sanity_check()
         if fpath.endswith(".mp3"):
-            raise RuntimeError("Saving to mp3 is not supported. Please save to wav or other formats")
+            try:
+                from pydub import AudioSegment
+            except ImportError:
+                raise RuntimeError("You need to install pydub to save the audio as mp3")
+            with tempfile.TemporaryDirectory() as tempdir:
+                temp_fpath = path.join(tempdir, "temp.wav")
+                torchaudio.save(temp_fpath, self._data, sample_rate = self._sample_rate)
+                song = AudioSegment.from_wav(temp_fpath)
+                song.export(fpath, format="mp3")
+            return
         try:
             torchaudio.save(fpath, self._data, sample_rate = self._sample_rate)
             return
         except (ValueError, RuntimeError) as e: # Seems like torchaudio changed the error type to runtime error in 2.2?
             # or the file path is invalid
             raise RuntimeError(f"Error saving the audio: {e} - {fpath}")
+
+
 
     def plot_waveform(self, keep_sr = False):
         """Plots the audio as a waveform. If keep_sr is true, then we plot the audio with the original sample rate. Otherwise we plot the audio with a lower sample rate to save time."""

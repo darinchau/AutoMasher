@@ -199,8 +199,14 @@ class SongDataset:
         - A file saved using the SongDatasetEncoder"""
 
         if os.path.isfile(dataset_path):
-            from .compress import SongDatasetEncoder
-            return SongDatasetEncoder().read_from_path(dataset_path)
+            from .compress import SongDatasetEncoder, FastSongDatasetEncoder
+            try:
+                return SongDatasetEncoder().read_from_path(dataset_path)
+            except Exception as e:
+                try:
+                    return FastSongDatasetEncoder().read_from_path(dataset_path)
+                except Exception as e:
+                    pass
 
         try:
             from .v1 import load_dataset_v1

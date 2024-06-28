@@ -2,6 +2,7 @@
 
 # This module contains code that compresses the SongDataset into a binary format
 
+import os
 import numpy as np
 import re
 import struct
@@ -360,4 +361,16 @@ class DatasetTest(unittest.TestCase):
         path = "resources/dataset/audio-infos-v2.db"
         ds1 = SongDataset.load(path) # This will use the default compressors from dataset.compress
         ds2 = SongDatasetEncoder().read_from_path(path) # This will use the archived old method that is known to be ok
+        self.assertEqual(ds1, ds2)
+
+    def test_uncompressed_dataset(self):
+        path = "resources/dataset/audio-infos-v2.db"
+        path2 = "resources/dataset/audio-infos-v2.1.db"
+        if not os.path.exists(path2):
+            return
+
+        from fyp.audio.dataset.compress import FastSongDatasetEncoder
+        ds1 = SongDataset.load(path)
+        ds2 = FastSongDatasetEncoder().read_from_path(path2)
+
         self.assertEqual(ds1, ds2)
