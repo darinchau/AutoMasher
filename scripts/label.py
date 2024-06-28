@@ -17,21 +17,31 @@ import tkinter as tk
 import time
 import torchaudio
 from fyp import Audio
-from scripts.calculate import download_audio
 from fyp.audio.dataset import SongDataset
+from fyp.audio.analysis import BeatAnalysisResult
+from fyp.util.combine import get_video_id
 from collections import defaultdict
+from threading import Lock
+import json
+
+DATA_PATH = "resources/labels.json"
+CACHE_PATH = "resources/cache"
 
 class AudioKeyBinder:
-    def __init__(self, win: tk.Tk, label: tk.Label, links: list[str]):
+    def __init__(self, win: tk.Tk, label: tk.Label, dataset: SongDataset):
         self.win = win
         self.label = label
         self.play_time = -1.
-        self.downloader = download_audio(links)
         self._audio = None
         self._url = None
         self.labels: dict[str, list[float]] = defaultdict(list)
+        with open(DATA_PATH, "r") as f:
+            self.labels.update(json.load(f))
+        self._lock = Lock()
+        self.dataset = dataset
 
     def update_text(self, text: str):
+        print(text)
         self.label.config(text=text)
 
         self.win.update()
@@ -50,40 +60,54 @@ class AudioKeyBinder:
 
     def play(self):
         # Gets the next song and plays it
-        self.update_text("Playing song")
-        if self._audio is None or self._url is None:
-            try:
-                self._audio, self._url = next(self.downloader)
-                while self._audio is None:
-                    self._audio, self._url = next(self.downloader)
-            except StopIteration:
-                self.update_text("No more songs to play")
-                return
-        def audio_callback_fn(t: float):
-            self.play_time = t
-            if t == -1:
+        with self._lock:
+            self.update_text("Preparing song")
+            if self._url is None:
+                for link in self.dataset.keys():
+                    if link not in self.labels:
+                        self._url = link
+                        break
+                else:
+                    self.update_text("No more songs")
+                    return
+
+            self._audio = Audio.load(self._url, cache_path=os.path.join(CACHE_PATH, f"{get_video_id(self._url)}.wav"))
+            self._audio = BeatAnalysisResult.from_data_entry(self.dataset[self._url]).make_click_track(self._audio)
+
+            def audio_callback_fn(t: float):
+                self.play_time = t
+
+            def stop_callback_fn():
+                self.play_time = -1
+                with open(DATA_PATH, "w") as f:
+                    json.dump(self.labels, f)
                 self.update_text("Song stopped. Press SPACEBAR to start the next song or K to replay the song")
-        self._audio.play(callback_fn=audio_callback_fn)
+            self._audio.play(callback_fn=audio_callback_fn, stop_callback_fn=stop_callback_fn)
 
 
     def stop(self):
         if self._audio is not None:
-            self._audio.stop()
+            self._audio._stop_audio = True
             self.play_time = -1
 
     def __call__(self, event):
         c = event.char
 
+        if self._lock.locked():
+            return
+
         if not isinstance(c, str):
             return
 
         if not self.playing and c == " ":
+            print("Spacebar pressed while not playing")
             self._audio = self._url = None
             self.play()
             self.update_text(f"Playing started. Press SPACEBAR to perform labelling. \nPress L to skip this song. Press K to restart the labelling.")
             return
 
-        if not self.playing and c == "K":
+        if not self.playing and c == "k":
+            print("K pressed while not playing")
             if self._audio is not None:
                 # TODO make audio thing with click track
                 return
@@ -96,31 +120,36 @@ class AudioKeyBinder:
         assert self._audio is not None and self._url is not None
 
         if c == " ":
+            print("Spacebar pressed while playing")
             self.labels[self._url].append(self.play_time)
             self.update_text(f"Added label at t={round(self.play_time, 2)}")
             return
 
-        if c == "L":
+        if c == "l":
             # Immediately stop the current song and move on to the next. Delete the current labels
+            print("L pressed while playing")
             self.stop()
+            print("Song stopped.")
             self._audio = None
-            if self._url in self.labels:
-                del self.labels[self._url]
+            self.labels[self._url].append(-1)
             self._url = None
+            self.update_text("Song skipped. Preparing next song.")
             self.play()
             return
 
-        if c == "K":
+        if c == "k":
             # Immediately stop the current song and restart it. Delete the current labels
+            print("K pressed while playing")
             self.stop()
             if self._url in self.labels:
                 del self.labels[self._url]
-            self.play()
             return
 
-        if c == "P" and self._url in self.labels:
+        if c == "p" and self._url in self.labels:
             self.labels[self._url].pop()
             return
+
+        print(f"Unrecognized key: {c}")
 
 
 def main():
@@ -131,17 +160,31 @@ def main():
 
     label = tk.Label(win)
 
-    ds = SongDataset.load("./resources/dataset/audio-infos-v2.db")
+    ds = SongDataset.load("./resources/dataset/audio-infos-v2.1.db")
     ds = ds.filter(lambda e: len(e.downbeats) > 32).filter(lambda e: e.length < 300)
-    links = list(ds._data.keys())
 
-    keybinder = AudioKeyBinder(win, label, links)
+    keybinder = AudioKeyBinder(win, label, ds)
 
     win.bind("<Key>", keybinder)
 
     keybinder.update_text("Press SPACEBAR to start the labelling session")
 
+    def on_close():
+        keybinder.update_text("Window is being closed")
+        if keybinder.playing:
+            keybinder.stop()
+            keybinder.update_text("Song stopped.")
+        if keybinder._audio is not None:
+            del keybinder._audio
+            keybinder._audio = None
+        win.destroy()
+
+    win.protocol("WM_DELETE_WINDOW", on_close)
+
     win.mainloop()
+
+    with open(DATA_PATH, "w") as f:
+        json.dump(keybinder.labels, f)
 
 if __name__ == "__main__":
     main()

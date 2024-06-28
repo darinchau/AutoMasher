@@ -258,11 +258,14 @@ class Audio(TimeSeries):
         recording = torch.as_tensor(recording, dtype = torch.float32).flatten().unsqueeze(0)
         return cls(recording, sample_rate)
 
-    def play(self, blocking: bool = False, callback_fn: Callable[[float], None] | None = None, info: list[tuple[str, float]] | None = None):
+    def play(self, blocking: bool = False,
+             callback_fn: Callable[[float], None] | None = None,
+             stop_callback_fn: Callable[[], None] | None = None,
+             info: list[tuple[str, float]] | None = None):
         """Plays audio in a separate thread. Use the stop() function or wait() function to let the audio stop playing.
         info is a list of stuff you want to print. Each element is a tuple of (str, float) where the float is the time in seconds
         callback fn should take a float t which will be called every time an audio chunk is processed. The float will be the current
-        time of the audio. callback_fn will also be called one last time with t = -1 when the audio finished
+        time of the audio. stop_callback_fn will also be called one last time with t = -1 when the audio finished
         """
         sd = get_sounddevice()
         def _play(sound, sr, nc, stop_event):
@@ -274,14 +277,17 @@ class Audio(TimeSeries):
                 sound_ = sound[x:x+frames]
                 x = x + frames
 
+                t = x/sr
+
                 if callback_fn is not None:
-                    callback_fn(x/sr)
+                    callback_fn(t)
 
                 # Print the info if there are anything
-                while info and x/sr > info[0][1]:
-                    info_str = info[0][0].ljust(longest_info)
-                    print("\r" + info_str, end="")
-                    info.pop(0)
+                if info is not None:
+                    while info and t > info[0][1]:
+                        info_str = info[0][0].ljust(longest_info)
+                        print("\r" + info_str, end="")
+                        info.pop(0)
 
                 if stop_event():
                     raise sd.CallbackStop
@@ -298,8 +304,8 @@ class Audio(TimeSeries):
             with stream:
                 event.wait()
                 self._stop_audio = True
-                if callback_fn is not None:
-                    callback_fn(-1)
+                if stop_callback_fn is not None:
+                    stop_callback_fn()
 
         if info is not None:
             blocking = True # Otherwise jupyter notebook will behave weirdly

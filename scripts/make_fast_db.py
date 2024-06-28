@@ -5,7 +5,7 @@ from fyp import SongDataset, DatasetEntry
 from fyp.audio.dataset.compress import FastSongDatasetEncoder
 
 def main():
-    ds = SongDataset.load("./resources/dataset/audio-infos-v2.1.db")
+    ds = SongDataset.load("./resources/dataset/audio-infos-v2.db")
     FastSongDatasetEncoder().write_to_path(ds, "./resources/dataset/audio-infos-v2.1.db")
 
 if __name__ == "__main__":

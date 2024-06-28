@@ -211,7 +211,7 @@ class SongDataset:
         try:
             from .v1 import load_dataset_v1
             return load_dataset_v1(dataset_path)
-        except ValueError as e:
+        except Exception as e:
             pass
 
         assert os.path.exists(dataset_path) and os.path.isdir(dataset_path), f"Invalid dataset path: {dataset_path}"
@@ -235,3 +235,6 @@ class SongDataset:
 
     def __repr__(self):
         return f"SongDataset({len(self)} entries)"
+
+    def keys(self) -> list[str]:
+        return sorted(self._data.keys())
