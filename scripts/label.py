@@ -3,6 +3,7 @@
 # - Press spacebar to start playing a song
 # - If you don't like the song, skip it by pressing L
 # - Restart the song by pressing K
+# - Pause and come back to it later by pressing J (Same as K but with no auto restart)
 # - Press N to remove the last (presumably faulty) label
 # - Press M to remove the last (presumably faulty) label and label the current time
 # - Press H twice to stkip straight to the next song, keeping the current labels
@@ -69,7 +70,7 @@ class AudioKeyBinder:
 
     def save(self):
         with open(DATA_PATH, "w") as f:
-            json.dump(self.labels, f)
+            json.dump(self.labels, f, indent=4)
 
     def play(self):
         # Gets the next song and plays it
@@ -166,42 +167,32 @@ class AudioKeyBinder:
             self.update_text(f"Added label at t={round(self.play_time, 2)}")
             return
 
-        if c == "l":
-            # Immediately stop the current song and move on to the next. Delete the current labels
-            print("L pressed while playing")
-            self.stop()
-            print("Song stopped.")
-            self._audio = None
-            self.labels[self._url].append(-1)
-            self._url = None
-            self.save()
-            self.update_text("Song skipped. Preparing next song.")
-            self.play()
-            return
-
-        if c == "k":
+        if c in ("j", "k", "l"):
             # Immediately stop the current song and restart it. Delete the current labels
-            print("K pressed while playing")
+            print(f"{c.upper()} pressed while playing")
             self.stop()
-            if self._url in self.labels:
+            if c == "l":
+                self._audio = None
+                self.labels[self._url].append(-1)
+                self._url = None
+            elif self._url in self.labels:
                 del self.labels[self._url]
             self.save()
+            if c in ("k", "l"):
+                self.play()
             return
 
-        if c == "n" and self._url in self.labels:
-            print("N pressed while playing")
-            self.labels[self._url].pop()
-            print("Deleted last label")
-            return
-
-        if c == "m" and self._url in self.labels:
-            print("M pressed while playing")
+        if c in ("m", "n") and self._url in self.labels:
+            print(f"{c.upper()} pressed while playing")
             try:
                 self.labels[self._url].pop()
             except IndexError:
                 pass
-            self.labels[self._url].append(self.play_time)
-            self.update_text(f"Deleted last label and added label at t={round(self.play_time, 2)}")
+            if c == "m":
+                self.labels[self._url].append(self.play_time)
+                self.update_text(f"Deleted last label and added label at t={round(self.play_time, 2)}")
+            else:
+                print("Deleted last label")
             return
 
         if c == "h":
