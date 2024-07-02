@@ -49,6 +49,7 @@ class AudioKeyBinder:
         self._playback_audio = None
         self._lock = Lock()
         self._last_h_press = -1
+        self._calibrate_timestamps: list[float] = []
 
     def update_text(self, text: str):
         print(text)
@@ -66,7 +67,11 @@ class AudioKeyBinder:
 
     @property
     def playing(self):
-        return self.play_time >= 0. and self._audio is not None and self._url is not None
+        return self.play_time >= 0. and self._audio is not None
+
+    @property
+    def calibrating(self):
+        return self._calibrate_timestamps and self.play_time >= 0. and self._audio is not None
 
     def save(self):
         with open(DATA_PATH, "w") as f:
@@ -124,6 +129,37 @@ class AudioKeyBinder:
         if self._playback_audio is not None:
             self._playback_audio._stop_audio = True
 
+    def calibrate(self):
+        # Start the calibrate routine
+        import torch
+
+        calibration_duration_seconds = 20
+        num_ticks = int((calibration_duration_seconds+2)/4)
+        with self._lock:
+            self._calibrate_timestamps = [-1.]
+            self._audio = Audio(torch.zeros(2, 44100 * calibration_duration_seconds), 44100)
+            self._audio = BeatAnalysisResult.from_data(
+                duration = calibration_duration_seconds,
+                beats = list(range(0, calibration_duration_seconds)),
+                downbeats = list(range(2, calibration_duration_seconds, 4))
+            ).make_click_track(self._audio)
+
+            def audio_callback_fn(t: float):
+                self.play_time = t
+
+            def stop_callback_fn():
+                self.play_time = -1
+                num_calibrations = len(self._calibrate_timestamps) - 1
+                if num_calibrations != num_ticks:
+                    self.update_text("Calibration stopped. Wrong number of downbeats detected")
+                    return
+                calibration_time = sum([
+                    self._calibrate_timestamps[i + 1] - 2 - 4 * i for i in range(num_calibrations)
+                ]) / num_calibrations
+                self.update_text(f"Calibration stopped. Time = {calibration_time}")
+                self._calibrate_timestamps = []
+            self._audio.play(callback_fn=audio_callback_fn, stop_callback_fn=stop_callback_fn)
+
     def __call__(self, event):
         c = event.char
 
@@ -148,6 +184,13 @@ class AudioKeyBinder:
             self.update_text(f"Playing started. Press SPACEBAR to perform labelling. \nPress L to skip this song. Press K to restart the labelling.")
             return
 
+        if not self.playing and c == "c":
+            print("Spacebar pressed while not playing")
+            self._audio = self._url = None
+            self.calibrate()
+            self.update_text(f"Calibration started. Press SPACEBAR at each downbeat. Press K to restart the labelling.")
+            return
+
         if not self.playing and c == "k":
             print("K pressed while not playing")
             if self._url is not None and self._audio is not None:
@@ -159,10 +202,17 @@ class AudioKeyBinder:
         if not self.playing:
             return
 
+        if self.calibrating and c == " ":
+            print("Spacebar pressed while calibrating")
+            self._calibrate_timestamps.append(self.play_time)
+            return
+
+
         assert self._audio is not None and self._url is not None
 
         if c == " ":
             print("Spacebar pressed while playing")
+            assert self._url is not None
             self.labels[self._url].append(self.play_time)
             self.update_text(f"Added label at t={round(self.play_time, 2)}")
             return
@@ -208,6 +258,7 @@ class AudioKeyBinder:
             self._url = None
             self.save()
             self.update_text("Song skipped. Preparing next song.")
+            self.play()
             return
 
         print(f"Unrecognized key: {c}")
