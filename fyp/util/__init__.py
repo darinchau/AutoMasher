@@ -2,6 +2,7 @@ import os
 import random
 from contextlib import contextmanager
 from .note import *
+from .url import *
 import gc
 
 # A little function to clear cuda cache. Put the import inside just in case we do not need torch, because torch import takes too long

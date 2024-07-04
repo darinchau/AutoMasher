@@ -6,7 +6,7 @@ import struct
 from abc import ABC, abstractmethod
 from typing import Iterator, TypeVar, Generic
 from .base import DatasetEntry, SongDataset, SongGenre
-from ...util.combine import get_url
+from ...util import get_url
 from collections import Counter
 import numpy as np
 from math import ceil, exp

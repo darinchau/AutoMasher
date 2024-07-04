@@ -23,7 +23,7 @@ import torchaudio
 from fyp import Audio
 from fyp.audio.dataset import SongDataset, SongGenre
 from fyp.audio.analysis import BeatAnalysisResult
-from fyp.util.combine import get_video_id
+from fyp.util import get_video_id
 from collections import defaultdict
 from threading import Lock
 import json
@@ -273,7 +273,7 @@ def main():
     label = tk.Label(win)
 
     ds = SongDataset.load("./resources/dataset/audio-infos-v2.1.db")
-    ds = ds.filter(lambda e: len(e.downbeats) > 32).filter(lambda e: e.length < 300)
+    ds = ds.filter(lambda e: len(e.downbeats) > 32).filter(lambda e: e.length < 330)
     print(ds)
 
     keybinder = AudioKeyBinder(win, label, ds)

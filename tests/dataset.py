@@ -9,7 +9,7 @@ import struct
 from abc import ABC, abstractmethod
 from typing import Iterator, TypeVar, Generic
 from fyp.audio.dataset.base import DatasetEntry, SongDataset, SongGenre
-from fyp.util.combine import get_url
+from fyp.util import get_url
 from collections import Counter
 import numpy as np
 from math import ceil, exp

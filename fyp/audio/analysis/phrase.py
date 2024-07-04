@@ -74,6 +74,22 @@ class PhraseModel(nn.Module):
         assert fn is not None
         return fn
 
+class PhraseModelAdapter(nn.Module):
+    def __init__(self, model: PhraseModel):
+        super().__init__()
+        self.model = model
+        self.adapter = nn.Linear(model.core.output_size, 1)
+
+    @property
+    def n_chords(self):
+        return self.model.config["n_chords"]
+
+    def forward(self, x):
+        x = self.model.core(x)
+        x = F.normalize(x, p=2, dim=-1)
+        x = self.adapter(x)
+        return F.sigmoid(x)
+
 def get_next_input(ct: ChordAnalysisResult, slice_time: int, *, n: int):
     chord_notes = [get_chord_notes()[chord] for chord in get_idx2voca_chord()]
 

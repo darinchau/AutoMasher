@@ -9,7 +9,7 @@ from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from datasets import Dataset
 import numpy as np
 from tqdm.auto import trange
-from ...util.combine import get_url as get_video_url
+from ...util import get_url as get_video_url
 import enum
 from typing import Any
 

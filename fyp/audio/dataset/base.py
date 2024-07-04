@@ -5,7 +5,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 from copy import deepcopy
-from ...util.combine import get_video_id, get_url
+from ... import Audio
+from ...util import get_video_id, get_url
 from enum import Enum
 import numpy as np
 from typing import Iterable
@@ -149,6 +150,9 @@ class DatasetEntry:
         # Find the indices where the sum of the music duration is greater than the minimum music duration
         valid_indices = np.where(cumulative_music_durations >= min_music_duration)[0]
         return valid_indices
+
+    def get_audio(self):
+        return Audio.load(self.url, cache_path=f"resources/cache/{self.url_id}.wav")
 
 class SongDataset:
     """A data structure that holds a bunch of dataset entries for query. Use a hashmap for now. lmk if there are more efficient ways to do this."""

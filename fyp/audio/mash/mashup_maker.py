@@ -1,7 +1,7 @@
 from ..separation import DemucsAudioSeparator
 from .. import Audio
 from ..analysis import BeatAnalysisResult, ChordAnalysisResult
-from ...util.combine import get_url
+from ...util import get_url
 from ..manipulation import PitchShift
 from .. import AudioCollection
 from abc import ABC, abstractmethod

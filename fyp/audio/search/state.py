@@ -9,7 +9,7 @@ from ..dataset.create import create_entry
 from ..separation import DemucsAudioSeparator
 from .search_config import SearchConfig
 from .align import MashabilityResult
-from ...util.combine import get_video_id
+from ...util import get_video_id
 from ..analysis import extract_chorus
 from ..base import AudioCollection
 from pytube import YouTube

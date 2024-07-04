@@ -1,20 +1,7 @@
-from datasets import Dataset
-from typing import Any, Callable
-from pytube import YouTube
 import matplotlib.pyplot as plt
 import librosa
 import numpy as np
-
-def get_video_id(link_or_video_id: str):
-    return YouTube(get_url(link_or_video_id)).video_id
-
-def get_video_title(link_or_video_id: str):
-    return YouTube(get_url(link_or_video_id)).title
-
-def get_url(link_or_video_id: str):
-    if link_or_video_id.startswith("https://") or link_or_video_id.startswith("http://"):
-        return link_or_video_id
-    return f"https://www.youtube.com/watch?v={link_or_video_id}"
+from .url import get_url, get_video_title
 
 def show_audio_spectrogram(audio, link: str):
     from .. import Audio

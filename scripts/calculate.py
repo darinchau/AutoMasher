@@ -10,7 +10,7 @@ from fyp.audio.dataset import DatasetEntry, SongGenre
 from fyp.audio.dataset.compress import DatasetEntryEncoder
 from fyp.audio.dataset.create import create_entry
 from fyp.util import is_ipython, clear_cuda
-from fyp.util.combine import get_video_id, get_url
+from fyp.util import get_video_id, get_url
 import time
 import traceback
 from tqdm.auto import tqdm
