@@ -83,12 +83,12 @@ class DatasetEntry:
         return "https://www.youtube.com/watch?v="
 
     def __post_init__(self):
-        assert len(self.chords) == len(self.chord_times) == len(self.normalized_chord_times)
-        assert len(self.downbeats) == len(self.music_duration)
-        assert all(0 <= c < 600 for c in self.chord_times)
-        assert all(0 <= c < 170 for c in self.chords)
-        assert all(0 <= c < 600 for c in self.downbeats)
-        assert all(0 <= c < 600 for c in self.beats)
+        assert len(self.chords) == len(self.chord_times) == len(self.normalized_chord_times), f"{len(self.chords)} != {len(self.chord_times)} != {len(self.normalized_chord_times)}"
+        assert len(self.downbeats) == len(self.music_duration), f"{len(self.downbeats)} != {len(self.music_duration)}"
+        assert all(0 <= c < 600 for c in self.chord_times), f"Invalid chord times: {self.chord_times}"
+        assert all(0 <= c < 170 for c in self.chords), f"Invalid chords: {self.chords}"
+        assert all(0 <= c < 600 for c in self.downbeats), f"Invalid downbeats: {self.downbeats}"
+        assert all(0 <= c < 600 for c in self.beats), f"Invalid beats: {self.beats}"
         assert self.playlist is None or self.playlist.startswith(self.get_playlist_prepend())
         assert self.url.startswith(self.get_url_prepend())
         assert len(self.url) > 11

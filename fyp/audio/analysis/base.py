@@ -28,6 +28,8 @@ class BeatAnalysisResult(TimeSeries):
         assert len(self.downbeats) == 0 or self.duration >= self.downbeats[-1]
         assert isinstance(self.beats, np.ndarray)
         assert isinstance(self.downbeats, np.ndarray)
+        assert self.beats.dtype == np.float32
+        assert self.downbeats.dtype == np.float32
 
     @property
     def tempo(self):
@@ -135,6 +137,14 @@ class ChordAnalysisResult(TimeSeries):
         assert np.all(self.labels < len(chords))
         assert self.times.shape[0] > 0
         assert self.duration >= self.times[-1]
+
+        assert isinstance(self.labels, np.ndarray)
+        assert isinstance(self.times, np.ndarray)
+        assert self.labels.dtype == np.uint8
+        assert self.times.dtype == np.float64
+
+        # Check that the times are sorted
+        assert np.all(self.times[1:] >= self.times[:-1]), "Times must be sorted"
 
     @classmethod
     def from_data(cls, duration: float, labels: list[int], times: list[float]):

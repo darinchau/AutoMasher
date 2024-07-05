@@ -39,7 +39,7 @@ def get_normalized_chord_result(cr: ChordAnalysisResult, br: BeatAnalysisResult)
 def create_entry(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
                     *, genre: SongGenre, audio_name: str, url: str, playlist: str | None, views: int):
     """Creates the dataset entry from the data - performs normalization and music duration postprocessing"""
-    chord_result = ChordAnalysisResult.from_data(length, chords, chord_times)
+    chord_result = ChordAnalysisResult.from_data(length, chords, chord_times).group()
     beat_result = BeatAnalysisResult.from_data(length, beats, downbeats)
     normalized_cr = get_normalized_chord_result(chord_result, beat_result)
 
@@ -48,6 +48,10 @@ def create_entry(length: float, beats: list[float], downbeats: list[float], chor
     for i in range(len(downbeats)):
         bar_cr = normalized_cr.slice_seconds(i, i + 1)
         music_duration.append(get_music_duration(bar_cr))
+
+    if chord_result.labels.shape[0] != len(chord_times):
+        chords = chord_result.labels.tolist()
+        chord_times = chord_result.times.tolist()
 
     return DatasetEntry(
         chords=chords,
