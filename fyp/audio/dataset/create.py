@@ -2,7 +2,10 @@
 import numpy as np
 from .base import SongGenre, DatasetEntry
 from ...util.note import get_inv_voca_map
-from ..analysis import ChordAnalysisResult, BeatAnalysisResult
+from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer
+from ..separation import DemucsAudioSeparator
+from pytube import YouTube
+from ... import Audio
 
 # This is now not needed during the search step because we have precalculated it
 def get_music_duration(chord_result: ChordAnalysisResult):
@@ -66,4 +69,68 @@ def create_entry(length: float, beats: list[float], downbeats: list[float], chor
         length=length,
         normalized_chord_times=normalized_cr.times.tolist(),
         music_duration=music_duration
+    )
+
+_DEMUCS = None
+def get_demucs():
+    global _DEMUCS
+    if not _DEMUCS:
+        _DEMUCS = DemucsAudioSeparator()
+    return _DEMUCS
+
+def process_audio_(audio: Audio, video_url: str, playlist_url: str | None, genre: SongGenre, *, verbose: bool = True) -> DatasetEntry | str:
+    if verbose:
+        print(f"Audio length: {audio.duration} ({YouTube(video_url).length})")
+    length = audio.duration
+
+    if verbose:
+        print(f"Analysing chords...")
+    chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
+
+    cr = chord_result.group()
+    labels = cr.labels
+    chord_times = cr.times
+    if len(labels) != len(chord_times):
+        return f"Length mismatch: labels({len(labels)}) != chord_times({len(chord_times)})"
+
+    if not chord_times or chord_times[-1] > length:
+        return f"Chord times error: {video_url}"
+
+    if not all([t1 < t2 for t1, t2 in zip(chord_times, chord_times[1:])]):
+        return f"Chord times not sorted monotonically: {video_url}"
+
+    if verbose:
+        print("Separating audio...")
+    parts = get_demucs().separate_audio(audio)
+
+    if verbose:
+        print(f"Analysing beats...")
+    beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
+
+    if verbose:
+        print("Postprocessing...")
+    beats: list[float] = beat_result.beats.tolist()
+    downbeats: list[float] = beat_result.downbeats.tolist()
+
+    if not beats or beats[-1] > length:
+        return f"Beats error: {video_url}"
+
+    if not downbeats or downbeats[-1] > length:
+        return f"Downbeats error: {video_url}"
+
+    yt = YouTube(video_url)
+
+    if verbose:
+        print("Creating entry...")
+    return create_entry(
+        length = audio.duration,
+        beats = beats,
+        downbeats = downbeats,
+        chords = labels.tolist(),
+        chord_times = chord_times.tolist(),
+        genre = genre,
+        audio_name = yt.title,
+        url = video_url,
+        playlist = playlist_url,
+        views = yt.views
     )

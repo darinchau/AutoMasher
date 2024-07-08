@@ -20,6 +20,7 @@ class SongGenre(Enum):
     ANIME = "anime"
     BROADWAY = "broadway"
     JPOP = "jp-pop"
+    UNKNOWN = "unknown"
 
     @property
     def mapping(self):
@@ -31,7 +32,8 @@ class SongGenre(Enum):
             SongGenre.NIGHTCORE: 4,
             SongGenre.ANIME: 5,
             SongGenre.BROADWAY: 6,
-            SongGenre.JPOP: 7
+            SongGenre.JPOP: 7,
+            SongGenre.UNKNOWN: 8
         }
 
     def to_int(self) -> int:
@@ -152,7 +154,17 @@ class DatasetEntry:
         return valid_indices
 
     def get_audio(self):
-        return Audio.load(self.url, cache_path=f"resources/cache/{self.url_id}.wav")
+        return Audio.load(self.url, cache_path=f"resources/cache/{self.url_id}.mp3")
+
+    @staticmethod
+    def from_url(url: str, playlist: str | None = None, genre: SongGenre = SongGenre.UNKNOWN):
+        from .create import process_audio_
+        url = get_url(url)
+        audio = Audio.load(url)
+        entry = process_audio_(audio, url, playlist, genre, verbose=False)
+        if isinstance(entry, str):
+            raise ValueError(f"Failed to process audio: {entry}")
+        return entry
 
 class SongDataset:
     """A data structure that holds a bunch of dataset entries for query. Use a hashmap for now. lmk if there are more efficient ways to do this."""

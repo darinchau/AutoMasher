@@ -191,7 +191,7 @@ class Audio(TimeSeries):
         Specify end = -1 to take everything alll the way until the end"""
         assert start >= 0
         start_frame = int(start * self._sample_rate)
-        end_frame = -1 if end == -1 else int(end * self._sample_rate)
+        end_frame = self.nframes if end == -1 else int(end * self._sample_rate)
         assert start_frame < end_frame <= self.nframes
         if end_frame == self.nframes:
             end_frame = -1
@@ -468,7 +468,18 @@ class Audio(TimeSeries):
         x = transform.apply(self._data, self._sample_rate)
         if not isinstance(x, tuple):
             x = (x, self._sample_rate)
-        return Audio(x[0], x[1]).resample(self.sample_rate).pad(self.nframes) if keep_dims else Audio(x[0], x[1])
+
+        audio = Audio(x[0], x[1])
+        if not keep_dims:
+            return audio
+
+        if x[1] != self._sample_rate:
+            audio = audio.resample(self.sample_rate)
+
+        if audio.nframes != self.nframes:
+            audio = audio.pad(self.nframes)
+
+        return audio
 
     def __str__(self):
         """

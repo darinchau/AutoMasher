@@ -8,7 +8,7 @@ from fyp.audio.separation import DemucsAudioSeparator
 from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transformer
 from fyp.audio.dataset import DatasetEntry, SongGenre
 from fyp.audio.dataset.compress import DatasetEntryEncoder
-from fyp.audio.dataset.create import create_entry
+from fyp.audio.dataset.create import process_audio_
 from fyp.util import is_ipython, clear_cuda
 from fyp.util import get_video_id, get_url
 import time
@@ -58,13 +58,6 @@ def log(message: str, verbose: bool = True):
     if verbose:
         print(message)
 
-_DEMUCS = None
-def get_demucs():
-    global _DEMUCS
-    if not _DEMUCS:
-        _DEMUCS = DemucsAudioSeparator()
-    return _DEMUCS
-
 def cleanup_temp_dir():
     clear_output()
     current_dir = tempfile.gettempdir()
@@ -84,65 +77,13 @@ def get_processed_urls(dataset_path: str) -> set[str]:
             processed_urls.add(file[:-5])
     return processed_urls
 
-def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGenre) -> DatasetEntry | None:
-    print(f"Audio length: {audio.duration} ({YouTube(video_url).length})")
-    length = audio.duration
-
-    print(f"Analysing chords...")
-    chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
-
-    cr = chord_result.group()
-    labels = cr.labels
-    chord_times = cr.times
-    if len(labels) != len(chord_times):
-        print(f"Length mismatch: {video_url}")
+def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGenre):
+    processed = process_audio_(audio, video_url, playlist_url, genre, verbose=True)
+    if isinstance(processed, str):
+        print(processed)
         time.sleep(1)
         return None
-
-
-    if not chord_times or chord_times[-1] > length:
-        print(f"Chord times error: {video_url}")
-        return None
-
-    if not all([t1 < t2 for t1, t2 in zip(chord_times, chord_times[1:])]):
-        print(f"Chord times not sorted monotonically: {video_url}")
-        return None
-
-    print("Separating audio...")
-    parts = get_demucs().separate_audio(audio)
-
-    print(f"Analysing beats...")
-    beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
-
-    print("Postprocessing...")
-    beats: list[float] = beat_result.beats.tolist()
-    downbeats: list[float] = beat_result.downbeats.tolist()
-
-    if not beats or beats[-1] > length:
-        print(f"Beats error: {video_url}")
-        time.sleep(1)
-        return None
-
-    if not downbeats or downbeats[-1] > length:
-        print(f"Downbeats error: {video_url}")
-        time.sleep(1)
-        return None
-
-    yt = YouTube(video_url)
-
-    print("Creating entry...")
-    return create_entry(
-        length = audio.duration,
-        beats = beats,
-        downbeats = downbeats,
-        chords = labels.tolist(),
-        chord_times = chord_times.tolist(),
-        genre = genre,
-        audio_name = yt.title,
-        url = video_url,
-        playlist = playlist_url,
-        views = yt.views
-    )
+    return processed
 
 def download_audio(urls: list[str]):
     def download_audio_single(url: str):

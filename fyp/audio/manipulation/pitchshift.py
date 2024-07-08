@@ -11,4 +11,6 @@ class PitchShift(AudioTransform):
         self.nsteps = nsteps
 
     def apply(self, audio: Tensor, sample_rate: int) -> Tensor:
+        if self.nsteps == 0:
+            return audio
         return F.pitch_shift(audio, sample_rate, n_steps=self.nsteps)
