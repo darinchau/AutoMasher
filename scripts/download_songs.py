@@ -1,31 +1,48 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+import gc
+import tempfile
+from threading import Thread, Lock
 from fyp import Audio, SongDataset, DatasetEntry
 from tqdm.auto import tqdm
+import random
+
+def cleanup_temp_dir():
+    current_dir = tempfile.gettempdir()
+    for filename in os.listdir(current_dir):
+        if filename.endswith('.wav') or filename.endswith('.mp4') or filename.endswith('.mp3'):
+            file_path = os.path.join(current_dir, filename)
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                pass
+    gc.collect()
+
+print_lock = Lock()
+
+def worker_thread(dataset: SongDataset):
+    cache_path = "./resources/cache"
+    while True:
+        entry = random.choice(dataset)
+        with print_lock:
+            print(f"Downloading audio: {entry.url_id}... ({len(os.listdir(cache_path))})")
+        try:
+            audio = entry.get_audio()
+            cleanup_temp_dir()
+        except Exception as e:
+            with print_lock:
+                print(f"Failed to download audio: {entry.url_id}: {e}")
 
 def download_audio(dataset: SongDataset):
-    def download_audio_single(entry: DatasetEntry):
-        return entry.get_audio()
+    workers = [Thread(target=worker_thread, args=(dataset,)) for _ in range(8)]
+    for worker in workers:
+        worker.start()
 
-    # Downloads the things concurrently and yields them one by one
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(download_audio_single, entry): entry for entry in dataset}
-        for future in as_completed(futures):
-            entry = futures[future]
-            try:
-                audio = future.result()
-                yield audio
-            except Exception as e:
-                yield f"Failed to download audio (skipping): {entry.url_id}: {e}"
+    for worker in workers:
+        worker.join()
 
 def main():
     ds = SongDataset.load("resources/dataset/audio-infos-v2.1.db")
-    progress_bar = tqdm(desc="Downloading audio...", total=len(ds))
-    for audio in download_audio(ds):
-        if isinstance(audio, str):
-            progress_bar.write(audio)
-            continue
-
-        progress_bar.update(1)
+    download_audio(ds)
 
 if __name__ == "__main__":
     main()

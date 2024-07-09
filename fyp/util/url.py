@@ -10,6 +10,7 @@ def to_youtube(link_or_video_id: str):
     return YouTube(link_or_video_id)
 
 def get_video_id(link_or_video_id: str):
+    """Gets the video id. Example: dQw4w9WgXcQ"""
     url_id = to_youtube(link_or_video_id).video_id
     assert url_id is not None and len(url_id) == 11
     return url_id
@@ -18,6 +19,7 @@ def get_video_title(link_or_video_id: str):
     return to_youtube(link_or_video_id).title
 
 def get_url(link_or_video_id: str):
+    """Gets the url in the form of https://www.youtube.com/watch?v=dQw4w9WgXcQ"""
     url = f"https://www.youtube.com/watch?v={get_video_id(link_or_video_id)}"
     try:
         from ..audio.dataset import DatasetEntry

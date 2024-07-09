@@ -210,10 +210,13 @@ class Audio(TimeSeries):
         Explicitly specify cache = False if you do not want to cache the audio when downloaded from youtube
         """
         if cache_path is not None and os.path.isfile(cache_path):
-            return Audio.load(cache_path)
+            try:
+                return cls.load(cache_path)
+            except Exception as e:
+                pass
 
         # Load from youtube if the file path is a youtube url
-        if fpath.startswith("http") and "youtube" in fpath:
+        if fpath.startswith("http") and "youtu" in fpath:
             tempdir = tempfile.gettempdir()
             tmp_audio_path = download_audio(fpath, tempdir, verbose=False)
             a = cls.load(tmp_audio_path)

@@ -291,3 +291,19 @@ def calculate_self_similarity_beat(ct: ChordAnalysisResult, bt: BeatAnalysisResu
     )
 
     return calculate_self_similarity(ct, bt2, nbars)
+
+def calculate_self_similarity_entry(entry: DatasetEntry, nbars: int):
+    """Calculate the self-similarity of the song on a downbeat level."""
+    ct = ChordAnalysisResult.from_data_entry(entry)
+    bt = BeatAnalysisResult.from_data_entry(entry)
+    ds = SongDataset()
+    ds.add_entry(entry)
+
+    start = len(bt.downbeats) - nbars
+    scores = []
+
+    for i in range(start):
+        score = restrictive_search(ct, bt, ds, i, 0, nbars)
+        scores.append(score)
+
+    return np.array(scores)
