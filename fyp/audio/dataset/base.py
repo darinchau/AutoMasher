@@ -154,7 +154,10 @@ class DatasetEntry:
         return valid_indices
 
     def get_audio(self):
-        return Audio.load(self.url, cache_path=f"resources/cache/{self.url_id}.mp3")
+        cache_path = f"resources/cache/{self.url_id}.mp3"
+        # Make the cache directory if it doesn't exist
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        return Audio.load(self.url, cache_path=cache_path)
 
     @staticmethod
     def from_url(url: str, playlist: str | None = None, genre: SongGenre = SongGenre.UNKNOWN):

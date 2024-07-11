@@ -30,6 +30,38 @@ class HarmonicFeaturesExtractor:
         harmonic_features = get_harmonic_features(features, model=self.model, config=self.config, device=self.device)
         return harmonic_features
 
+def preprocess(entry: DatasetEntry, extractor: HarmonicFeaturesExtractor | None = None, audio: Audio | None = None, nbars: int = 8, augment: bool = False, speedup: float = 1., transpose: int = 0):
+    """Returns features, anchors, anchor_valid_lengths"""
+    # Augment by speedup and transposition
+    if audio is None:
+        audio = entry.get_audio()
+
+    if extractor is None:
+        extractor = HarmonicFeaturesExtractor(device = torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+
+    if augment:
+        audio = audio.change_speed(speedup)
+        audio = audio.apply(PitchShift(transpose))
+    else:
+        speedup = 1.
+
+    features = extractor(audio)
+    sliced_features = []
+    downbeat_slice_idxs = [int(downbeat / speedup * 10.8) for downbeat in entry.downbeats]
+
+    for i in range(len(entry.downbeats) - nbars):
+        start_downbeat_idx = downbeat_slice_idxs[i]
+        end_downbeat_idx = downbeat_slice_idxs[i + nbars]
+        feat_ = features[start_downbeat_idx:end_downbeat_idx]
+        sliced_features.append(feat_)
+
+    anchor_valid_lengths = torch.tensor([len(x) for x in sliced_features]).to(extractor.device)
+
+    max_length = int(anchor_valid_lengths.max().item())
+    anchors = torch.stack([F.pad(x, (0, 0, 0, max_length - len(x))) for x in sliced_features])
+
+    return features, anchors, anchor_valid_lengths
+
 class SelfAttention(nn.Module):
     """Multihead Self Attention module"""
     def __init__(self, embed_dim: int, num_heads: int, dropout: float = 0.0):

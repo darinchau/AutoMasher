@@ -3,7 +3,7 @@ from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transform
 from fyp import Audio
 from fyp import SongDataset
 from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transformer, BeatAnalysisResult, ChordAnalysisResult
-from fyp.audio.analysis.phrase import AudioEncoderModelConfig, HarmonicFeaturesExtractor
+from fyp.audio.analysis.phrase import AudioEncoderModelConfig, HarmonicFeaturesExtractor, preprocess
 from dataclasses import dataclass, asdict
 import torch
 import torch.nn.functional as F
@@ -56,50 +56,37 @@ class TrainingConfig:
     def get_random_speedup(self):
         return random.uniform(self.min_speedup, self.max_speedup)
 
-    def get_negative_phrase(self):
-        return random.randint(1, self.nbar_phrases - 1)
-
 class PhraseDataset:
     def __init__(self, entries: SongDataset, *, config: TrainingConfig, device: torch.device | None = None):
         idx_entries: list[DatasetEntry] = []
         for url_id, entry in entries._data.items():
-            if len(entry.downbeats) < 12 or len(entry.downbeats) > 100: # Filter out songs with too many downbeats because my poor GPu can't handle it
-                continue
             idx_entries.append(entry)
         self.data = idx_entries
         random.shuffle(self.data)
         self.config = config
         self.extractor = HarmonicFeaturesExtractor(device=device)
 
-    def get_data(self, entry: DatasetEntry):
-        # Augment by speedup and transposition
-        audio = entry.get_audio()
-
+    def get_data(self, entry: DatasetEntry, audio: Audio | None = None):
         if self.config.augment:
-            speedup = self.config.get_random_speedup()
-            transpose = self.config.get_random_tranpose()
-            audio = audio.change_speed(speedup)
-            audio = audio.apply(PitchShift(transpose))
+            features, anchors, anchor_valid_lengths = preprocess(
+                extractor=self.extractor,
+                entry=entry,
+                audio=audio,
+                augment=True,
+                transpose=self.config.get_random_tranpose(),
+                speedup=self.config.get_random_speedup(),
+                nbars=self.config.nbar_phrases,
+            )
         else:
-            speedup = 1.
-
-        features = self.extractor(audio)
-        sliced_features = []
-        downbeat_slice_idxs = [int(downbeat / speedup * 10.8) for downbeat in entry.downbeats]
-        nbars = self.config.nbar_phrases
-
-        for i in range(len(entry.downbeats) - nbars):
-            start_downbeat_idx = downbeat_slice_idxs[i]
-            end_downbeat_idx = downbeat_slice_idxs[i + nbars]
-            feat_ = features[start_downbeat_idx:end_downbeat_idx]
-            sliced_features.append(feat_)
-
-        anchor_valid_lengths = torch.tensor([len(x) for x in sliced_features]).to(self.extractor.device)
-
-        max_length = int(anchor_valid_lengths.max().item())
-        anchors = torch.stack([F.pad(x, (0, 0, 0, max_length - len(x))) for x in sliced_features])
-
+            features, anchors, anchor_valid_lengths = preprocess(
+                extractor=self.extractor,
+                entry=entry,
+                audio=audio,
+                augment=False,
+                nbars=self.config.nbar_phrases,
+            )
         return entry, features, anchors, anchor_valid_lengths
+
 
     def __len__(self):
         return len(self.data)
@@ -126,11 +113,25 @@ def login_to_wandb():
     dotenv.load_dotenv()
     wandb.login(key=os.environ["WANDB_API_KEY"])
 
+def load_song_dataset(config: TrainingConfig):
+    import numpy as np
+
+    ds = SongDataset.load(config.dataset_id)
+
+    def bpm_filter_func(x: DatasetEntry):
+        db = np.array(x.downbeats)
+        db_diff = np.diff(db)
+        mean_diff = db_diff / np.mean(db_diff)
+        return np.all((0.9 < mean_diff) & (mean_diff < 1.1))
+
+    ds.filter(lambda x: 12 < len(x.downbeats) < 100).filter(bpm_filter_func)
+    return ds
+
 def main():
     print("Loading data...")
     config = TrainingConfig()
 
-    ds = SongDataset.load(config.dataset_id)
+    ds = load_song_dataset(config)
 
     print("Creating dataset...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -162,6 +163,9 @@ def main():
         for i, (entry, features, x, valid_lengths) in enumerate(data_iter):
             cleanup()
             ssim = torch.tensor(calculate_self_similarity_entry(entry, config.nbar_phrases) / 100, device = device, dtype = torch.float32)
+
+            x = x.to(device)
+            valid_lengths = valid_lengths.to(device)
 
             for j in range(valid_lengths.size(0)):
                 y: torch.Tensor = model(x, valid_lengths)
