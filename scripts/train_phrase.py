@@ -48,7 +48,7 @@ class TrainingConfig:
     save_dir: str = "./resources/models"
     save_every: int = 100
     nbar_phrases: int = 8
-    existing_weights: str | None = "./resources/models_0/phrase_model_7300.pt"
+    existing_weights: str | None = "resources/models_4/phrase_model_11100.pt"
 
     def get_random_tranpose(self):
         return random.randint(self.min_pitch_shift, self.max_pitch_shift)
@@ -100,12 +100,17 @@ class PhraseDataset:
                 print(f"Failed to process entry {entry.url_id}: {e}")
 
 def get_save_path(config: TrainingConfig):
+    import json
+
     save_path = f"{config.save_dir}_0"
     i = 1
     while os.path.exists(save_path):
         save_path = f"{config.save_dir}_{i}"
         i += 1
     os.makedirs(save_path)
+
+    with open(os.path.join(save_path, "config.json"), "w") as f:
+        json.dump(asdict(config), f)
     return save_path
 
 def login_to_wandb():
@@ -118,23 +123,37 @@ def load_song_dataset(config: TrainingConfig):
 
     ds = SongDataset.load(config.dataset_id)
 
-    def bpm_filter_func(x: DatasetEntry):
+    def filter_func(x: DatasetEntry):
+        if not (12 < len(x.downbeats) < 100):
+            return False
+
         db = np.array(x.downbeats)
         db_diff = np.diff(db)
         mean_diff = db_diff / np.mean(db_diff)
-        return np.all((0.9 < mean_diff) & (mean_diff < 1.1))
+        if not np.all((0.9 < mean_diff) & (mean_diff < 1.1)):
+            return False
 
-    ds.filter(lambda x: 12 < len(x.downbeats) < 100).filter(bpm_filter_func)
+        if not x.cached:
+            return False
+
+        return True
+
+    ds.filter(filter_func)
     return ds
 
 def main():
     print("Loading data...")
-    config = TrainingConfig()
+    config = TrainingConfig(
+        model_config = AudioEncoderModelConfig(
+            encoder_embed_dim=256,
+            encoder_num_layers=6,
+        )
+    )
 
     ds = load_song_dataset(config)
 
     print("Creating dataset...")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")
     data = PhraseDataset(ds, config=config, device=device)
 
     print("Creating model...")
@@ -143,6 +162,8 @@ def main():
     if config.existing_weights:
         sd = torch.load(config.existing_weights)
         model.load_state_dict(sd)
+    numel = sum(p.numel() for p in model.parameters())
+    print(f"Model has {numel} parameters")
 
     print("Training model...")
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)

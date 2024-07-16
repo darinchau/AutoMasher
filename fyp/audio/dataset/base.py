@@ -153,11 +153,18 @@ class DatasetEntry:
         valid_indices = np.where(cumulative_music_durations >= min_music_duration)[0]
         return valid_indices
 
+    @property
+    def cache_path(self):
+        return f"resources/cache/{self.url_id}.mp3"
+
     def get_audio(self):
-        cache_path = f"resources/cache/{self.url_id}.mp3"
         # Make the cache directory if it doesn't exist
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        return Audio.load(self.url, cache_path=cache_path)
+        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+        return Audio.load(self.url, cache_path=self.cache_path)
+
+    @property
+    def cached(self):
+        return os.path.exists(self.cache_path)
 
     @staticmethod
     def from_url(url: str, playlist: str | None = None, genre: SongGenre = SongGenre.UNKNOWN):
