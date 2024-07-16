@@ -25,7 +25,7 @@ dotenv.load_dotenv()
 class TrainingConfig:
     dataset_id: str = "./resources/dataset/audio-infos-v2.1.db"
     labels_path: str = "./resources/labels.json"
-    initial_model_path: str = "./resources/models_0/phrase_model_507900.pt"
+    initial_model_path: str = "./resources/models_5/phrase_model_34500.pt"
     freeze_backbone: bool = True
     epochs: int = 100
     save_dir: str = "./resources/models"
@@ -44,7 +44,7 @@ class PhraseDataset(Dataset):
         self.nbar_phrases = config.nbar_phrases
 
         with open(config.labels_path, "r") as f:
-            labels = json.load(f)
+            labels: dict[str, list[float]] = json.load(f)
 
         self.labels = []
         for url, label in labels.items():
@@ -54,9 +54,9 @@ class PhraseDataset(Dataset):
             label = np.array(label) - config.calibration
             label = label[label >= 0]
             downbeats = BeatAnalysisResult.from_data_entry(entries[url]).downbeats
-            label_downbeats = [np.argmin(np.abs(downbeats - x)) for x in label]
-            label_downbeats_time = np.abs(label - downbeats[label_downbeats])
-            label = [(url, x) for x, t in zip (label, label_downbeats_time) if t < config.calibrated_tolerance]
+            label_downbeats_idxs = [np.argmin(np.abs(downbeats - x)) for x in label]
+            label_downbeats_diff = np.abs(label - downbeats[label_downbeats_idxs])
+            label = [(url, x) for x, t in zip (label_downbeats_idxs, label_downbeats_diff) if t < config.calibrated_tolerance]
 
             self.labels.extend(label)
 
@@ -79,7 +79,8 @@ class PhraseDataset(Dataset):
             )
             if random.random() > 0.5:
                 # Make a negative sample
-                downbeat = random.randint(1, self.nbar_phrases - 1) + downbeat
+                choices = [1, 2, 3, 4, 5, 6, 7] if downbeat == 0 else [-1, -1, 1, 2, 3, 4, 5, 6, 7]
+                downbeat = random.choice(choices)
                 return anchors[downbeat], anchor_valid_lengths[downbeat], 0
 
             return anchors[downbeat], anchor_valid_lengths[downbeat], 1
@@ -88,6 +89,27 @@ class PhraseDataset(Dataset):
             print(f"Failed to get data for idx={idx}: {e}")
             r = random.randrange(0, len(self))
             return self.__getitem__(r)
+
+class PhraseModel(nn.Module):
+    def __init__(self, model: nn.Module, model_output_dims: int):
+        super().__init__()
+        self.model = model
+        self.aux = nn.Linear(model_output_dims, 1)
+
+    def forward(self, x, lengths):
+        x = self.model(x, lengths)
+        x = F.normalize(x)
+        x = self.aux(x)
+        x = F.sigmoid(x)
+        return x
+
+
+def collate_fn(tensors):
+    lengths = torch.stack([t[1] for t in tensors])
+    max_len = max([t[0].size(0) for t in tensors])
+    x = torch.stack([F.pad(t[0], (0, 0, 0, max_len - t[0].size(0))) for t in tensors])
+    labels = torch.tensor([t[2] for t in tensors])
+    return x, lengths, labels
 
 def get_save_path(config: TrainingConfig):
     import json
@@ -121,10 +143,10 @@ def load_song_dataset(config: TrainingConfig):
         if not x.cached:
             return False
 
-        try:
-            x.get_audio()
-        except Exception as e:
-            return False
+        # try:
+        #     x.get_audio()
+        # except Exception as e:
+        #     return False
 
         return True
 
@@ -150,52 +172,48 @@ def main():
     sd = torch.load(model_path)
     model.load_state_dict(sd)
 
+    model = PhraseModel(model, config.model_config.encoder_embed_dim)
+
     model = model.to(device)
 
     dataset = PhraseDataset(config, ds, device)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate_fn)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     print(len(dataset), " labels")
 
     if config.freeze_backbone:
         print("Freezing backbone...")
-        for param in model.parameters():
+        for param in model.model.parameters():
             param.requires_grad = False
 
     save_path = get_save_path(config)
-    wandb.login(key=os.environ["WANDB_API_KEY"])
-    with wandb.init(
-        project = f"automasher-phrase",
-        name = f"Trial {save_path.split('_')[-1]}",
-        config = asdict(config)
-    ) as run:
-        model = model.cuda()
-        losses = []
-        samples = 0
-        for epoch in trange(config.epochs):
-            for sample, lengths, label in dataloader:
-                sample = sample.cuda()
-                label = label.cuda()
-                lengths = lengths.cuda()
 
-                optimizer.zero_grad()
-                y = model(sample, lengths).squeeze()
-                loss = F.binary_cross_entropy(y, label.float())
-                loss.backward()
-                optimizer.step()
-                losses.append(loss.item())
-                samples += 1
+    model = model.cuda()
+    losses = []
+    samples = 0
+    for epoch in trange(config.epochs):
+        for sample, lengths, label in dataloader:
+            sample = sample.cuda()
+            label = label.cuda()
+            lengths = lengths.cuda()
 
-                if len(losses) % config.log_every == 0:
-                    if run is not None:
-                        run.log({"loss": np.mean(losses)})
-                    losses.clear()
+            optimizer.zero_grad()
+            y = model(sample, lengths).squeeze()
+            loss = F.binary_cross_entropy(y, label.float())
+            loss.backward()
+            optimizer.step()
+            losses.append(loss.item())
+            samples += 1
 
-                if samples % config.save_every == 0 and samples > 0:
-                    torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
+            if len(losses) % config.log_every == 0:
+                print(sum(losses) / len(losses))
+                losses.clear()
 
-            torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
+            if samples % config.save_every == 0 and samples > 0:
+                torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
+
+        torch.save(model.state_dict(), os.path.join(save_path, f"phrase_model_{samples}.pt"))
 
 if __name__ == "__main__":
     main()
