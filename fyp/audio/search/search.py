@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 import numpy as np
 from ... import Audio
-from ...util import get_video_id, YouTubeURL
+from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
 from ..base import AudioCollection
 from ..dataset import SongDataset, DatasetEntry, SongGenre

@@ -11,8 +11,8 @@ class YouTubeURL(str):
             return value
         if len(value) == 11 and _VIDEO_ID.match(value):
             value = cls.URL_PREPEND + value
-        assert value.startswith(cls.URL_PREPEND)
-        assert _VIDEO_ID.match(value[len(cls.URL_PREPEND):])
+        assert value.startswith(cls.URL_PREPEND), f"Invalid YouTube URL: {value}"
+        assert _VIDEO_ID.match(value[len(cls.URL_PREPEND):]), f"Invalid YouTube URL: {value}"
         return super().__new__(cls, value)
 
     @property
@@ -35,15 +35,9 @@ def get_video_id(link_or_video_id: str):
     assert url_id is not None and len(url_id) == 11
     return url_id
 
-def get_video_title(link_or_video_id: str):
-    return to_youtube(link_or_video_id).title
-
 def get_url(link_or_video_id: str) -> YouTubeURL:
-    """Gets the url in the form of https://www.youtube.com/watch?v=dQw4w9WgXcQ"""
+    """Gets the url in the form of https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+    This essentially normalizes the input to a YouTube URL."""
     url = f"https://www.youtube.com/watch?v={get_video_id(link_or_video_id)}"
-    try:
-        from ..audio.dataset import DatasetEntry
-        assert url.startswith(DatasetEntry.get_url_prepend())
-    except ImportError:
-        pass
     return YouTubeURL(url)

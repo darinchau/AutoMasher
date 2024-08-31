@@ -11,7 +11,7 @@ from fyp.audio.dataset import DatasetEntry, SongGenre
 from fyp.audio.dataset.compress import DatasetEntryEncoder
 from fyp.audio.dataset.create import process_audio_
 from fyp.util import is_ipython, clear_cuda
-from fyp.util import get_video_id, get_url
+from fyp.util import get_video_id, get_url, YouTubeURL
 import time
 import traceback
 from tqdm.auto import tqdm
@@ -78,7 +78,7 @@ def get_processed_urls(dataset_path: str) -> set[str]:
             processed_urls.add(file[:-5])
     return processed_urls
 
-def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGenre):
+def process_audio(audio: Audio, video_url: YouTubeURL, playlist_url: str, genre: SongGenre):
     processed = process_audio_(audio, video_url, playlist_url, genre, verbose=True)
     if isinstance(processed, str):
         print(processed)
@@ -86,7 +86,7 @@ def process_audio(audio: Audio, video_url: str, playlist_url: str, genre: SongGe
         return None
     return processed
 
-def download_audio(urls: list[str]):
+def download_audio(urls: list[YouTubeURL]):
     def download_audio_single(url: str):
         if not filter_song(YouTube(url)):
             return None
@@ -108,7 +108,7 @@ def download_audio(urls: list[str]):
 def save_dataset_entry(entry: DatasetEntry, dataset_path: str):
     encoder = DatasetEntryEncoder()
     b = encoder.encode(entry)
-    with open(os.path.join(dataset_path, f"{get_video_id(entry._url)}.data"), "wb") as file:
+    with open(os.path.join(dataset_path, f"{entry.url.video_id}.data"), "wb") as file:
         file.write(bytes(b))
 
 def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, playlist_url: str, title: str):
@@ -119,8 +119,8 @@ def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, pla
 
     t = time.time()
     last_t = None
-    urls = [get_url(url) for url in urls]
-    for i, (audio, url) in enumerate(download_audio(urls)):
+    youtube_urls = [get_url(url) for url in urls]
+    for i, (audio, url) in enumerate(download_audio(youtube_urls)):
         if not audio:
             continue
 

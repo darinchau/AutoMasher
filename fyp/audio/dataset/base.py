@@ -69,16 +69,12 @@ class DatasetEntry:
     beats: list[float]
     genre: SongGenre
     audio_name: str
-    _url: str
+    url: YouTubeURL
     playlist: str | None
     views: int
     length: float
     normalized_chord_times: list[float]
     music_duration: list[float]
-
-    @property
-    def url(self):
-        return YouTubeURL(self._url)
 
     @staticmethod
     def get_playlist_prepend():
@@ -96,8 +92,6 @@ class DatasetEntry:
         assert all(0 <= c < 600 for c in self.downbeats), f"Invalid downbeats: {self.downbeats}"
         assert all(0 <= c < 600 for c in self.beats), f"Invalid beats: {self.beats}"
         assert self.playlist is None or self.playlist.startswith(self.get_playlist_prepend())
-        assert self._url.startswith(self.get_url_prepend())
-        assert len(self._url) > 11
         assert self.views >= 0
         assert self.length > 0
         assert _is_sorted(self.chord_times)
@@ -107,7 +101,7 @@ class DatasetEntry:
     @property
     def url_id(self):
         # return self.url[-11:]
-        return get_video_id(self._url)
+        return self.url.video_id
 
     def __repr__(self):
         return f"DatasetEntry({self.audio_name} [{self.url_id}])"
@@ -115,7 +109,7 @@ class DatasetEntry:
     def equal(self, value: DatasetEntry, *, eps: float = 1e-5) -> bool:
         """Check if the given value is equal to this entry. This is useful for testing purposes.
         This is a bit more lenient than __eq__ as it allows for some floating point error."""
-        if self._url != value._url:
+        if self.url != value.url:
             return False
         if self.audio_name != value.audio_name:
             return False
@@ -164,7 +158,7 @@ class DatasetEntry:
     def get_audio(self):
         # Make the cache directory if it doesn't exist
         os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-        return Audio.load(self._url, cache_path=self.cache_path)
+        return Audio.load(self.url, cache_path=self.cache_path)
 
     @property
     def cached(self):
@@ -182,19 +176,19 @@ class DatasetEntry:
 class SongDataset:
     """A data structure that holds a bunch of dataset entries for query. Use a hashmap for now. lmk if there are more efficient ways to do this."""
     def __init__(self):
-        self._data: dict[str, DatasetEntry] = {}
+        self._data: dict[YouTubeURL, DatasetEntry] = {}
 
-    def get_by_url(self, url: str) -> DatasetEntry | None:
+    def get_by_url(self, url: YouTubeURL) -> DatasetEntry | None:
         return self._data.get(url, None)
 
-    def __getitem__(self, url: str | int) -> DatasetEntry:
-        if isinstance(url, str):
-            url = get_url(url)
+    def __getitem__(self, url: str | YouTubeURL | int) -> DatasetEntry:
+        if isinstance(url, YouTubeURL):
             return self._data[url]
-        elif isinstance(url, int):
+        if isinstance(url, str):
+            return self._data[YouTubeURL(url)]
+        if isinstance(url, int):
             return list(self._data.values())[url]
-        else:
-            raise TypeError(f"Invalid type for url: {type(url)}")
+        raise TypeError(f"Invalid type for url: {type(url)}")
 
     def __len__(self):
         return len(self._data)
@@ -203,7 +197,7 @@ class SongDataset:
         return iter(self._data.values())
 
     def add_entry(self, entry: DatasetEntry):
-        self._data[entry._url] = entry
+        self._data[entry.url] = entry
 
     def filter(self, filter_func: Callable[[DatasetEntry], bool] | None):
         """Returns a new dataset with the entries that satisfy the filter function. If filter_func is None, return yourself"""

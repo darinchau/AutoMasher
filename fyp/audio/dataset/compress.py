@@ -353,7 +353,7 @@ class SongDatasetEncoder(BitsEncoder[SongDataset]):
         return dataset
 
 class FastSongDatasetEncoder(BitsEncoder[SongDataset]):
-    def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
+    def __init__(self):
         self.checksum_encoder = Int32Encoder()
 
     def encode(self, data: SongDataset) -> Iterator[int]:
