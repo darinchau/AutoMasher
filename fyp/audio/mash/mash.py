@@ -1,10 +1,9 @@
-from .mashup_maker import MashupMaker
+from .base import MashupMaker
 from ..search import calculate_boundaries, SearchConfig
-from ..search.search import restrictive_search
 from .. import Audio
 from ..manipulation import PitchShift, HighpassFilter
 from .. import AudioCollection
-from .util import mash_two_songs, cross_fade
+from .base import mash_two_songs, cross_fade
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from datasets import Dataset
 import numpy as np

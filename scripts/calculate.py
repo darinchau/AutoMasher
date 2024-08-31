@@ -1,4 +1,5 @@
 # python -m scripts.calculate from root directory to run the script
+# This creates a dataset of audio features from a playlist of songs
 
 import os
 from pytube import YouTube

@@ -1,5 +1,7 @@
 from fyp import SongDataset, DatasetEntry
 
+# This reencodes the dataset to a more efficient format
+
 # cProfile.run("SongDataset.load('./resources/dataset/audio-infos-v2.db')", sort="cumulative")
 
 from fyp.audio.dataset.compress import FastSongDatasetEncoder

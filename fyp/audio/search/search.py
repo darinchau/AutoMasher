@@ -12,7 +12,6 @@ from math import exp
 from .search_config import SearchConfig
 from .align import calculate_mashability, MashabilityResult
 from ...util import get_video_id
-from ..analysis import extract_chorus
 from ..base import AudioCollection
 
 def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[float, MashabilityResult]]:
@@ -220,90 +219,3 @@ def search_song(state: SongSearchState) -> list[tuple[float, MashabilityResult]]
     scores = [(curve_score(x[0]), x[1]) for x in scores_]
     state._all_scores = scores
     return scores
-
-def create_dummy_entry(ct: ChordAnalysisResult, bt: BeatAnalysisResult):
-    """Create a dummy entry for the dataset."""
-    return create_entry(
-        length=ct.get_duration(),
-        chords=ct.labels.tolist(),
-        chord_times=ct.times.tolist(),
-        beats=bt.beats.tolist(),
-        downbeats=bt.downbeats.tolist(),
-        url=f"{DatasetEntry.get_url_prepend()}dQw4w9WgXcQ",
-        views=12345678,
-        genre=SongGenre.POP,
-        audio_name="dummy_audio",
-        playlist=f"{DatasetEntry.get_playlist_prepend()}dummy_playlist"
-    )
-
-def restrictive_search(chord_result: ChordAnalysisResult, beat_result: BeatAnalysisResult,
-                   dataset: SongDataset, start_bar_number: int, transpose: int, nbars: int):
-    """Search for the best score with the given parameters."""
-    new_search_config = SearchConfig(
-        max_transpose=(transpose, transpose),
-        bar_number=start_bar_number,
-        filter_first=False,
-        nbars=nbars,
-        min_music_percentage=0,
-        max_delta_bpm=float('inf'),
-        min_delta_bpm=0,
-        progress_bar=False,
-        keep_first_k=-1,
-    )
-
-    search_state = SongSearchState(
-        link="dummy_url",
-        config=new_search_config,
-        dataset=dataset
-    )
-
-    # Inject the searcher with our chord and beat informations
-    search_state._raw_beat_result = beat_result
-    search_state._raw_chord_result = chord_result
-    scores = search_song(search_state)
-
-    # Collect the scores
-    new_scores = [0.] * len(scores)
-    for score in scores:
-        new_scores[score[1].start_bar] = score[0]
-    return new_scores
-
-def calculate_self_similarity(ct: ChordAnalysisResult, bt: BeatAnalysisResult, nbars: int):
-    """Calculate the self-similarity of the song on a downbeat level."""
-    entries = SongDataset()
-    entries.add_entry(create_dummy_entry(ct, bt))
-
-    start = len(bt.downbeats) - nbars
-    scores = []
-
-    for i in range(start):
-        score = restrictive_search(ct, bt, entries, i, 0, nbars)
-        scores.append(score)
-
-    return np.array(scores)
-
-def calculate_self_similarity_beat(ct: ChordAnalysisResult, bt: BeatAnalysisResult, nbars: int):
-    """Calculate the self-similarity of the song on a beat level."""
-    bt2 = BeatAnalysisResult(
-        duration=bt.duration,
-        beats=bt.beats,
-        downbeats=bt.beats,
-    )
-
-    return calculate_self_similarity(ct, bt2, nbars)
-
-def calculate_self_similarity_entry(entry: DatasetEntry, nbars: int):
-    """Calculate the self-similarity of the song on a downbeat level."""
-    ct = ChordAnalysisResult.from_data_entry(entry)
-    bt = BeatAnalysisResult.from_data_entry(entry)
-    ds = SongDataset()
-    ds.add_entry(entry)
-
-    start = len(bt.downbeats) - nbars
-    scores = []
-
-    for i in range(start):
-        score = restrictive_search(ct, bt, ds, i, 0, nbars)
-        scores.append(score)
-
-    return np.array(scores)
