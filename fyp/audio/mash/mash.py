@@ -1,16 +1,14 @@
-from .base import MashupMaker
-from ..search import calculate_boundaries, SearchConfig
-from .. import Audio
-from ..manipulation import PitchShift, HighpassFilter
-from .. import AudioCollection
-from .base import mash_two_songs, cross_fade
-from ..analysis import ChordAnalysisResult, BeatAnalysisResult
-from datasets import Dataset
-import numpy as np
 from tqdm.auto import trange
-from ...util import get_url as get_video_url
-import enum
 from typing import Any
+import enum
+import numpy as np
+from .. import Audio
+from .. import AudioCollection
+from ..analysis import ChordAnalysisResult, BeatAnalysisResult
+from ..manipulation import PitchShift, HighpassFilter
+from ..search import calculate_boundaries, SearchConfig
+from .base import MashupMaker
+from .base import mash_two_songs, cross_fade
 
 class SameBPMMode(enum.Enum):
     NORMAL = 0
