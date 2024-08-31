@@ -12,7 +12,7 @@ class HPSSAudioSeparator(AudioSeparator):
         self._return_harmonic = return_harmonic
         self._return_percussive = return_percussive
 
-    def separate_audio(self, audio: Audio) -> AudioCollection:
+    def separate(self, audio: Audio) -> AudioCollection:
         """Implementes the HPSS algorithm. Return may contain the keys 'harmonic' and 'percussive' depending on the initialization."""
         result = {}
 

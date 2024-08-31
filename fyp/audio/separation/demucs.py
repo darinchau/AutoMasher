@@ -98,7 +98,7 @@ class DemucsAudioSeparator(AudioSeparator):
         name_indices: dict[str, int] = {name: i for i, name in enumerate(model.sources)}
         return components, name_indices
 
-    def separate_audio(self, audio: Audio, **kwargs) -> AudioCollection:
+    def separate(self, audio: Audio, **kwargs) -> AudioCollection:
         """Performs the demucs audio separation pipeline.
         Play with hyperparameters with the pipeline() method.
         All kwargs will be forwarded to pipeline.

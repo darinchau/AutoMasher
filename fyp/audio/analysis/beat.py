@@ -35,7 +35,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
 
     if parts is None and audio is not None:
         demucs = DemucsAudioSeparator() if separator is None else separator
-        parts = demucs.separate_audio(audio)
+        parts = demucs.separate(audio)
         duration = audio.duration
     elif parts is not None:
         duration = parts.get_duration()

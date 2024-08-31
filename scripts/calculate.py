@@ -108,7 +108,7 @@ def download_audio(urls: list[str]):
 def save_dataset_entry(entry: DatasetEntry, dataset_path: str):
     encoder = DatasetEntryEncoder()
     b = encoder.encode(entry)
-    with open(os.path.join(dataset_path, f"{get_video_id(entry.url)}.data"), "wb") as file:
+    with open(os.path.join(dataset_path, f"{get_video_id(entry._url)}.data"), "wb") as file:
         file.write(bytes(b))
 
 def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, playlist_url: str, title: str):

@@ -35,7 +35,7 @@ class SongSearchState:
         self._link = link
         self._audio = audio
         self.search_config = config
-        self._cache_handler = LocalCache(config.cache_dir)
+        self._cache_handler = LocalCache(config.cache_dir, self._link)
         self._dataset = dataset
         self._all_scores: list[tuple[float, MashabilityResult]] = []
         self._raw_chord_result: ChordAnalysisResult | None = None
@@ -72,7 +72,7 @@ class SongSearchState:
                 self.audio,
                 model_path=self.search_config.chord_model_path,
             )
-            self._cache_handler.store_chord_analysis(self.link, self._raw_chord_result)
+            self._cache_handler.store_chord_analysis(self._raw_chord_result)
         return self._raw_chord_result
 
     @property
@@ -83,7 +83,7 @@ class SongSearchState:
                 parts = self.raw_parts_result,
                 model_path=self.search_config.beat_model_path
             )
-            self._cache_handler.store_beat_analysis(self.link, self._raw_beat_result)
+            self._cache_handler.store_beat_analysis(self._raw_beat_result)
         return self._raw_beat_result
 
     @property
@@ -115,7 +115,7 @@ class SongSearchState:
         """Returns the raw parts result of the user-submitted song without any processing."""
         if self._raw_parts_result is None:
             demucs = DemucsAudioSeparator()
-            self._raw_parts_result = demucs.separate_audio(self.audio)
+            self._raw_parts_result = demucs.separate(self.audio)
         return self._raw_parts_result
 
     @property
@@ -167,7 +167,14 @@ def search_song(state: SongSearchState) -> list[tuple[float, MashabilityResult]]
                         submitted_chord_result=state.submitted_chord_result,
                         submitted_beat_result=state.submitted_beat_result,
                         dataset=dataset,
-                        search_config=state.search_config)
+                        max_transpose=state.search_config.max_transpose,
+                        min_music_percentage=state.search_config.min_music_percentage,
+                        max_delta_bpm=state.search_config.max_delta_bpm,
+                        min_delta_bpm=state.search_config.min_delta_bpm,
+                        max_score=state.search_config.max_score,
+                        keep_first_k=state.search_config.keep_first_k,
+                        verbose=state.search_config.verbose,
+    )
 
     if state.search_config.filter_first:
         scores_ = filter_first(scores_)

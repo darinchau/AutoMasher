@@ -43,7 +43,7 @@ def analyse_key_center_chroma(audio: Audio, f: ChromaFunction, hop = 512) -> Key
     """The base function to calculate a key center from a chromograph function."""
     # Use HPSS to extract the harmonic component
     sep = HPSSAudioSeparator(return_percussive=False)
-    harmonic_component = sep.separate_audio(audio)['harmonic']
+    harmonic_component = sep.separate(audio)['harmonic']
     chromograph = f(harmonic_component, hop)
     correlations = _correlations_from_chromograph(chromograph)
     return KeyAnalysisResult(correlations)

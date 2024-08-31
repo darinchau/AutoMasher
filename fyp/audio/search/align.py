@@ -219,7 +219,15 @@ class MashabilityList:
         )) for score, (i, k, start, entry) in self.heap], key=lambda x: x[0])
 
 def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
-                         dataset: SongDataset, search_config: SearchConfig | None = None) -> list[tuple[float, MashabilityResult]]:
+                            dataset: SongDataset,
+                            max_transpose: typing.Union[int, tuple[int, int]] = 3,
+                            min_music_percentage: float = 0.5,
+                            max_delta_bpm: float = 1.1,
+                            min_delta_bpm: float = 0.9,
+                            max_score: float = float("inf"),
+                            keep_first_k: int = 10,
+                            verbose: bool = True,
+        ) -> list[tuple[float, MashabilityResult]]:
     """Calculate the mashability of the submitted song with the dataset.
     Assuming the chord result is always short enough
     Assume t=0 is always a downbeat
@@ -227,16 +235,15 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
     assert submitted_beat_result.downbeats is not None
     assert submitted_beat_result.downbeats[0] == 0.
     assert submitted_chord_result.duration == submitted_beat_result.duration
-    search_config = search_config or SearchConfig()
 
     submitted_normalized_cr = get_normalized_chord_result(submitted_chord_result, submitted_beat_result)
 
     # Transpose the submitted chord result in the opposite direction to speed up calculation
     transposed_crs: list[tuple[int, NDArray[np.float64], NDArray[np.uint8]]] = []
-    if isinstance(search_config.max_transpose, int):
-        max_transpose = (-search_config.max_transpose, search_config.max_transpose)
+    if isinstance(max_transpose, int):
+        max_transpose = (-max_transpose, max_transpose)
     else:
-        max_transpose = search_config.max_transpose
+        max_transpose = max_transpose
     for transpose_semitone in range(max_transpose[0], max_transpose[1] + 1):
         new_chord_result = submitted_normalized_cr.transpose(-transpose_semitone)
         times1, chords1 = new_chord_result.grouped_end_times_labels()
@@ -244,19 +251,19 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
 
     # Precalculate chord distances as a numpy array to take advantage of jit
     distances = _get_distance_array()
-    scores = MashabilityHeap(keep_first_k=search_config.keep_first_k) if search_config.keep_first_k > 0 else MashabilityList()
+    scores = MashabilityHeap(keep_first_k=keep_first_k) if keep_first_k > 0 else MashabilityList()
     nbars = len(submitted_beat_result.downbeats)
 
     # Initiate progress bar
-    for entry in tqdm(dataset, desc="Searching database", disable=not search_config.verbose):
+    for entry in tqdm(dataset, desc="Searching database", disable=not verbose):
         sample_downbeats = np.array(entry.downbeats, dtype=np.float64)
         sample_normalized_chords = np.array(entry.chords, dtype = np.uint8)
         sample_normalized_chord_times = np.array(entry.normalized_chord_times, dtype = np.float64)
         submitted_beat_times = np.append(submitted_beat_result.downbeats, submitted_beat_result.duration)
         submitted_beat_times_diff = submitted_beat_times[1:] - submitted_beat_times[:-1]
 
-        for i in entry.get_valid_starting_points(nbars, search_config.min_music_percentage):
-            is_bpm_within_tolerance = _calculate_tolerance(submitted_beat_times_diff, sample_downbeats, search_config.max_delta_bpm, search_config.min_delta_bpm, nbars, i)
+        for i in entry.get_valid_starting_points(nbars, min_music_percentage):
+            is_bpm_within_tolerance = _calculate_tolerance(submitted_beat_times_diff, sample_downbeats, max_delta_bpm, min_delta_bpm, nbars, i)
             if not is_bpm_within_tolerance:
                 continue
 
@@ -264,7 +271,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
             starting_downbeat = sample_downbeats[i]
             for transpose_semitone, times1, chords1 in transposed_crs:
                 new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
-                if new_score > search_config.max_score:
+                if new_score > max_score:
                     continue
                 # Use a tuple instead of a dataclass for now, will change it back to a dataclass in scores.get
                 # This is because using tuple literal syntax skips the step to find the dataclass constructor name

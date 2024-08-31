@@ -2,6 +2,7 @@
 import numpy as np
 from .base import SongGenre, DatasetEntry
 from ...util.note import get_inv_voca_map
+from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer
 from ..separation import DemucsAudioSeparator
 from pytube import YouTube
@@ -63,7 +64,7 @@ def create_entry(length: float, beats: list[float], downbeats: list[float], chor
         beats=beats,
         genre=genre,
         audio_name=audio_name,
-        url=url,
+        _url=url,
         playlist=playlist,
         views=views,
         length=length,
@@ -78,7 +79,7 @@ def get_demucs():
         _DEMUCS = DemucsAudioSeparator()
     return _DEMUCS
 
-def process_audio_(audio: Audio, video_url: str, playlist_url: str | None, genre: SongGenre, *, verbose: bool = True) -> DatasetEntry | str:
+def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None, genre: SongGenre, *, verbose: bool = True) -> DatasetEntry | str:
     if verbose:
         print(f"Audio length: {audio.duration} ({YouTube(video_url).length})")
     length = audio.duration
@@ -101,7 +102,7 @@ def process_audio_(audio: Audio, video_url: str, playlist_url: str | None, genre
 
     if verbose:
         print("Separating audio...")
-    parts = get_demucs().separate_audio(audio)
+    parts = get_demucs().separate(audio)
 
     if verbose:
         print(f"Analysing beats...")
