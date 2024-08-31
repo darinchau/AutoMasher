@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from typing import Callable
 from .. import Audio, AudioCollection
@@ -69,8 +70,6 @@ class SearchConfig:
     min_delta_bpm: float = 0.8
     keep_first_k: int = 20
     max_score: float = float("inf")
-    pychorus_work_factor: int = 14
-    progress_bar: bool = True
     bar_number: int | None = None
     nbars: int | None = None
     filter_func: Callable[[DatasetEntry], bool] | None = None
@@ -81,3 +80,7 @@ class SearchConfig:
     cache_dir: str | None = "./"
     cache: bool = True
     verbose: bool = False
+
+    def __post_init__(self):
+        if self.cache_dir is not None and not os.path.isdir(self.cache_dir):
+            raise ValueError(f"Cache directory not found: {self.cache_dir}")

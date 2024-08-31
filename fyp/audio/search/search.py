@@ -1,18 +1,19 @@
 from __future__ import annotations
 import os
 import numpy as np
-from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
-from ..analysis import TimeSegmentResult
 from ... import Audio
-from typing import Any
+from ...util import get_video_id, YouTubeURL
+from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
+from ..base import AudioCollection
 from ..dataset import SongDataset, DatasetEntry, SongGenre
 from ..dataset.create import create_entry
 from ..separation import DemucsAudioSeparator
-from math import exp
-from .search_config import SearchConfig
 from .align import calculate_mashability, MashabilityResult
-from ...util import get_video_id
-from ..base import AudioCollection
+from .cache import LocalCache
+from .search_config import SearchConfig
+from dataclasses import dataclass
+from math import exp
+from typing import Any
 
 def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[float, MashabilityResult]]:
     seen = set()
@@ -30,10 +31,11 @@ def curve_score(score: float) -> float:
 
 class SongSearchState:
     """A state object for song searching that caches the results of the search and every intermediate step."""
-    def __init__(self, link: str, config: SearchConfig, audio: Audio | None = None, dataset: SongDataset | None = None):
+    def __init__(self, link: YouTubeURL, config: SearchConfig, audio: Audio | None = None, dataset: SongDataset | None = None):
         self._link = link
         self._audio = audio
         self.search_config = config
+        self._cache_handler = LocalCache(config.cache_dir)
         self._dataset = dataset
         self._all_scores: list[tuple[float, MashabilityResult]] = []
         self._raw_chord_result: ChordAnalysisResult | None = None
@@ -47,7 +49,7 @@ class SongSearchState:
         self._slice_nbar: int | None = None
 
     @property
-    def link(self) -> str:
+    def link(self) -> YouTubeURL:
         return self._link
 
     @property
@@ -63,46 +65,14 @@ class SongSearchState:
         return self._dataset
 
     @property
-    def cache_dir(self) -> str | None:
-        """Returns the beat cache path. If not found or cache is disabled, return None"""
-        if self.search_config.cache_dir is None:
-            return None
-        if not self.search_config.cache:
-            return None
-        if not os.path.isdir(self.search_config.cache_dir):
-            raise ValueError(f"Cache directory not found: {self.search_config.cache_dir}")
-        return self.search_config.cache_dir
-
-    @property
-    def beat_cache_path(self) -> str | None:
-        """Returns the beat cache path. If not found or cache is disabled, return None"""
-        if not self.search_config.cache or self.cache_dir is None:
-            return None
-        return os.path.join(self.cache_dir, f"beat_{get_video_id(self.link)}.cache")
-
-    @property
-    def chord_cache_path(self) -> str | None:
-        """Returns the chord cache path. If not found or cache is disabled, return None"""
-        if not self.search_config.cache or self.cache_dir is None:
-            return None
-        return os.path.join(self.cache_dir, f"chord_{get_video_id(self.link)}.cache")
-
-    @property
-    def audio_cache_path(self) -> str | None:
-        """Returns the audio cache path. If not found or cache is disabled, return None"""
-        if not self.search_config.cache or self.cache_dir is None:
-            return None
-        return os.path.join(self.cache_dir, f"audio_{get_video_id(self.link)}.wav")
-
-    @property
     def raw_chord_result(self) -> ChordAnalysisResult:
         """The raw chord result of the user-submitted song without any processing."""
         if self._raw_chord_result is None:
             self._raw_chord_result = analyse_chord_transformer(
                 self.audio,
                 model_path=self.search_config.chord_model_path,
-                cache_path = self.chord_cache_path
             )
+            self._cache_handler.store_chord_analysis(self.link, self._raw_chord_result)
         return self._raw_chord_result
 
     @property
@@ -110,10 +80,10 @@ class SongSearchState:
         """The raw beat result of the user-submitted song without any processing."""
         if self._raw_beat_result is None:
             self._raw_beat_result = analyse_beat_transformer(
-                parts = lambda: self.raw_parts_result,
-                cache_path = self.beat_cache_path,
+                parts = self.raw_parts_result,
                 model_path=self.search_config.beat_model_path
             )
+            self._cache_handler.store_beat_analysis(self.link, self._raw_beat_result)
         return self._raw_beat_result
 
     @property
@@ -177,26 +147,12 @@ class SongSearchState:
 
     def _chorus_analysis(self):
         """Calculates the start bar and the number of bars of the slice. If the bar number is provided, it will use that instead."""
-        if self.search_config.bar_number is not None:
-            _slice_start_bar = self.search_config.bar_number
-            _slice_nbar = self.search_config.nbars if self.search_config.nbars is not None else 8
-            if _slice_start_bar + _slice_nbar >= len(self.raw_beat_result.downbeats):
-                raise ValueError(f"Bar number out of bounds: {_slice_start_bar + _slice_nbar} >= {len(self.raw_beat_result.downbeats)}")
-            return _slice_start_bar, _slice_nbar
-
-        slice_ranges = extract_chorus(self.raw_parts_result, self.raw_beat_result, self.audio, work_factor=self.search_config.pychorus_work_factor)
-        slice_nbar = 8
-        slice_start_bar = 0
-        for i in range(len(slice_ranges)):
-            if slice_ranges[i] + slice_nbar < len(self.raw_beat_result.downbeats):
-                slice_start_bar = slice_ranges[i]
-                break
-
-        # Prevent array out of bounds below
-        slice_nbar = self.search_config.nbars if self.search_config.nbars is not None else slice_nbar
-
-        assert slice_start_bar + slice_nbar < len(self.raw_beat_result.downbeats)
-        return slice_start_bar, slice_nbar
+        assert self.search_config.bar_number is not None, "Chorus detection is not implemented. Bar number must be provided for chorus analysis"
+        _slice_start_bar = self.search_config.bar_number
+        _slice_nbar = self.search_config.nbars if self.search_config.nbars is not None else 8
+        if _slice_start_bar + _slice_nbar >= len(self.raw_beat_result.downbeats):
+            raise ValueError(f"Bar number out of bounds: {_slice_start_bar + _slice_nbar} >= {len(self.raw_beat_result.downbeats)}")
+        return _slice_start_bar, _slice_nbar
 
 def search_song(state: SongSearchState) -> list[tuple[float, MashabilityResult]]:
     """Searches for songs that match the audio. Returns a list of tuples, where the first element is the score and the second element is the url.

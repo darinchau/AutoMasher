@@ -272,35 +272,3 @@ def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], s
     new_times[0] = 0.
     new_labels = labels[start_idx:end_idx]
     return new_times, new_labels
-
-@dataclass(frozen=True)
-class TimeSegmentResult(TimeSeries):
-    """A class that represents the result of a time segment analysis. Internally this owns a beat analysis result
-    with only the beat times that are in the time segment. This is useful for aligning time segments with beats."""
-
-    _ba : BeatAnalysisResult
-
-    @classmethod
-    def from_data(cls, times: list[float], duration: float):
-        return cls(BeatAnalysisResult(duration, np.array(times, dtype=np.float32), np.array([], dtype=np.float32)))
-
-    def slice_seconds(self, start: float, end: float) -> TimeSegmentResult:
-        ba = self._ba.slice_seconds(start, end)
-        return TimeSegmentResult(ba)
-
-    def change_speed(self, speed: float) -> TimeSegmentResult:
-        ba = self._ba.change_speed(speed)
-        return TimeSegmentResult(ba)
-
-    def join(self, other: TimeSegmentResult) -> TimeSegmentResult:
-        ba = self._ba.join(other._ba)
-        return TimeSegmentResult(ba)
-
-    def get_duration(self):
-        return self._ba.get_duration()
-
-    def align_with_closest_downbeats(self, beat_result: BeatAnalysisResult) -> list[int]:
-        """Align the time segments with the closest downbeats"""
-        diffs = self._ba.beats[None, :] - beat_result.downbeats[:, None]
-        beat_indices = np.argmin(np.abs(diffs), axis = 0)
-        return beat_indices.tolist()
