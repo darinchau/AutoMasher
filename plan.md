@@ -11,3 +11,18 @@ The user should also be able to access a dropdown menu that gives them more cont
 # Backend
 
 The backend should be a REST API that takes in a song, and a mashup config. The API should then return a link to download the mashup.
+
+# Submitting chord and beat results
+The user should label a song with a starting point of their mashup. The algorithm will pick an appropriate starting point as follows:
+- If the user's input is within 20 seconds of the end of the music, we prompt the user to re-enter the starting point.
+- The appropriate starting point should have at least 8 more downbeats. These 8 downbeats should be consistent i.e. the range of the differences should be within 0.9x to 1.1x of the average difference.
+- We search for downbeats within 3 seconds of the user's input. If:
+- - There is only one downbeat within +- 3 seconds of the user's input, we use that as the starting point.
+- - There are multiple downbeats within +- 3 seconds of the user's input, we try to run a tiebreaker algorithm to determine the correct downbeat.
+- - - At each downbeat, grab the last 10 seconds of audio (or less if the song is shorter) and run a key detection algorithm.
+- - - Then the cadence before the downbeat is matched against known cadences to determine a phrase-ending score.
+- - - - (V -> I) = 1, (I -> I) = 0.7, (IV -> I) = 0.6, (X -> V) = 0.6 (IV -> IV) = 0.1, others: 0.1
+- - - If tiebreaker fails, pick the closest one that satisfies the basic requirements.
+- - There are no downbeats within +- 3 seconds of the user's input, we will run a music detection algorithm
+- - - If there is no music, we forward-shift the starting point to the first instance with music, and rerun this 3 second algorithm.
+- - - If there is music, we will apply an extrapolation algorithm to extend the beats to the user's input. After extending the beats, we will rerun the 3 second algorithm.

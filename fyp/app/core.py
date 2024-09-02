@@ -10,7 +10,7 @@ from ..audio.base import AudioCollection
 from ..audio.dataset import SongDataset, DatasetEntry, SongGenre
 from ..audio.dataset.create import create_entry
 from ..audio.search.align import calculate_mashability
-from ..audio.search.cache import CacheHandler
+from ..audio.dataset.cache import CacheHandler
 from ..audio.search.search import filter_first, curve_score
 from ..audio.search.search_config import SearchConfig
 from ..audio.separation import DemucsAudioSeparator

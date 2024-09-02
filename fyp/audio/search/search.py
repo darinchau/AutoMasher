@@ -9,7 +9,7 @@ from ..dataset import SongDataset, DatasetEntry, SongGenre
 from ..dataset.create import create_entry
 from ..separation import DemucsAudioSeparator
 from .align import calculate_mashability, MashabilityResult
-from .cache import LocalCache
+from ..dataset.cache import LocalCache
 from .search_config import SearchConfig
 from dataclasses import dataclass
 from math import exp
@@ -54,6 +54,9 @@ class SongSearchState:
 
     @property
     def audio(self) -> Audio:
+        print(f"Loading audio: {self._cache_handler.link}")
+        if self._audio is None:
+            self._audio = self._cache_handler.get_audio()
         if self._audio is None:
             self._audio = Audio.load(self.link)
         return self._audio
@@ -141,12 +144,12 @@ class SongSearchState:
 
     @property
     def submitted_parts(self):
+        """Returns the parts submitted for database search. It is the slice of the raw parts."""
         if self._submitted_parts is None:
             self._submitted_parts = self.raw_parts_result.slice_seconds(self.slice_start, self.slice_end)
         return self._submitted_parts
 
     def _chorus_analysis(self):
-        """Calculates the start bar and the number of bars of the slice. If the bar number is provided, it will use that instead."""
         assert self.search_config.bar_number is not None, "Chorus detection is not implemented. Bar number must be provided for chorus analysis"
         _slice_start_bar = self.search_config.bar_number
         _slice_nbar = self.search_config.nbars if self.search_config.nbars is not None else 8

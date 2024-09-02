@@ -152,17 +152,20 @@ class DatasetEntry:
         return valid_indices
 
     @property
-    def cache_path(self):
-        return f"resources/cache/{self.url_id}.mp3"
+    def _cache_handler(self):
+        from .cache import LocalCache
+        return LocalCache("resources/cache", self.url)
 
-    def get_audio(self):
-        # Make the cache directory if it doesn't exist
-        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-        return Audio.load(self.url, cache_path=self.cache_path)
+    def get_audio(self) -> Audio:
+        audio = self._cache_handler.get_audio()
+        if audio is None:
+            audio = Audio.load(self.url)
+            self._cache_handler.store_audio(audio)
+        return audio
 
     @property
     def cached(self):
-        return os.path.exists(self.cache_path)
+        return os.path.exists(self._cache_handler.cached_audio)
 
     @staticmethod
     def from_url(url: YouTubeURL, playlist: str | None = None, genre: SongGenre = SongGenre.UNKNOWN):

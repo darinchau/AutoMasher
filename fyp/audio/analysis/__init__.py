@@ -19,7 +19,7 @@ from .chroma import (
 )
 
 from .key import KeyAnalysisResult
-from .base import BeatAnalysisResult, ChordAnalysisResult, TimeSegmentResult
+from .base import BeatAnalysisResult, ChordAnalysisResult
 
 __all__ = [
     "analyse_key_center",
@@ -33,5 +33,4 @@ __all__ = [
     "KeyAnalysisResult",
     "BeatAnalysisResult",
     "ChordAnalysisResult",
-    "TimeSegmentResult",
 ]

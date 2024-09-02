@@ -1,6 +1,5 @@
 # Contains all the code to load and save to the v1 dataset
 from .base import SongDataset, DatasetEntry, SongGenre
-from datasets import load_dataset, Dataset
 
 def _get_genre_map() -> dict[str, SongGenre]:
     """Gets a genre map thats used for loading the dataset for loading the legacy v1 dataset"""
@@ -16,6 +15,10 @@ def _get_genre_map() -> dict[str, SongGenre]:
 
 def load_dataset_v1(dataset_path: str) -> SongDataset:
     """Load the song dataset v1 from hugging face. The dataset path can be either a local path or a remote path."""
+    try:
+        from datasets import load_dataset, Dataset
+    except ImportError:
+        raise ImportError("Please install the datasets library to save the dataset. You can install it using `pip install datasets==2.18.0` and `pip install huggingface-hub==0.22.2`")
     try:
         dataset = load_dataset(dataset_path, split="train")
     except ValueError as e:
@@ -46,6 +49,11 @@ def load_dataset_v1(dataset_path: str) -> SongDataset:
     return song_dataset
 
 def save_dataset_v1(dataset: SongDataset, dataset_path: str):
+    """Save the song dataset v1 to hugging face. The dataset path can be either a local path or a remote path."""
+    try:
+        from datasets import Dataset
+    except ImportError:
+        raise ImportError("Please install the datasets library to save the dataset. You can install it using `pip install datasets==2.18.0` and `pip install huggingface-hub==0.22.2`")
     ds = Dataset.from_dict({
         "chords": [entry.chords for entry in dataset],
         "chord_times": [entry.chord_times for entry in dataset],
