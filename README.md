@@ -6,4 +6,4 @@ Some further developments towards my final year project, a project that aims to 
 - [ ] Implement a user interface using React/Next/Whatever we can deploy
 - [ ] Revamp database to find ways to remove duplicates
 - [ ] Implement a Flask API
-- [ ] Make code python 3.12 compatible
+- [x] Make code python 3.12 compatible
