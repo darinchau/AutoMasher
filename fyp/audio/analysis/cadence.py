@@ -92,7 +92,7 @@ def chroma_chord(audio: Audio, hop: int = 512, ct: ChordAnalysisResult | None = 
 # If we are sure about what we want, we can probably optimize this
 # But for now, this is an O(1) operation because despite all the loops, the number of iterations is fixed
 # And the innter chord results is run at most 24 keys * 6 durations * 7 chords * 7 chords = 7056 times
-def compute_chord_pair_correlations(ct: ChordAnalysisResult, boundadries: list[tuple[float, float, float, float]], chord_options: list[list[int]]):
+def compute_chord_pair_correlations(ct: ChordAnalysisResult, boundaries: list[tuple[float, float, float, float]], chord_options: list[list[int]]):
     """Compute the cadence array. ct is the chord progression, durations is the array from get_durations, and chord_options is the roman numeral analysis chord array for the 7 scale degrees.
     The chord_options must be a list of 7 chords, each with 7 notes.
 
@@ -103,10 +103,10 @@ def compute_chord_pair_correlations(ct: ChordAnalysisResult, boundadries: list[t
         assert len(c) == 7, "Not a valid chord option"
 
     boundary_ = [
-        (b3 - b1, b2 - b1, ct.slice_seconds(b1, b3), multiplier) for b1, b2, b3, multiplier in boundadries
+        (b3 - b1, b2 - b1, ct.slice_seconds(b1, b3), multiplier) for b1, b2, b3, multiplier in boundaries
     ]
 
-    cadence_correlations = np.zeros((len(chord_options), len(boundadries), 7, 7), dtype=np.float32)
+    cadence_correlations = np.zeros((len(chord_options), len(boundaries), 7, 7), dtype=np.float32)
 
     for l, option in enumerate(chord_options):
         for k, (duration, mid_boundary, sliced_ct, multiplier) in enumerate(boundary_):
@@ -166,7 +166,8 @@ def inquire_cadence_score(cadences: np.ndarray, key: str, inquire_cadence: str) 
     cadence_score = np.exp(cadences[key_idx, cadence_idx1, cadence_idx2]).item()
     return cadence_score
 
-def create_cadence_analysis_result(cadences: np.ndarray):
+def create_cadence_analysis_result(cadences: np.ndarray) -> CadenceAnalysisResult:
+    """Create a list of cadence analysis results from the cadences array"""
     cadences_to_consider = [
         "V -> I",
         "I -> V",
@@ -180,26 +181,21 @@ def create_cadence_analysis_result(cadences: np.ndarray):
         "I -> IV"
     ]
 
-    max_key = None
-    max_score = float("-inf")
-    max_cadence = None
+    cadences_list: list[CadenceAnalysisResult] = []
     for key in get_keys():
         for cadence in cadences_to_consider:
             score = inquire_cadence_score(cadences, key, cadence)
-            if score > max_score:
-                max_score = score
-                max_key = key
-                max_cadence = cadence
+            cadences_list.append(CadenceAnalysisResult(key, cadence, score))
+    return max(cadences_list, key=lambda x: x.score)
 
-    assert max_key is not None
-    assert max_cadence is not None
-    return CadenceAnalysisResult(max_key, max_cadence, max_score)
-
-def analyse_cadence(audio: Audio, bar_number: int, ct: ChordAnalysisResult, bt: BeatAnalysisResult, hop: int = 512, probability_inflate_factor: float = 6, key_deduction_window: float = 10.) -> CadenceAnalysisResult:
+def analyse_cadence(audio: Audio,
+                    bar_number: int,
+                    ct: ChordAnalysisResult,
+                    bt: BeatAnalysisResult,
+                    hop: int = 512,
+                    probability_inflate_factor: float = 6,
+                    key_deduction_window: float = 10.) -> CadenceAnalysisResult:
     """Analyse the cadence of an audio file. Bar number must be at least 2 and less than the number of bars in the song."""
-    if bt is None:
-        bt = analyse_beat_transformer(audio)
-
     if bar_number < 2 or bar_number >= bt.nbars:
         raise ValueError(f"Invalid bar number (2 <= bar_number < {bt.nbars})")
 
