@@ -13,8 +13,10 @@ from numpy.typing import NDArray
 import numpy as np
 import numba
 import json
-import enum
 from ..dataset import DatasetEntry
+import re
+
+_CADENCE_RESULT = re.compile(r"^(?:I|II|III|IV|V|VI|VII) ?-> ?(?:I|II|III|IV|V|VI|VII)$")
 
 @dataclass(frozen=True)
 class BeatAnalysisResult(TimeSeries):
@@ -30,6 +32,9 @@ class BeatAnalysisResult(TimeSeries):
         assert isinstance(self.downbeats, np.ndarray)
         assert self.beats.dtype == np.float32
         assert self.downbeats.dtype == np.float32
+
+        self.beats.flags.writeable = False
+        self.downbeats.flags.writeable = False
 
     @property
     def tempo(self):
@@ -118,6 +123,8 @@ class KeyAnalysisResult:
 
     def __post_init__(self):
         assert len(self.key_correlation) == len(get_keys())
+        assert self.chromagram.shape[0] == 12
+        self.chromagram.flags.writeable = False
 
     @property
     def key(self):
@@ -163,6 +170,9 @@ class ChordAnalysisResult(TimeSeries):
         # Check that the times are sorted
         assert np.all(self.times[1:] >= self.times[:-1]), "Times must be sorted"
 
+        self.labels.flags.writeable = False
+        self.times.flags.writeable = False
+
     @classmethod
     def from_data(cls, duration: float, labels: list[int], times: list[float]):
         """Construct a ChordAnalysisResult from native python types. Should function identically as the old constructor."""
@@ -180,28 +190,15 @@ class ChordAnalysisResult(TimeSeries):
                 idx += 1
         return ChordAnalysisResult(self.duration, labels[:idx], times[:idx])
 
-    @property
-    def grouped_end_time_np(self):
-        """Returns a numpy array of grouped end times. This is mostly useful for dataset search"""
-        import warnings
-        warnings.warn("grouped_end_time_np is deprecated. Use grouped_end_times_labels instead", DeprecationWarning)
-        ct = self.group()
-        end_times = ct.times
-        end_times[:-1] = end_times[1:]
-        end_times[-1] = self.duration
-        return end_times
-
-    @property
-    def grouped_labels_np(self):
-        """Returns a numpy array of grouped labels. This is mostly useful for dataset search"""
-        import warnings
-        warnings.warn("grouped_labels_np is deprecated. Use grouped_end_times_labels instead", DeprecationWarning)
-        return self.group().labels
-
     def grouped_end_times_labels(self):
         """Returns a tuple of grouped end times and grouped labels. This is mostly useful for dataset search"""
         ct = self.group()
         end_times = ct.times
+
+        # Unlock the arrays is safe now because ct is a copy of self and is not shared with other objects
+        ct.labels.flags.writeable = True
+        ct.times.flags.writeable = True
+
         end_times[:-1] = end_times[1:]
         end_times[-1] = self.duration
         return end_times, ct.labels
@@ -279,23 +276,24 @@ class ChordAnalysisResult(TimeSeries):
             data = json.load(f)
         return cls.from_data(data["duration"], data["labels"], data["times"])
 
+
 @dataclass(frozen=True)
 class CadenceAnalysisResult:
-    """At each downbeat, grab the last 10 seconds of audio (or less if the song is shorter) and run a key detection algorithm.
-    Then the cadence before the downbeat is matched against known cadences to determine a phrase-ending score.
-    (V -> I) = 1, (I -> I) = 0.7, (IV -> I) = 0.6, (X -> V) = 0.6 others: 0.1"""
-    class Cadence(enum.StrEnum):
-        PERFECT = "Perfect"
-        PLAGAL = "Plagal"
-        TONIC = "Tonic"
-        IMPERFECT = "Imperfect"
-        OTHER = "Other"
+    """A class that represents the result of a cadence analysis. It has the following properties:
 
-    result: Cadence
+    result: Cadence - The cadence result
+    score: float - The score of the cadence. It is the adjusted log-distance of the chord progression with the cadence"""
+    key: str
+    result: str
     score: float
 
     def __post_init__(self):
-        assert 0 <= self.score <= 1
+        assert self.key in get_keys()
+        assert self.is_cadence_result(self.result)
+
+    @staticmethod
+    def is_cadence_result(s: str) -> bool:
+        return _CADENCE_RESULT.match(s) is not None
 
 @numba.jit(nopython=True)
 def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], start: float, end: float):

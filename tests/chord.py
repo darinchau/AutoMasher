@@ -176,7 +176,7 @@ def get_random_pair(n: int):
 def test(n: int):
     cr, new_cr = get_random_pair(n)
     new_equals_old(cr.group(), new_cr.group())
-    t1, l1 = new_cr.grouped_end_time_np, new_cr.grouped_labels_np
+    t1, l1 = new_cr.grouped_end_times_labels()
     t2, l2 = cr.grouped_end_time_np, cr.grouped_labels_np
     assert np.all(l1 == l2)
     equal_labels(l1, l2.tolist())
