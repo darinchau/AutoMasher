@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 import numpy as np
 import numba
 import json
-from enum import Enum
+import enum
 from ..dataset import DatasetEntry
 
 @dataclass(frozen=True)
@@ -35,6 +35,11 @@ class BeatAnalysisResult(TimeSeries):
     def tempo(self):
         bpm = float(np.average(1 / (self.beats[1:] - self.beats[:-1]) * 60))
         return bpm
+
+    @property
+    def nbars(self):
+        """Returns the number of bars in the song"""
+        return self.downbeats.shape[0]
 
     @classmethod
     def from_data_entry(cls, data_entry: DatasetEntry):
@@ -108,15 +113,27 @@ class KeyAnalysisResult:
     """Has the following properties:
 
     key_correlation: list[float] - The correlation of each key."""
-    key_correlation: list[float]
+    key_correlation: tuple[float, ...]
+    chromagram: NDArray[np.float32]
+
+    def __post_init__(self):
+        assert len(self.key_correlation) == len(get_keys())
 
     @property
     def key(self):
-        return int(np.argmax(np.array(self.key_correlation)))
+        return np.argmax(np.array(self.key_correlation)).item()
 
     @property
     def key_name(self):
         return get_keys()[self.key]
+
+    def get_correlation(self, key: str):
+        assert key in get_keys()
+        return self.key_correlation[get_keys().index(key)]
+
+    def show_correlations(self):
+        for key, corr in zip(get_keys(), self.key_correlation):
+            print(f"{key}: {corr}")
 
 @dataclass(frozen=True)
 class ChordAnalysisResult(TimeSeries):
@@ -261,6 +278,24 @@ class ChordAnalysisResult(TimeSeries):
         with open(path, "r") as f:
             data = json.load(f)
         return cls.from_data(data["duration"], data["labels"], data["times"])
+
+@dataclass(frozen=True)
+class CadenceAnalysisResult:
+    """At each downbeat, grab the last 10 seconds of audio (or less if the song is shorter) and run a key detection algorithm.
+    Then the cadence before the downbeat is matched against known cadences to determine a phrase-ending score.
+    (V -> I) = 1, (I -> I) = 0.7, (IV -> I) = 0.6, (X -> V) = 0.6 others: 0.1"""
+    class Cadence(enum.StrEnum):
+        PERFECT = "Perfect"
+        PLAGAL = "Plagal"
+        TONIC = "Tonic"
+        IMPERFECT = "Imperfect"
+        OTHER = "Other"
+
+    result: Cadence
+    score: float
+
+    def __post_init__(self):
+        assert 0 <= self.score <= 1
 
 @numba.jit(nopython=True)
 def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], start: float, end: float):

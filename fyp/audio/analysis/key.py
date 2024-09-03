@@ -22,8 +22,17 @@ def _rotate_array(array: np.ndarray, i: int):
     """Rotate an array by i spaces clockwise"""
     return np.concatenate([array[i:], array[:i]])
 
-def _correlations_from_chromograph(chromograph: NDArray) -> list[float]:
-    """Inner function for calculating correlations. Expect chromograph to be ndarray of shape (12, N)"""
+def analyse_key_center_chroma(audio: Audio, f_or_chromagram: ChromaFunction | NDArray[np.float32], hop = 512) -> KeyAnalysisResult:
+    """The base function to calculate a key center from a chromograph function."""
+    # Use HPSS to extract the harmonic component
+    sep = HPSSAudioSeparator(return_percussive=False)
+    harmonic_component = sep.separate(audio)['harmonic']
+    if callable(f_or_chromagram):
+        chromograph = f_or_chromagram(harmonic_component, hop)
+    else:
+        chromograph = f_or_chromagram
+
+    # Run the Krumhansl-Schmuckler key-finding algorithm
     assert chromograph.shape[0] == 12
     chroma = np.sum(chromograph, axis = 1)
 
@@ -36,17 +45,7 @@ def _correlations_from_chromograph(chromograph: NDArray) -> list[float]:
         key_test = _rotate_array(chroma, i)
         correlations[i] = float(np.corrcoef(maj_profile, key_test)[1, 0])
         correlations[12 + i] = float(np.corrcoef(min_profile, key_test)[1, 0])
-
-    return correlations
-
-def analyse_key_center_chroma(audio: Audio, f: ChromaFunction, hop = 512) -> KeyAnalysisResult:
-    """The base function to calculate a key center from a chromograph function."""
-    # Use HPSS to extract the harmonic component
-    sep = HPSSAudioSeparator(return_percussive=False)
-    harmonic_component = sep.separate(audio)['harmonic']
-    chromograph = f(harmonic_component, hop)
-    correlations = _correlations_from_chromograph(chromograph)
-    return KeyAnalysisResult(correlations)
+    return KeyAnalysisResult(tuple(correlations), chromograph)
 
 def analyse_key_center(audio: Audio, hop = 512) -> KeyAnalysisResult:
     """Uses the librosa chromograph along with the Krumhansl-Schmuckler key-finding algorithm."""

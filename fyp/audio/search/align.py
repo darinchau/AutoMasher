@@ -18,7 +18,70 @@ import typing
 from ..dataset import SongDataset, DatasetEntry, SongGenre
 from ..dataset.create import get_normalized_chord_result
 from .search_config import SearchConfig
+
+# The penalty score per bar for not having a chord
 NO_CHORD_PENALTY = 3
+
+# The penalty score per bar for having an unknown chord
+UNKNOWN_CHORD_PENALTY = 3
+
+@dataclass(frozen=True)
+class MashabilityResult:
+    """A class to store the result of the mashability of the songs.
+    id: The id of the song in the dataset (aka the 11 character url id)
+    start_bar: The starting bar of the song
+    transpose: Number of semitones to transpose the sample song to match the submitted song
+    title: The title of the song
+    timestamp: The timestamp of the song in the Audio
+    genre: The genre of the song
+    views: The number of views of the song as of the time of the dataset creation"""
+    url_id: str
+    start_bar: int
+    transpose: int
+    title: str
+    timestamp: float
+    genre: SongGenre
+    views: int
+
+    def __repr__(self):
+        return f"MashabilityResult({self.url_id}/{self.start_bar}/{self.transpose})"
+
+MashabilityResultType = tuple[int, int, Any, DatasetEntry]
+
+# Use a more efficient data scructure to store the scores
+class MashabilityHeap:
+    """A class to store the scores of the mashability of the songs. It keeps the top k scores in a heap."""
+    def __init__(self, keep_first_k: int):
+        assert keep_first_k > 0, "Use a Mashability List instead"
+        self.heap: list[tuple[float, tuple]] = [(float("-inf"), ()) for _ in range(keep_first_k)]
+
+    def insert(self, score: float, id: MashabilityResultType):
+        heapq.heappushpop(self.heap, (-score, id))
+
+    def get(self) -> list[tuple[float, MashabilityResult]]:
+        entries = [(-score, id) for score, id in self.heap if len(id) > 0]
+        ls = MashabilityList()
+        ls.heap = entries
+        return ls.get()
+
+class MashabilityList:
+    def __init__(self):
+        self.heap: list[tuple[float, MashabilityResultType]] = []
+
+    def insert(self, score: float, id: MashabilityResultType):
+        self.heap.append((score, id))
+
+    def get(self) -> list[tuple[float, MashabilityResult]]:
+        return sorted([(score, MashabilityResult(
+            url_id=entry.url_id,
+            start_bar=i,
+            transpose=k,
+            title=entry.audio_name,
+            timestamp=start,
+            genre=entry.genre,
+            views=entry.views
+        )) for score, (i, k, start, entry) in self.heap], key=lambda x: x[0])
+
 
 # Gets the distance of two chords and the closest approximating chord
 def _calculate_distance_of_two_chords(chord1: str, chord2: str) -> tuple[int, str]:
@@ -39,19 +102,19 @@ def _calculate_distance_of_two_chords(chord1: str, chord2: str) -> tuple[int, st
             score, result = NO_CHORD_PENALTY, "Unknown"
 
         case ("Unknown", "Unknown"):
-            score, result = 3, "Unknown"
+            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
 
         case (_, "No chord"):
             score, result = NO_CHORD_PENALTY, chord1
 
         case (_, "Unknown"):
-            score, result = 3, "Unknown"
+            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
 
         case ("No chord", _):
             score, result = NO_CHORD_PENALTY, chord2
 
         case ("Unknown", _):
-            score, result = 3, "Unknown"
+            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
 
         case (_, _):
             score, result = _distance_of_two_nonempty_chord(chord1, chord2)
@@ -160,63 +223,6 @@ def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: Be
     boundaries = sample_beat_times[1:]
 
     return factors.tolist(), boundaries.tolist()
-
-@dataclass(frozen=True)
-class MashabilityResult:
-    """A class to store the result of the mashability of the songs.
-    id: The id of the song in the dataset (aka the 11 character url id)
-    start_bar: The starting bar of the song
-    transpose: Number of semitones to transpose the sample song to match the submitted song
-    title: The title of the song
-    timestamp: The timestamp of the song in the Audio
-    genre: The genre of the song
-    views: The number of views of the song as of the time of the dataset creation"""
-    url_id: str
-    start_bar: int
-    transpose: int
-    title: str
-    timestamp: float
-    genre: SongGenre
-    views: int
-
-    def __repr__(self):
-        return f"MashabilityResult({self.url_id}/{self.start_bar}/{self.transpose})"
-
-MashabilityResultType = tuple[int, int, Any, DatasetEntry]
-
-# Use a more efficient data scructure to store the scores
-class MashabilityHeap:
-    """A class to store the scores of the mashability of the songs. It keeps the top k scores in a heap."""
-    def __init__(self, keep_first_k: int):
-        assert keep_first_k > 0, "Use a Mashability List instead"
-        self.heap: list[tuple[float, tuple]] = [(float("-inf"), ()) for _ in range(keep_first_k)]
-
-    def insert(self, score: float, id: MashabilityResultType):
-        heapq.heappushpop(self.heap, (-score, id))
-
-    def get(self) -> list[tuple[float, MashabilityResult]]:
-        entries = [(-score, id) for score, id in self.heap if len(id) > 0]
-        ls = MashabilityList()
-        ls.heap = entries
-        return ls.get()
-
-class MashabilityList:
-    def __init__(self):
-        self.heap: list[tuple[float, MashabilityResultType]] = []
-
-    def insert(self, score: float, id: MashabilityResultType):
-        self.heap.append((score, id))
-
-    def get(self) -> list[tuple[float, MashabilityResult]]:
-        return sorted([(score, MashabilityResult(
-            url_id=entry.url_id,
-            start_bar=i,
-            transpose=k,
-            title=entry.audio_name,
-            timestamp=start,
-            genre=entry.genre,
-            views=entry.views
-        )) for score, (i, k, start, entry) in self.heap], key=lambda x: x[0])
 
 def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
                             dataset: SongDataset,

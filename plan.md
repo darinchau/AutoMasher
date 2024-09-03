@@ -19,9 +19,7 @@ The user should label a song with a starting point of their mashup. The algorith
 - We search for downbeats within 3 seconds of the user's input. If:
 - - There is only one downbeat within +- 3 seconds of the user's input, we use that as the starting point.
 - - There are multiple downbeats within +- 3 seconds of the user's input, we try to run a tiebreaker algorithm to determine the correct downbeat.
-- - - At each downbeat, grab the last 10 seconds of audio (or less if the song is shorter) and run a key detection algorithm.
-- - - Then the cadence before the downbeat is matched against known cadences to determine a phrase-ending score.
-- - - - (V -> I) = 1, (I -> I) = 0.7, (IV -> I) = 0.6, (X -> V) = 0.6 (IV -> IV) = 0.1, others: 0.1
+- - - At each downbeat, perform the cadence detection algorithm. The downbeat with the highest cadence score is the correct downbeat.
 - - - If tiebreaker fails, pick the closest one that satisfies the basic requirements.
 - - There are no downbeats within +- 3 seconds of the user's input, we will run a music detection algorithm
 - - - If there is no music, we forward-shift the starting point to the first instance with music, and rerun this 3 second algorithm.
