@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 from functools import lru_cache
 
-@lru_cache(maxsize=)
+@lru_cache(maxsize=128)
 def transpose_chord_idx(chord: int, semitone: int) -> int:
     chord_name = get_idx2voca_chord()[chord]
     return get_inv_voca_map()[transpose_chord(chord_name, semitone)]
@@ -73,7 +73,8 @@ def get_boundaries(bt: BeatAnalysisResult, bar_number: int):
 
     return durations_to_consider
 
-def chroma_chord(audio: Audio, hop: int = 512, ct: ChordAnalysisResult | None = None, **kwargs):
+# Get the chromagram of the audio based on the chord analysis result
+def chroma_chord(audio: Audio, ct: ChordAnalysisResult, hop: int = 512, **kwargs):
     if ct is None:
         ct = analyse_chord_transformer(audio)
 
@@ -170,5 +171,5 @@ def analyse_cadence(audio: Audio,
     slice_upper = slice_lower + key_deduction_window
     sliced = audio.slice_seconds(slice_lower, slice_upper)
 
-    key = analyse_key_center_chroma(sliced, chroma_chord(sliced, hop, ct.slice_seconds(slice_lower, slice_upper)), hop=hop)
+    key = analyse_key_center_chroma(sliced, chroma_chord(sliced, ct.slice_seconds(slice_lower, slice_upper), hop=hop))
     return create_cadence_analysis_result(ct, bt, key, bar_number)

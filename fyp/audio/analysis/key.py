@@ -24,10 +24,9 @@ def _rotate_array(array: np.ndarray, i: int):
 
 def analyse_key_center_chroma(audio: Audio, f_or_chromagram: ChromaFunction | NDArray[np.float32], hop = 512) -> KeyAnalysisResult:
     """The base function to calculate a key center from a chromograph function."""
-    # Use HPSS to extract the harmonic component
-    sep = HPSSAudioSeparator(return_percussive=False)
-    harmonic_component = sep.separate(audio)['harmonic']
     if callable(f_or_chromagram):
+        # Use HPSS to extract the harmonic component
+        harmonic_component = HPSSAudioSeparator(return_percussive=False).separate(audio)['harmonic']
         chromograph = f_or_chromagram(harmonic_component, hop)
     else:
         chromograph = f_or_chromagram
