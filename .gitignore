@@ -81,6 +81,7 @@ resources/dataset/audio-infos-v2.1.db
 
 *.ipynb
 !demo.ipynb
+!cleanup.ipynb
 scripts/*
 !scripts/*.py
 !scripts/*.ipynb

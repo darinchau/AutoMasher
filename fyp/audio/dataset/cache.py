@@ -58,7 +58,7 @@ class LocalCache(CacheHandler):
     def _audio_save_path(self) -> str:
         if self.cache_dir is None:
             raise ValueError("Cache directory is not set")
-        return os.path.join(self.cache_dir, f"{self.link.video_id}.mp3")
+        return os.path.join(self.cache_dir, f"{self.link.video_id}.wav")
 
     @property
     def _chord_save_path(self) -> str:

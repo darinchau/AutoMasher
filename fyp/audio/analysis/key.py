@@ -22,10 +22,11 @@ def _rotate_array(array: np.ndarray, i: int):
     """Rotate an array by i spaces clockwise"""
     return np.concatenate([array[i:], array[:i]])
 
-def analyse_key_center_chroma(audio: Audio, f_or_chromagram: ChromaFunction | NDArray[np.float32], hop = 512) -> KeyAnalysisResult:
+def analyse_key_center_chroma(f_or_chromagram: ChromaFunction | NDArray[np.float32], audio: Audio | None = None, hop = 512) -> KeyAnalysisResult:
     """The base function to calculate a key center from a chromograph function."""
-    if callable(f_or_chromagram):
+    if not isinstance(f_or_chromagram, np.ndarray):
         # Use HPSS to extract the harmonic component
+        assert audio is not None, "audio must be provided if chroma function is provided"
         harmonic_component = HPSSAudioSeparator(return_percussive=False).separate(audio)['harmonic']
         chromograph = f_or_chromagram(harmonic_component, hop)
     else:
@@ -48,4 +49,4 @@ def analyse_key_center_chroma(audio: Audio, f_or_chromagram: ChromaFunction | ND
 
 def analyse_key_center(audio: Audio, hop = 512) -> KeyAnalysisResult:
     """Uses the librosa chromograph along with the Krumhansl-Schmuckler key-finding algorithm."""
-    return analyse_key_center_chroma(audio, chroma_cqt, hop)
+    return analyse_key_center_chroma(chroma_cqt, audio=audio, hop=hop)
