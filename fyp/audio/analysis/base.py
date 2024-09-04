@@ -142,6 +142,11 @@ class KeyAnalysisResult:
         for key, corr in zip(get_keys(), self.key_correlation):
             print(f"{key}: {corr}")
 
+    def plot_chromagram(self):
+        import matplotlib.pyplot as plt
+        plt.imshow(self.chromagram, aspect='auto', origin='lower')
+        plt.show()
+
 @dataclass(frozen=True)
 class ChordAnalysisResult(TimeSeries):
     """A class with the following attributes:

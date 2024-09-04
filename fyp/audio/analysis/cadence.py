@@ -1,12 +1,14 @@
-from ... import Audio
-from .base import CadenceAnalysisResult, ChordAnalysisResult, BeatAnalysisResult, KeyAnalysisResult
-from .key import analyse_key_center_chroma
-from .beat import analyse_beat_transformer
-from .chord import analyse_chord_transformer
-from ...util.note import get_chord_notes, get_idx2voca_chord, notes_to_idx, get_inv_voca_map, get_keys, transpose_chord, idx_to_notes
+from fyp import Audio
+from fyp.audio.analysis.base import CadenceAnalysisResult, ChordAnalysisResult, BeatAnalysisResult, KeyAnalysisResult
+from fyp.audio.analysis.key import analyse_key_center_chroma
+from fyp.audio.analysis.beat import analyse_beat_transformer
+from fyp.audio.analysis.chord import analyse_chord_transformer
+from fyp.util.note import get_chord_notes, get_idx2voca_chord, notes_to_idx, get_inv_voca_map, get_keys, transpose_chord, idx_to_notes
 import numpy as np
 from numpy.typing import NDArray
+from functools import lru_cache
 
+@lru_cache(maxsize=)
 def transpose_chord_idx(chord: int, semitone: int) -> int:
     chord_name = get_idx2voca_chord()[chord]
     return get_inv_voca_map()[transpose_chord(chord_name, semitone)]
@@ -87,66 +89,18 @@ def chroma_chord(audio: Audio, hop: int = 512, ct: ChordAnalysisResult | None = 
 
     return chroma
 
-# Slice the audio according to the duration
-# At this stage, calculate everything because we don't know what we want yet
-# If we are sure about what we want, we can probably optimize this
-# But for now, this is an O(1) operation because despite all the loops, the number of iterations is fixed
-# And the innter chord results is run at most 24 keys * 6 durations * 7 chords * 7 chords = 7056 times
-def compute_chord_pair_correlations(ct: ChordAnalysisResult, boundaries: list[tuple[float, float, float, float]], chord_options: list[list[int]]):
-    """Compute the cadence array. ct is the chord progression, durations is the array from get_durations, and chord_options is the roman numeral analysis chord array for the 7 scale degrees.
-    The chord_options must be a list of 7 chords, each with 7 notes.
+def calculate_chord_distance(duration: float, mid_boundary: float, sliced_ct: ChordAnalysisResult, multiplier: float, c1: int, c2: int):
+    from fyp.audio.search.align import distance_of_chord_results
+    cadence = ChordAnalysisResult.from_data(
+        duration = duration,
+        labels = [c1, c2],
+        times = [0, mid_boundary],
+    )
+    # The smaller the distance, the better, so we divide by the multiplier
+    dist = distance_of_chord_results(sliced_ct, cadence) / duration / multiplier
+    return dist
 
-    Returns a 4D array, where arr[i, j, k, l] is the correspondence score between the kth and the lth chord in the ith chord option in the jth duration to consider"""
-    from ..search.align import distance_of_chord_results
-
-    for c in chord_options:
-        assert len(c) == 7, "Not a valid chord option"
-
-    boundary_ = [
-        (b3 - b1, b2 - b1, ct.slice_seconds(b1, b3), multiplier) for b1, b2, b3, multiplier in boundaries
-    ]
-
-    cadence_correlations = np.zeros((len(chord_options), len(boundaries), 7, 7), dtype=np.float32)
-
-    for l, option in enumerate(chord_options):
-        for k, (duration, mid_boundary, sliced_ct, multiplier) in enumerate(boundary_):
-            for i, c1 in enumerate(option):
-                for j, c2 in enumerate(option):
-                    cadence = ChordAnalysisResult.from_data(
-                        duration = duration,
-                        labels = [c1, c2],
-                        times = [0, mid_boundary],
-                    )
-                    # The smaller the distance, the better, so we divide by the multiplier
-                    dist = distance_of_chord_results(sliced_ct, cadence) / duration / multiplier
-                    cadence_correlations[l, k, i, j] = dist
-
-    return cadence_correlations
-
-def calculate_cadence_array(ct: ChordAnalysisResult, bt: BeatAnalysisResult, kt: KeyAnalysisResult, bar_number: int, probability_inflate_factor: float = 8) -> NDArray[np.float32]:
-    """Calculate the cadence array. ct is the chord progression, bt is the beat analysis, kt is the key analysis, bar_number is the bar number to consider, and
-
-    probability_inflate_factor is the factor to inflate the probability of the key center
-
-    Return a 3D array, where arr[i, j, k] is the correspondence score of the j -> k chord in the ith key"""
-    major_chords, minor_chords = get_major_minor_chords()
-    ex = np.array(kt.key_correlation) * probability_inflate_factor
-    key_log_probs = ex - np.log(np.sum(np.exp(ex)))
-
-    cadences = np.zeros((len(get_keys()), 7, 7), dtype=np.float32)
-    for i, key in enumerate(get_keys()):
-        key_morph_idx = notes_to_idx(key.split(" ")[0].strip())
-        chord = major_chords if key.strip()[-5:].lower() == "major" else minor_chords
-        chord = [transpose_chord_idx(c, key_morph_idx) for c in chord]
-        cadences_for_key = compute_chord_pair_correlations(ct, get_boundaries(bt, bar_number), [chord])[0]
-        cadences[i] = np.min(cadences_for_key, axis=0)
-
-    # Calculate the log probabilities to be more numerically stable when multiplying by the inflate factors
-    cadences = np.log(cadences)
-    cadences += key_log_probs[:, None, None]
-    return cadences
-
-def inquire_cadence_score(cadences: np.ndarray, key: str, inquire_cadence: str) -> float:
+def inquire_cadence_score(ct: ChordAnalysisResult, bt: BeatAnalysisResult, kt: KeyAnalysisResult, bar_number: int, key: str, inquire_cadence: str) -> float:
     """Example: inquire_cadence_score(cadences, "C major", "I -> IV")"""
     roman_to_idx = {
         "I": 0,
@@ -160,13 +114,27 @@ def inquire_cadence_score(cadences: np.ndarray, key: str, inquire_cadence: str) 
 
     assert key in get_keys(), f"Invalid key: {key}"
     assert CadenceAnalysisResult.is_cadence_result(inquire_cadence), f"Invalid cadence: {inquire_cadence}"
-    key_idx = get_keys().index(key)
+    # key_idx = get_keys().index(key)
     cadence_idx1 = roman_to_idx[inquire_cadence.split("->")[0].strip()]
     cadence_idx2 = roman_to_idx[inquire_cadence.split("->")[1].strip()]
-    cadence_score = np.exp(cadences[key_idx, cadence_idx1, cadence_idx2]).item()
+
+    # Prepare the chords array
+    major_chords, minor_chords = get_major_minor_chords()
+    key_morph_idx = notes_to_idx(key.split(" ")[0].strip())
+    chord = major_chords if key.strip()[-5:].lower() == "major" else minor_chords
+    chord = [transpose_chord_idx(c, key_morph_idx) for c in chord]
+
+    # Prepare the boundaries
+    durations_to_consider = get_boundaries(bt, bar_number)
+    results = np.zeros((len(durations_to_consider)), dtype=np.float32)
+    for i, (start, mid, end, multiplier) in enumerate(durations_to_consider):
+        sliced_ct = ct.slice_seconds(start, end)
+        results[i] = calculate_chord_distance(end - start, mid - start, sliced_ct, multiplier, chord[cadence_idx1], chord[cadence_idx2])
+
+    cadence_score = (results[i]).item()
     return cadence_score
 
-def create_cadence_analysis_result(cadences: np.ndarray) -> CadenceAnalysisResult:
+def create_cadence_analysis_result(ct: ChordAnalysisResult, bt: BeatAnalysisResult, kt: KeyAnalysisResult, bar_number: int) -> CadenceAnalysisResult:
     """Create a list of cadence analysis results from the cadences array"""
     cadences_to_consider = [
         "V -> I",
@@ -184,16 +152,15 @@ def create_cadence_analysis_result(cadences: np.ndarray) -> CadenceAnalysisResul
     cadences_list: list[CadenceAnalysisResult] = []
     for key in get_keys():
         for cadence in cadences_to_consider:
-            score = inquire_cadence_score(cadences, key, cadence)
+            score = inquire_cadence_score(ct, bt, kt, bar_number, key, cadence)
             cadences_list.append(CadenceAnalysisResult(key, cadence, score))
-    return max(cadences_list, key=lambda x: x.score)
+    return min(cadences_list, key=lambda x: x.score)
 
 def analyse_cadence(audio: Audio,
                     bar_number: int,
                     ct: ChordAnalysisResult,
                     bt: BeatAnalysisResult,
                     hop: int = 512,
-                    probability_inflate_factor: float = 6,
                     key_deduction_window: float = 10.) -> CadenceAnalysisResult:
     """Analyse the cadence of an audio file. Bar number must be at least 2 and less than the number of bars in the song."""
     if bar_number < 2 or bar_number >= bt.nbars:
@@ -204,5 +171,4 @@ def analyse_cadence(audio: Audio,
     sliced = audio.slice_seconds(slice_lower, slice_upper)
 
     key = analyse_key_center_chroma(sliced, chroma_chord(sliced, hop, ct.slice_seconds(slice_lower, slice_upper)), hop=hop)
-    cadences = calculate_cadence_array(ct, bt, key, bar_number = bar_number, probability_inflate_factor=probability_inflate_factor)
-    return create_cadence_analysis_result(cadences)
+    return create_cadence_analysis_result(ct, bt, key, bar_number)
