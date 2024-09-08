@@ -281,25 +281,6 @@ class ChordAnalysisResult(TimeSeries):
             data = json.load(f)
         return cls.from_data(data["duration"], data["labels"], data["times"])
 
-
-@dataclass(frozen=True)
-class CadenceAnalysisResult:
-    """A class that represents the result of a cadence analysis. It has the following properties:
-
-    result: Cadence - The cadence result
-    score: float - The score of the cadence. It is the adjusted log-distance of the chord progression with the cadence"""
-    key: str
-    result: str
-    score: float
-
-    def __post_init__(self):
-        assert self.key in get_keys()
-        assert self.is_cadence_result(self.result)
-
-    @staticmethod
-    def is_cadence_result(s: str) -> bool:
-        return _CADENCE_RESULT.match(s) is not None
-
 @numba.jit(nopython=True)
 def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], start: float, end: float):
     """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
