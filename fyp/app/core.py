@@ -8,8 +8,7 @@ from ..audio import Audio, AudioCollection
 from ..audio.analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
 from ..audio.base import AudioCollection
 from ..audio.dataset import SongDataset, DatasetEntry, SongGenre
-from ..audio.dataset.create import create_entry
-from ..audio.search import calculate_mashability
+from ..audio.search import create_mashup, MashabilityResult, calculate_mashability, MashupMode
 from ..audio.dataset.cache import CacheHandler
 from ..audio.separation import DemucsAudioSeparator
 from ..util import YouTubeURL
@@ -57,7 +56,9 @@ class MashupConfig:
 
         filter_short_song_bar_threshold: The minimum number of bars for a song to be considered long enough. Default is 12.
 
-        filter_uncached: Whether to filter out songs that are not cached. Default is True."""
+        filter_uncached: Whether to filter out songs that are not cached. Default is True.
+
+        """
     starting_point: float
     min_transpose: int = -3
     max_transpose: int = 3
@@ -77,6 +78,13 @@ class MashupConfig:
     filter_uneven_bars_max_threshold: float = 1.1
     filter_short_song_bar_threshold: int = 12
     filter_uncached: bool = True
+
+    mashup_mode: MashupMode = MashupMode.NATURAL
+    natural_drum_activity_threshold: float = 1
+    natural_drum_proportion_threshold: float = 0.8
+    natural_vocal_activity_threshold: float = 1
+    natural_vocal_proportion_threshold: float = 0.8
+    natural_window_size: int = 10
 
     # The path of stuff should not be exposed to the user
     dataset_path: str = "resources/dataset/audio-infos-v2.1.db"
@@ -173,32 +181,39 @@ def determine_slice_results(audio: Audio, bt: BeatAnalysisResult, config: Mashup
         downbeats = np.arange(config.nbars) * downbeat_diff + config.starting_point,
     ), config.starting_point, slice_end
 
-def mashup_song(audio: Audio, config: MashupConfig, cache_handler: CacheHandler):
-    """
-    Mashup the given audio with the dataset.
-    """
-    dataset = load_dataset(config)
-
-    demucs = DemucsAudioSeparator()
-    parts_result = demucs.separate(audio)
+# Chord Result Stage
+def get_chord_result(audio: Audio, config: MashupConfig, cache_handler: CacheHandler) -> ChordAnalysisResult:
     chord_result = cache_handler.get_chord_analysis() or analyse_chord_transformer(audio, model_path=config.chord_model_path)
-    beat_result = cache_handler.get_beat_analysis() or analyse_beat_transformer(audio, model_path=config.beat_model_path, parts=parts_result)
+    cache_handler.store_chord_analysis(chord_result)
+    return chord_result
 
+# Beat Result Stage
+def get_beat_result(audio: Audio, config: MashupConfig, cache_handler: CacheHandler) -> BeatAnalysisResult:
+    beat_result = cache_handler.get_beat_analysis() or analyse_beat_transformer(audio, model_path=config.beat_model_path)
+    cache_handler.store_beat_analysis(beat_result)
     if beat_result.nbars < config.nbars:
         raise InvalidMashup("The audio is too short to mashup with the dataset.")
+    return beat_result
 
-    cache_handler.store_chord_analysis(chord_result)
-    cache_handler.store_beat_analysis(beat_result)
+# Demucs Stage
+def get_parts_result(audio: Audio) -> AudioCollection:
+    demucs = DemucsAudioSeparator()
+    parts_result = demucs.separate(audio)
+    return parts_result
+
+def get_audio_from_url(url: YouTubeURL, cache_handler: CacheHandler) -> Audio:
+    audio = cache_handler.get_audio() or Audio.load(url)
     cache_handler.store_audio(audio)
+    return audio
 
+# Search stage
+def get_search_result(config: MashupConfig, chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult, slice_start: float, slice_end: float, dataset: SongDataset):
     # TODO Do some processing to get submitted_chord_result and submitted_beat_result
     # Need to figure out how to do this with a timestamp instead of a bar number
-    submitted_beat_result, slice_start, slice_end = determine_slice_results(audio, beat_result, config)
     submitted_chord_result = chord_result.slice_seconds(slice_start, slice_end)
-    submitted_audio = audio.slice_seconds(slice_start, slice_end)
 
     # Perform the search
-    scores_ = calculate_mashability(
+    scores = calculate_mashability(
         submitted_chord_result=submitted_chord_result,
         submitted_beat_result=submitted_beat_result,
         dataset=dataset,
@@ -212,4 +227,52 @@ def mashup_song(audio: Audio, config: MashupConfig, cache_handler: CacheHandler)
         should_curve_score=True,
         verbose=False,
     )
-    ...
+    return scores
+
+def get_mashup(submitted_parts: AudioCollection, submitted_bt: BeatAnalysisResult, b_parts: AudioCollection, b_bt: BeatAnalysisResult, result: MashabilityResult):
+    # TODO Implement this
+    pass
+
+def mashup_song(audio: Audio, config: MashupConfig, cache_handler: CacheHandler):
+    """
+    Mashup the given audio with the dataset.
+    """
+    dataset = load_dataset(config)
+    beat_result = get_beat_result(audio, config, cache_handler)
+    chord_result = get_chord_result(audio, config, cache_handler)
+
+    submitted_beat_result, slice_start_a, slice_end_a = determine_slice_results(audio, beat_result, config)
+
+    # Create the mashup
+    scores = get_search_result(config, chord_result, submitted_beat_result, slice_start_a, slice_end_a, dataset)
+    if len(scores) == 0:
+        raise InvalidMashup("No suitable songs found in the dataset.")
+
+    best_result = scores[0][1]
+
+    b_audio = get_audio_from_url(best_result.url, cache_handler)
+    b_beat = get_beat_result(b_audio, config, cache_handler)
+    slice_start_b, slice_end_b = b_beat.downbeats[best_result.start_bar], b_beat.downbeats[best_result.start_bar + config.nbars]
+    b_beat = b_beat.slice_seconds(slice_start_b, slice_end_b)
+
+    parts_result = get_parts_result(audio).slice_seconds(slice_start_a, slice_end_a)
+    b_parts = get_parts_result(b_audio).slice_seconds(slice_start_b, slice_end_b)
+
+    mashup = get_mashup_result(config, submitted_beat_result, best_result.transpose, b_beat, parts_result, b_parts)
+    return mashup
+
+def get_mashup_result(config: MashupConfig, a_beat: BeatAnalysisResult, transpose: int, b_beat: BeatAnalysisResult, a_parts: AudioCollection, b_parts: AudioCollection):
+    return create_mashup(
+        submitted_bt_a=a_beat,
+        submitted_parts_a=a_parts,
+        submitted_bt_b=b_beat,
+        submitted_parts_b=b_parts,
+        transpose=transpose,
+        mode=config.mashup_mode,
+        volume_hop=512,
+        natural_drum_activity_threshold=config.natural_drum_activity_threshold,
+        natural_drum_proportion_threshold=config.natural_drum_proportion_threshold,
+        natural_vocal_activity_threshold=config.natural_vocal_activity_threshold,
+        natural_vocal_proportion_threshold=config.natural_vocal_proportion_threshold,
+        natural_window_size=config.natural_window_size,
+    )
