@@ -196,15 +196,21 @@ def create_cadence_analysis_result(ct: ChordAnalysisResult, kt: KeyAnalysisResul
     if not durations_to_consider:
         return CadenceAnalysisResult("C major", "V -> I", float("inf"))
 
+    softmax_score = np.exp(kt.key_correlation) / np.sum(np.exp(kt.key_correlation))
+
     cadences_list: list[CadenceAnalysisResult] = []
-    for key in get_keys():
+    for key_idx, key in enumerate(get_keys()):
         if kt.get_correlation(key) < 0:
             continue
         for cadence in cadences_to_consider:
             score = inquire_cadence_score(ct, key, cadence, durations_to_consider)
             if score == float("inf"):
                 continue
-            cadences_list.append(CadenceAnalysisResult(key, cadence, score))
+            cadences_list.append(CadenceAnalysisResult(key, cadence, score * softmax_score[key_idx].item()))
+
+    if not cadences_list:
+        return CadenceAnalysisResult("C major", "V -> I", float("inf"))
+
     return min(cadences_list, key=lambda x: x.score)
 
 def analyse_cadence_beat(ct: ChordAnalysisResult,
