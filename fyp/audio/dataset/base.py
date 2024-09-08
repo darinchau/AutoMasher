@@ -98,13 +98,8 @@ class DatasetEntry:
         assert _is_sorted(self.downbeats)
         assert _is_sorted(self.beats)
 
-    @property
-    def url_id(self):
-        # return self.url[-11:]
-        return self.url.video_id
-
     def __repr__(self):
-        return f"DatasetEntry({self.audio_name} [{self.url_id}])"
+        return f"DatasetEntry({self.audio_name} [{self.url.video_id}])"
 
     def equal(self, value: DatasetEntry, *, eps: float = 1e-5) -> bool:
         """Check if the given value is equal to this entry. This is useful for testing purposes.

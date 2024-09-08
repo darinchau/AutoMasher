@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from ... import Audio
 from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map, get_chord_note_inv
+from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from tqdm.auto import tqdm
 from threading import Thread
@@ -35,7 +36,7 @@ class MashabilityResult:
     timestamp: The timestamp of the song in the Audio
     genre: The genre of the song
     views: The number of views of the song as of the time of the dataset creation"""
-    url_id: str
+    url: YouTubeURL
     start_bar: int
     transpose: int
     title: str
@@ -44,7 +45,7 @@ class MashabilityResult:
     views: int
 
     def __repr__(self):
-        return f"MashabilityResult({self.url_id}/{self.start_bar}/{self.transpose})"
+        return f"MashabilityResult({self.url}/{self.start_bar}/{self.transpose})"
 
 MashabilityResultType = tuple[int, int, Any, DatasetEntry]
 
@@ -73,7 +74,7 @@ class MashabilityList:
 
     def get(self) -> list[tuple[float, MashabilityResult]]:
         return sorted([(score, MashabilityResult(
-            url_id=entry.url_id,
+            url=entry.url,
             start_bar=i,
             transpose=k,
             title=entry.audio_name,
@@ -86,7 +87,7 @@ def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[fl
     seen = set()
     result = []
     for score in scores:
-        id = score[1].url_id
+        id = score[1].url
         if id not in seen:
             seen.add(id)
             result.append(score)

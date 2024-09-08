@@ -83,19 +83,6 @@ class Audio(TimeSeries):
         return self._data.size(1)/self._sample_rate
 
     @property
-    def volume(self) -> float:
-        """Return a nonnegative float number that represents the volume of the thing (the RMS of the audio)"""
-        self.sanity_check()
-        return self._data.square().mean().sqrt().item()
-
-    @volume.setter
-    def volume(self, value: float):
-        """Set the volume of the audio to a certain value"""
-        self.sanity_check()
-        current_volume = self.volume
-        self._data = self._data * value / current_volume
-
-    @property
     def device(self) -> torch.device:
         """Accessor for the device that the data is sitting on. Currently it is guaranteed to be cpu but we do not make this guarantee in the future"""
         self.sanity_check()
@@ -114,6 +101,10 @@ class Audio(TimeSeries):
     def clone(self):
         """Returns an identical copy of self"""
         return Audio(self.get_data(), self._sample_rate)
+
+    def set_volume(self, volume: float) -> Audio:
+        current_volume = self._data.square().mean().sqrt()
+        return Audio(self._data * volume / current_volume, self._sample_rate)
 
     def pad(self, target: int, front: bool = False) -> Audio:
         """Returns a new audio with the given number of frames and the same sample rate as self.

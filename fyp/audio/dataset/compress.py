@@ -287,7 +287,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         yield from self.chord_time_encoder.encode(data.chord_times)
         yield from self.beat_time_encoder.encode(data.downbeats)
         yield from self.beat_time_encoder.encode(data.beats)
-        yield from self.string_encoder.encode(data.url_id)
+        yield from self.string_encoder.encode(data.url.video_id)
         yield from self.genre_encoder.encode(data.genre)
         yield from self.int64_encoder.encode(data.views)
         yield from self.float32_encoder.encode(data.length)

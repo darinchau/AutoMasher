@@ -24,13 +24,13 @@ def worker_thread(dataset: SongDataset):
     while True:
         entry = random.choice(dataset)
         with print_lock:
-            print(f"Downloading audio: {entry.url_id}... ({len(os.listdir(cache_path))})")
+            print(f"Downloading audio: {entry.url.video_id}... ({len(os.listdir(cache_path))})")
         try:
             audio = entry.get_audio()
             cleanup_temp_dir()
         except Exception as e:
             with print_lock:
-                print(f"Failed to download audio: {entry.url_id}: {e}")
+                print(f"Failed to download audio: {entry.url.video_id}: {e}")
 
 def download_audio(dataset: SongDataset):
     workers = [Thread(target=worker_thread, args=(dataset,)) for _ in range(8)]
