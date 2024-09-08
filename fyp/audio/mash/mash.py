@@ -6,7 +6,7 @@ from .. import Audio
 from .. import AudioCollection
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from ..manipulation import PitchShift, HighpassFilter
-from ..search import calculate_boundaries, SearchConfig
+from ..search import calculate_boundaries
 from .base import MashupMaker
 from .base import mash_two_songs, cross_fade
 

@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from datasets import Dataset
 from typing import Any
 import torch
 from .. import AudioCollection
@@ -7,7 +6,7 @@ from .. import Audio, AudioMode, AudioCollection
 from ...util import get_url
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from ..manipulation import HighpassFilter, PitchShift
-from ..search.align import SearchConfig, MashabilityResult, calculate_boundaries
+from ..search.align import MashabilityResult, calculate_boundaries
 from ..search.search import SongSearchState
 
 def mash_two_songs(submitted: AudioCollection, sample: AudioCollection):

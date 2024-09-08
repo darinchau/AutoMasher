@@ -1,6 +1,6 @@
 # Searches the database using Rick Astley's "Never Gonna Give You Up" as an example
 
-from fyp import SearchConfig, SongSearchState, search_song, YouTubeURL
+from fyp.audio.search.search import SearchConfig, SongSearchState, search_song, YouTubeURL
 
 def main():
     config = SearchConfig(

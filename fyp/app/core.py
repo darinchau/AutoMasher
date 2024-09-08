@@ -9,10 +9,8 @@ from ..audio.analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_be
 from ..audio.base import AudioCollection
 from ..audio.dataset import SongDataset, DatasetEntry, SongGenre
 from ..audio.dataset.create import create_entry
-from ..audio.search.align import calculate_mashability
+from ..audio.search import calculate_mashability
 from ..audio.dataset.cache import CacheHandler
-from ..audio.search.search import filter_first, curve_score
-from ..audio.search.search_config import SearchConfig
 from ..audio.separation import DemucsAudioSeparator
 from ..util import YouTubeURL
 from numpy.typing import NDArray
@@ -201,20 +199,17 @@ def mashup_song(audio: Audio, config: MashupConfig, cache_handler: CacheHandler)
 
     # Perform the search
     scores_ = calculate_mashability(
-                        submitted_chord_result=submitted_chord_result,
-                        submitted_beat_result=submitted_beat_result,
-                        dataset=dataset,
-                        max_transpose=(config.min_transpose, config.max_transpose),
-                        min_music_percentage=config.min_music_percentage,
-                        max_delta_bpm=config.max_delta_bpm,
-                        min_delta_bpm=config.min_delta_bpm,
-                        max_score=config.max_score,
-                        keep_first_k=config.keep_first_k_results,
-                        verbose=False,
+        submitted_chord_result=submitted_chord_result,
+        submitted_beat_result=submitted_beat_result,
+        dataset=dataset,
+        max_transpose=(config.min_transpose, config.max_transpose),
+        min_music_percentage=config.min_music_percentage,
+        max_delta_bpm=config.max_delta_bpm,
+        min_delta_bpm=config.min_delta_bpm,
+        max_score=config.max_score,
+        keep_first_k=config.keep_first_k_results,
+        filter_top_scores=config.filter_first,
+        should_curve_score=True,
+        verbose=False,
     )
-
-    if config.filter_first:
-        scores_ = filter_first(scores_)
-
-    scores = [(curve_score(x[0]), x[1]) for x in scores_]
     ...

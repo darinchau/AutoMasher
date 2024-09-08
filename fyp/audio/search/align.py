@@ -17,7 +17,7 @@ import heapq
 import typing
 from ..dataset import SongDataset, DatasetEntry, SongGenre
 from ..dataset.create import get_normalized_chord_result
-from .search_config import SearchConfig
+from math import exp
 
 # The penalty score per bar for not having a chord
 NO_CHORD_PENALTY = 3
@@ -82,6 +82,19 @@ class MashabilityList:
             views=entry.views
         )) for score, (i, k, start, entry) in self.heap], key=lambda x: x[0])
 
+def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[float, MashabilityResult]]:
+    seen = set()
+    result = []
+    for score in scores:
+        id = score[1].url_id
+        if id not in seen:
+            seen.add(id)
+            result.append(score)
+    return result
+
+def curve_score(score: float) -> float:
+    """Returns the curve score"""
+    return round(100 * exp(-.05 * score), 2)
 
 # Gets the distance of two chords and the closest approximating chord
 def _calculate_distance_of_two_chords(chord1: str, chord2: str) -> tuple[int, str]:
@@ -232,6 +245,8 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
                             min_delta_bpm: float = 0.9,
                             max_score: float = float("inf"),
                             keep_first_k: int = 10,
+                            filter_top_scores: bool = True,
+                            should_curve_score: bool = True,
                             verbose: bool = True,
         ) -> list[tuple[float, MashabilityResult]]:
     """Calculate the mashability of the submitted song with the dataset.
@@ -291,6 +306,11 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
                 )
                 scores.insert(new_score, new_id)
     scores_list = scores.get()
+    if filter_top_scores:
+        scores_list = filter_first(scores_list)
+
+    if should_curve_score:
+        scores_list = [(curve_score(x[0]), x[1]) for x in scores_list]
     return scores_list
 
 @numba.njit
