@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from abc import ABC, abstractmethod
 from .. import Audio
-from ..analysis import ChordAnalysisResult, BeatAnalysisResult
+from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_chord_transformer, analyse_beat_transformer
 from ...util import YouTubeURL
 
 class CacheHandler(ABC):
@@ -22,16 +22,46 @@ class CacheHandler(ABC):
         pass
 
     @abstractmethod
-    def get_audio(self) -> Audio | None:
+    def get_option_audio(self) -> Audio | None:
         pass
 
     @abstractmethod
-    def get_chord_analysis(self) -> ChordAnalysisResult | None:
+    def get_option_chord_analysis(self) -> ChordAnalysisResult | None:
         pass
 
     @abstractmethod
-    def get_beat_analysis(self) -> BeatAnalysisResult | None:
+    def get_option_beat_analysis(self) -> BeatAnalysisResult | None:
         pass
+
+    def get_audio(self, fallback: Callable[[], Audio]) -> Audio:
+        audio = self.get_option_audio()
+        if audio is not None:
+            return audio
+        audio = fallback()
+        self.store_audio(audio)
+        return audio
+
+    def get_chord_analysis_result(self, fallback: Callable[[], ChordAnalysisResult] | None = None) -> ChordAnalysisResult:
+        cr = self.get_option_chord_result()
+        if cr is not None:
+            return cr
+        if fallback is not None:
+            cr = fallback()
+        else:
+            cr = analyse_chord_transformer(self.get_audio())
+        self.store_chord_result(cr)
+        return cr
+
+    def get_beat_analysis_result(self, fallback: Callable[[], BeatAnalysisResult] | None = None) -> BeatAnalysisResult:
+        br = self.get_option_beat_result()
+        if br is not None:
+            return br
+        if fallback is not None:
+            br = fallback()
+        else:
+            br = analyse_beat_transformer(self.get_audio())
+        self.store_beat_result(br)
+        return br
 
     @property
     def cached_audio(self) -> bool:
