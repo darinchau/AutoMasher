@@ -108,13 +108,15 @@ class MashupID:
 
     def to_string(self) -> str:
         data = f"{self.song_a.video_id}|{self.song_a_start_time}|{self.song_b.video_id}|{self.song_b_start_bar}|{self.transpose}"
+        if len(data) % 3 != 0:
+            data += "|" * (3 - len(data) % 3)
         data = data.encode()
         b64_encoded_string = base64.urlsafe_b64encode(data).decode()
         return b64_encoded_string
 
     @classmethod
     def from_string(cls, st: str):
-        data = base64.urlsafe_b64encode(st.encode())
+        data = base64.urlsafe_b64decode(st.encode())
         data = data.decode().split("|")
         return cls(
             song_a=YouTubeURL(f"https://www.youtube.com/watch?v={data[0]}"),
@@ -143,6 +145,64 @@ def extrapolate_downbeat(downbeats: NDArray[np.float32], t: float, nbars: int):
         start += downbeat_diff
     new_downbeats = np.arange(nbars) * downbeat_diff + start
     return new_downbeats.astype(np.float32), downbeat_diff * nbars
+
+def validate_config(config: MashupConfig):
+    if config.starting_point < 0:
+        raise InvalidMashup("Starting point must be >= 0.")
+
+    if config.min_transpose > config.max_transpose:
+        raise InvalidMashup("Minimum transpose must be <= maximum transpose.")
+
+    if config.min_music_percentage < 0 or config.min_music_percentage > 1:
+        raise InvalidMashup("Minimum music percentage must be between 0 and 1.")
+
+    if config.max_delta_bpm < 0:
+        raise InvalidMashup("Maximum delta bpm must be >= 0.")
+
+    if config.min_delta_bpm < 0:
+        raise InvalidMashup("Minimum delta bpm must be >= 0.")
+
+    if config.max_delta_bpm < config.min_delta_bpm:
+        raise InvalidMashup("Maximum delta bpm must be >= minimum delta bpm.")
+
+    if config.nbars <= 0:
+        raise InvalidMashup("Number of bars must be > 0.")
+
+    if config.max_score < 0:
+        raise InvalidMashup("Maximum score must be >= 0.")
+
+    if config.search_radius < 0:
+        raise InvalidMashup("Search radius must be >= 0.")
+
+    if config.keep_first_k_results < -1:
+        raise InvalidMashup("Keep first k results must be >= -1.")
+
+    if config.filter_uneven_bars_min_threshold < 0:
+        raise InvalidMashup("Filter uneven bars min threshold must be >= 0.")
+
+    if config.filter_uneven_bars_max_threshold < 0:
+        raise InvalidMashup("Filter uneven bars max threshold must be >= 0.")
+
+    if config.filter_uneven_bars_min_threshold > config.filter_uneven_bars_max_threshold:
+        raise InvalidMashup("Filter uneven bars min threshold must be <= max threshold.")
+
+    if config.filter_short_song_bar_threshold <= 0:
+        raise InvalidMashup("Filter short song bar threshold must be > 0.")
+
+    if config.natural_drum_activity_threshold < 0:
+        raise InvalidMashup("Natural drum activity threshold must be >= 0.")
+
+    if config.natural_drum_proportion_threshold < 0:
+        raise InvalidMashup("Natural drum proportion threshold must be >= 0.")
+
+    if config.natural_vocal_activity_threshold < 0:
+        raise InvalidMashup("Natural vocal activity threshold must be >= 0.")
+
+    if config.natural_vocal_proportion_threshold < 0:
+        raise InvalidMashup("Natural vocal proportion threshold must be >= 0.")
+
+    if config.natural_window_size <= 0:
+        raise InvalidMashup("Natural window size must be > 0.")
 
 def load_dataset(config: MashupConfig) -> SongDataset:
     """Load the dataset and apply the filters speciied by config."""
@@ -366,9 +426,12 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     """
     Mashup the given audio with the dataset.
     """
+    validate_config(config)
+
     dataset = load_dataset(config)
 
-    print(link in dataset._data)
+    if link in dataset._data:
+        dataset._data.pop(link)
 
     if cache_handler_factory is None:
         cache_handler_factory = lambda x: MemoryCache(x)
@@ -415,8 +478,6 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
         )
         write(f"Result {i + 1}: {result.url} with score {score}. ID: {mashup_id.to_string()}")
 
-    # TODO iterate through all scores if entries raise invalid mashup
-    # or allow users to create multiple mashups
     best_result = scores[0][1]
 
     mashup = create_mash(cache_handler_factory, dataset, a_audio, a_beat, slice_start_a, slice_end_a,
