@@ -2,8 +2,7 @@
 from typing import Any
 import torch
 from math import isclose
-from .. import AudioCollection
-from .. import Audio, AudioMode, AudioCollection
+from .. import Audio, AudioMode, DemucsCollection
 from ...util import get_url
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from ..manipulation import HighpassFilter, PitchShift
@@ -81,7 +80,7 @@ def cross_fade(song1: Audio, song2: Audio, fade_duration: float, cross_fade_mode
     song2_normal = song2.slice(fade_duration_frames, song2.nframes)
     return song1_normal.join(cross_fade).join(song2_normal)
 
-def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_submitted_bt: BeatAnalysisResult, transpose: int, song_b_submitted_parts: AudioCollection, song_a_nframes: int, song_a_sr: int, song_b_nframes: int):
+def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_submitted_bt: BeatAnalysisResult, transpose: int, song_b_submitted_parts: DemucsCollection, song_a_nframes: int, song_a_sr: int, song_b_nframes: int):
     """Creates the song B components that ought to be used for mashup. This includes transposing the parts and aligning song B with song A
 
     Returns the song B parts that should be ready for mashup"""
@@ -99,7 +98,7 @@ def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_subm
     for key, value in trimmed_parts.items():
         trimmed_parts[key] = value.pad(song_b_nframes)
 
-    trimmed_portion = AudioCollection(**trimmed_parts)
+    trimmed_portion = DemucsCollection(**trimmed_parts)
 
     trimmed_portion = trimmed_portion.align_from_boundaries(factors, boundaries) \
         .map(lambda x: x.resample(song_a_sr)) \
@@ -141,8 +140,8 @@ def calculate_average_volume(audio: Audio, window_size: int, hop: int = 512) -> 
 
 def create_mashup(submitted_bt_a: BeatAnalysisResult,
                   submitted_bt_b: BeatAnalysisResult,
-                  submitted_parts_a: AudioCollection,
-                  submitted_parts_b: AudioCollection,
+                  submitted_parts_a: DemucsCollection,
+                  submitted_parts_b: DemucsCollection,
                   transpose: int,
                   mode: MashupMode,
                   volume_hop: int = 512,
@@ -160,8 +159,8 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
     vocal_b_proportions: float | None = None
 
     if mode in (MashupMode.NATURAL, MashupMode.VOCALS_NATURAL):
-        vocal_a_volume = calculate_average_volume(submitted_parts_a["vocals"], natural_window_size, volume_hop)
-        vocal_b_volume = calculate_average_volume(submitted_parts_b["vocals"], natural_window_size, volume_hop)
+        vocal_a_volume = calculate_average_volume(submitted_parts_a.vocals, natural_window_size, volume_hop)
+        vocal_b_volume = calculate_average_volume(submitted_parts_b.vocals, natural_window_size, volume_hop)
         vocal_a_proportions = np.count_nonzero(vocal_a_volume > natural_vocal_activity_threshold) / vocal_a_volume.shape[0]
         vocal_b_proportions = np.count_nonzero(vocal_b_volume > natural_vocal_activity_threshold) / vocal_b_volume.shape[0]
         vocal_a_pass_threshold = vocal_a_proportions > natural_vocal_proportion_threshold
@@ -177,8 +176,8 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
             mode = MashupMode.VOCAL_A
 
     if mode in (MashupMode.NATURAL, MashupMode.DRUMS_NATURAL):
-        drum_a_volume = calculate_average_volume(submitted_parts_a["drums"], natural_window_size, volume_hop)
-        drum_b_volume = calculate_average_volume(submitted_parts_b["drums"], natural_window_size, volume_hop)
+        drum_a_volume = calculate_average_volume(submitted_parts_a.drums, natural_window_size, volume_hop)
+        drum_b_volume = calculate_average_volume(submitted_parts_b.drums, natural_window_size, volume_hop)
         drum_a_pass_threshold = np.count_nonzero(drum_a_volume > natural_drum_activity_threshold) / drum_a_volume.shape[0] > natural_drum_proportion_threshold
         drum_b_pass_threshold = np.count_nonzero(drum_b_volume > natural_drum_activity_threshold) / drum_b_volume.shape[0] > natural_drum_proportion_threshold
 
@@ -200,7 +199,7 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
 
     assert mode in (MashupMode.DRUMS_A, MashupMode.VOCAL_A, MashupMode.DRUMS_B, MashupMode.VOCAL_B)
 
-    submitted_parts_b = create_mashup_component(submitted_bt_a, submitted_bt_b, transpose, submitted_parts_b, submitted_parts_a["vocals"].nframes, submitted_parts_a["vocals"].sample_rate, submitted_parts_b["vocals"].nframes)
+    submitted_parts_b = create_mashup_component(submitted_bt_a, submitted_bt_b, transpose, submitted_parts_b, submitted_parts_a.vocals.nframes, submitted_parts_a.vocals.sample_rate, submitted_parts_b.vocals.nframes)
 
     if verbose:
         print("Creating mashup with mode", mode)
@@ -213,12 +212,12 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
         print(f"Downbeats B: {submitted_bt_b.downbeats}")
 
     if mode == MashupMode.VOCAL_A:
-        mashup = create_mashup_from_parts(submitted_parts_a["vocals"], submitted_parts_b["drums"], submitted_parts_b["bass"], submitted_parts_b["other"])
+        mashup = create_mashup_from_parts(submitted_parts_a.vocals, submitted_parts_b.drums, submitted_parts_b.bass, submitted_parts_b.other)
     elif mode == MashupMode.VOCAL_B:
-        mashup = create_mashup_from_parts(submitted_parts_b["vocals"], submitted_parts_a["drums"], submitted_parts_a["bass"], submitted_parts_a["other"])
+        mashup = create_mashup_from_parts(submitted_parts_b.vocals, submitted_parts_a.drums, submitted_parts_a.bass, submitted_parts_a.other)
     elif mode == MashupMode.DRUMS_A:
-        mashup = create_mashup_from_parts(submitted_parts_a["vocals"], submitted_parts_a["drums"], submitted_parts_b["bass"], submitted_parts_b["other"])
+        mashup = create_mashup_from_parts(submitted_parts_a.vocals, submitted_parts_a.drums, submitted_parts_b.bass, submitted_parts_b.other)
     elif mode == MashupMode.DRUMS_B:
-        mashup = create_mashup_from_parts(submitted_parts_b["vocals"], submitted_parts_b["drums"], submitted_parts_a["bass"], submitted_parts_a["other"])
+        mashup = create_mashup_from_parts(submitted_parts_b.vocals, submitted_parts_b.drums, submitted_parts_a.bass, submitted_parts_a.other)
 
     return mashup, mode

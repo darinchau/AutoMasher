@@ -4,10 +4,9 @@ from demucs.pretrained import get_model
 from demucs.repo import ModelLoadingError
 from pathlib import Path
 from demucs.apply import apply_model, BagOfModels
-from ..separation.base import AudioSeparator
 from enum import Enum
 import torchaudio.functional as F
-from .. import Audio, AudioMode, AudioCollection
+from .. import Audio, AudioMode, DemucsCollection
 
 class DemucsModelStructure(Enum):
     HTDEMUCS = 'htdemucs'
@@ -17,7 +16,7 @@ class DemucsModelStructure(Enum):
     def all_models():
         return {member.value for member in DemucsModelStructure}
 
-class DemucsAudioSeparator(AudioSeparator):
+class DemucsAudioSeparator:
     def __init__(self, model_name: DemucsModelStructure = DemucsModelStructure.HTDEMUCS, repo: Path | None = None, segment: float | None = None):
         """ Preloads the model
 
@@ -98,14 +97,18 @@ class DemucsAudioSeparator(AudioSeparator):
         name_indices: dict[str, int] = {name: i for i, name in enumerate(model.sources)}
         return components, name_indices
 
-    def separate(self, audio: Audio, **kwargs) -> AudioCollection:
+    def separate(self, audio: Audio, **kwargs) -> DemucsCollection:
         """Performs the demucs audio separation pipeline.
         Play with hyperparameters with the pipeline() method.
         All kwargs will be forwarded to pipeline.
 
-        Returns: a dictionary with keys: vocals, bass, other, drums
-        The returned audio is guaranteed to have the same sample rate as the original audio"""
+        Returns: a demucs audio collection. The returned audio is guaranteed to have the same sample rate as the original audio"""
         audio_ = audio.resample(self.sample_rate).to_nchannels(AudioMode.MONO if self.nchannels == 1 else AudioMode.STEREO)
         components, name_indices = self.pipeline(audio_._data, **kwargs)
         dct = {k: Audio(components[v].clone(), self.sample_rate).resample(audio.sample_rate).pad(audio.nframes) for k, v in name_indices.items()}
-        return AudioCollection(**dct)
+        return DemucsCollection(
+            vocals=dct['vocals'],
+            bass=dct['bass'],
+            other=dct['other'],
+            drums=dct['drums']
+        )

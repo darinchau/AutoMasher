@@ -4,9 +4,8 @@ import os
 import numpy as np
 from dataclasses import dataclass, asdict
 from typing import Callable
-from ..audio import Audio, AudioCollection
+from ..audio import Audio, DemucsCollection
 from ..audio.analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
-from ..audio.base import AudioCollection
 from ..audio.dataset import SongDataset, DatasetEntry, SongGenre
 from ..audio.search import create_mashup, MashabilityResult, calculate_mashability, MashupMode
 from ..audio.cache import CacheHandler, MemoryCache
@@ -277,7 +276,7 @@ def determine_slice_results(audio: Audio, bt: BeatAnalysisResult, config: Mashup
     ), config.starting_point, slice_end
 
 # Demucs Stage
-def get_parts_result(audio: Audio) -> AudioCollection:
+def get_parts_result(audio: Audio) -> DemucsCollection:
     demucs = DemucsAudioSeparator()
     parts_result = demucs.separate(audio)
     return parts_result
@@ -304,7 +303,7 @@ def perform_search(config: MashupConfig, chord_result: ChordAnalysisResult, subm
     )
     return scores
 
-def get_mashup_result(config: MashupConfig, transpose: int, a_beat: BeatAnalysisResult, b_beat: BeatAnalysisResult, a_parts: AudioCollection, b_parts: AudioCollection):
+def get_mashup_result(config: MashupConfig, transpose: int, a_beat: BeatAnalysisResult, b_beat: BeatAnalysisResult, a_parts: DemucsCollection, b_parts: DemucsCollection):
     """Creates the mashup from the mashup module. Transpose is the number of semitones to transpose song B by."""
     return create_mashup(
         submitted_bt_a=a_beat,
@@ -466,7 +465,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     write(f"Got {len(scores)} results.")
 
     if config._skip_mashup:
-        return None, scores
+        return a_audio.slice_seconds(slice_start_a, slice_end_a), scores
 
     for i, (score, result) in enumerate(scores[:5]):
         mashup_id = MashupID(

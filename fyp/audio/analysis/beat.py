@@ -4,18 +4,17 @@ import os
 from typing import Any
 from ...audio import Audio, AudioMode
 from .base import BeatAnalysisResult
-from ...audio import Audio, AudioMode
 from typing import Callable
 import numpy as np
-from .. import AudioCollection
-from ..separation import DemucsAudioSeparator, AudioSeparator
+from .. import DemucsCollection
+from ..separation import DemucsAudioSeparator
 from ...model import beats_inference as inference
 import warnings
 
 def analyse_beat_transformer(audio: Audio | None = None,
-                                parts: AudioCollection | None = None,
-                                separator: AudioSeparator | None = None,
-                                do_normalization: bool = False, cache_path: str | None = None,
+                                parts: DemucsCollection | dict[str, Audio] | None = None,
+                                separator: DemucsAudioSeparator | None = None,
+                                do_normalization: bool = False,
                                 model_path: str = "./resources/ckpts/beat_transformer.pt",
                                 use_loaded_model: bool = True) -> BeatAnalysisResult:
     """Beat transformer but runs locally using Demucs and some uh workarounds
@@ -38,13 +37,24 @@ def analyse_beat_transformer(audio: Audio | None = None,
         parts = demucs.separate(audio)
         duration = audio.duration
     elif parts is not None:
-        duration = parts.get_duration()
+        if isinstance(parts, DemucsCollection):
+            duration = parts.get_duration()
+            parts = {
+                "vocals": parts.vocals,
+                "drums": parts.drums,
+                "bass": parts.bass,
+                "other": parts.other,
+            }
+        elif isinstance(parts, dict):
+            duration = list(parts.values())[0].get_duration()
+        else:
+            raise ValueError("Unknown parts type")
 
     # Resample as needed
     assert parts is not None
     assert duration > 0
 
-    parts = parts.map(lambda x: x.resample(44100).to_nchannels(AudioMode.STEREO))
+    parts = {k: v.resample(44100).to_nchannels(AudioMode.STEREO) for k, v in parts.items()}
 
     # Detect whether the parts is Demucs or Spleeter or something else
     assert parts is not None

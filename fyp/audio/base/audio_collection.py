@@ -3,68 +3,126 @@ from .audio import Audio
 from .time_series import TimeSeries
 from typing import Callable
 
-class AudioCollection(TimeSeries, dict[str, Audio]):
-    def __new__(cls, *args, **kwargs):
-        dur = -1
-        sr = -1
-        for k, v in kwargs.items():
-            if dur == -1 and isinstance(v, Audio):
-                dur = v.get_duration()
-                sr = v.sample_rate
-            elif isinstance(v, Audio):
-                assert v.get_duration() == dur, f"Duration mismatch: {v.get_duration()} != {dur}"
-                assert v.sample_rate == sr, f"Sample rate mismatch: {v.sample_rate} != {sr}"
-            else:
-                raise ValueError(f"Expected Audio but found {type(v)}")
-        return super().__new__(cls, *args, **kwargs)
+class DemucsCollection(TimeSeries):
+    def __init__(self, bass: Audio, drums: Audio, other: Audio, vocals: Audio):
+        assert bass.nframes == drums.nframes == other.nframes == vocals.nframes, "All audios must have the same number of frames"
+        assert bass.sample_rate == drums.sample_rate == other.sample_rate == vocals.sample_rate, "All audios must have the same sample rate"
+        self._bass = bass
+        self._drums = drums
+        self._other = other
+        self._vocals = vocals
 
-    def slice_seconds(self, start: float, end: float) -> AudioCollection:
-        """Slice whatever we have between start and end seconds. After the slice, start becomes t=0"""
-        return self.map(lambda x: x.slice_seconds(start, end))
+    @property
+    def bass(self):
+        return self._bass
 
-    def change_speed(self, speed: float) -> AudioCollection:
-        return self.map(lambda x: x.change_speed(speed))
+    @property
+    def drums(self):
+        return self._drums
 
-    def join(self, other: AudioCollection) -> AudioCollection:
-        assert set(self.keys()) == set(other.keys()), "The keys of the two audio collections must be the same"
-        return AudioCollection(**{k: self[k].join(other[k]) for k in self.keys()})
+    @property
+    def other(self):
+        return self._other
+
+    @property
+    def vocals(self):
+        return self._vocals
 
     def get_duration(self) -> float:
-        if len(self) == 0:
-            raise NotImplementedError("Cannot get the duration of an empty audio collection")
-        return list(self.values())[0].get_duration()
+        return self._bass.get_duration()
 
-    def __setitem__(self, __key: str, __value: Audio) -> None:
-        if len(self) > 0:
-            # assert __value.get_duration() == self.get_duration(), f"Duration mismatch: {__value.get_duration()} != {self.get_duration()}"
-            if __value.get_duration() != self.get_duration():
-                __value = __value.pad(self.nframes)
-            assert __value.sample_rate == self.sample_rate, f"Sample rate mismatch: {__value.sample_rate} != {self.sample_rate}"
-        return super().__setitem__(__key, __value)
+    def change_speed(self, speed: float) -> DemucsCollection:
+        return DemucsCollection(
+            bass=self._bass.change_speed(speed),
+            drums=self._drums.change_speed(speed),
+            other=self._other.change_speed(speed),
+            vocals=self._vocals.change_speed(speed)
+        )
+
+    def slice_seconds(self, start: float, end: float) -> DemucsCollection:
+        return DemucsCollection(
+            bass=self._bass.slice_seconds(start, end),
+            drums=self._drums.slice_seconds(start, end),
+            other=self._other.slice_seconds(start, end),
+            vocals=self._vocals.slice_seconds(start, end)
+        )
+
+    def join(self, other: DemucsCollection) -> DemucsCollection:
+        return DemucsCollection(
+            bass=self._bass.join(other.bass),
+            drums=self._drums.join(other.drums),
+            other=self._other.join(other.other),
+            vocals=self._vocals.join(other.vocals)
+        )
 
     @property
-    def sample_rate(self):
-        if len(self) == 0:
-            raise NotImplementedError("Cannot get the sample rate of an empty audio collection")
-        return list(self.values())[0].sample_rate
+    def sample_rate(self) -> int:
+        return self._bass.sample_rate
 
     @property
-    def nframes(self):
-        if len(self) == 0:
-            raise NotImplementedError("Cannot get the nframes of an empty audio collection")
-        return list(self.values())[0].nframes
+    def nframes(self) -> int:
+        return self._bass.nframes
+
+    def keys(self):
+        return ['bass', 'drums', 'other', 'vocals']
+
+    def items(self):
+        return [('bass', self._bass), ('drums', self._drums), ('other', self._other), ('vocals', self._vocals)]
 
     def map(self, func: Callable[[Audio], Audio]):
-        new_dict = {}
-        dur, sr = -1, -1
-        for k, v in self.items():
-            new_audio = func(v)
-            assert isinstance(new_audio, Audio), f"Expected Audio but found {type(new_audio)}"
-            if dur == -1:
-                dur = new_audio.get_duration()
-                sr = new_audio.sample_rate
-            else:
-                assert new_audio.get_duration() == dur, f"Duration mismatch: {new_audio.get_duration()} != {dur}"
-                assert new_audio.sample_rate == sr, f"Sample rate mismatch: {new_audio.sample_rate} != {sr}"
-            new_dict[k] = new_audio
-        return AudioCollection(**new_dict)
+        return DemucsCollection(
+            bass=func(self._bass),
+            drums=func(self._drums),
+            other=func(self._other),
+            vocals=func(self._vocals)
+        )
+
+class HPSSCollection(TimeSeries):
+    def __init__(self, harmonic: Audio | None, percussive: Audio | None):
+        assert not harmonic or not percussive or harmonic.nframes == percussive.nframes, "All audios must have the same number of frames"
+        assert not harmonic or not percussive or harmonic.sample_rate == percussive.sample_rate, "All audios must have the same sample rate"
+        self._harmonic = harmonic
+        self._percussive = percussive
+
+    @property
+    def harmonic(self):
+        return self._harmonic
+
+    @property
+    def percussive(self):
+        return self._percussive
+
+    def get_duration(self) -> float:
+        return self._harmonic.get_duration() if self._harmonic else self._percussive.get_duration() if self._percussive else 0
+
+    def change_speed(self, speed: float) -> HPSSCollection:
+        return HPSSCollection(
+            harmonic=self._harmonic.change_speed(speed) if self._harmonic else None,
+            percussive=self._percussive.change_speed(speed) if self._percussive else None
+        )
+
+    def slice_seconds(self, start: float, end: float) -> HPSSCollection:
+        return HPSSCollection(
+            harmonic=self._harmonic.slice_seconds(start, end) if self._harmonic else None,
+            percussive=self._percussive.slice_seconds(start, end) if self._percussive else None
+        )
+
+    def join(self, other: HPSSCollection) -> HPSSCollection:
+        return HPSSCollection(
+            harmonic=self._harmonic.join(other._harmonic) if self._harmonic and other._harmonic else None,
+            percussive=self._percussive.join(other._percussive) if self._percussive and other._percussive else None
+        )
+
+    @property
+    def sample_rate(self) -> int:
+        return self._harmonic.sample_rate if self._harmonic else self._percussive.sample_rate if self._percussive else 0
+
+    @property
+    def nframes(self) -> int:
+        return self._harmonic.nframes if self._harmonic else self._percussive.nframes if self._percussive else 0
+
+    def map(self, func: Callable[[Audio], Audio]):
+        return HPSSCollection(
+            harmonic=func(self._harmonic) if self._harmonic else None,
+            percussive=func(self._percussive) if self._percussive else None
+        )
