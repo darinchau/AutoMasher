@@ -1,6 +1,6 @@
 from fyp.audio.analysis import *
 from fyp.audio.separation import DemucsAudioSeparator
-from fyp.audio.dataset.cache import LocalCache, YouTubeURL
+from fyp.audio.cache import LocalCache, YouTubeURL
 from fyp.audio.search.align import distance_of_chord_results
 from fyp import Audio
 from fyp.util.note import get_keys

@@ -5,11 +5,15 @@ from dataclasses import dataclass
 from typing import Any
 from abc import ABC, abstractmethod
 from typing import Callable
-from .. import Audio
-from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_chord_transformer, analyse_beat_transformer
-from ...util import YouTubeURL
+from . import Audio
+from .analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_chord_transformer, analyse_beat_transformer
+from ..util import YouTubeURL
 
 class CacheHandler(ABC):
+    """An abstract class that handles caching of audio, chord analysis, and beat analysis results. The URL of the song must be provided to instantiate this class."""
+    def __init__(self, link: YouTubeURL) -> None:
+        self.link = link
+
     @abstractmethod
     def _store_audio(self, audio: Audio) -> None:
         pass
@@ -86,8 +90,8 @@ class CacheHandler(ABC):
 
 class LocalCache(CacheHandler):
     def __init__(self, cache_dir: str | None, link: YouTubeURL) -> None:
+        super().__init__(link)
         self.cache_dir = cache_dir
-        self.link = link
 
     @property
     def _audio_save_path(self) -> str:
@@ -157,3 +161,39 @@ class LocalCache(CacheHandler):
     @property
     def cached_beat_analysis(self) -> bool:
         return os.path.isfile(self._beat_save_path)
+
+class MemoryCache(CacheHandler):
+    _STORAGE = {}
+
+    def _store_audio(self, audio: Audio) -> None:
+        self._STORAGE[f"{self.link.video_id}_audio"] = audio
+
+    def _store_chord_analysis(self, result: ChordAnalysisResult) -> None:
+        self._STORAGE[f"{self.link.video_id}_chord"] = result
+
+    def _store_beat_analysis(self, result: BeatAnalysisResult) -> None:
+        self._STORAGE[f"{self.link.video_id}_beat"] = result
+
+    def _get_option_audio(self) -> Audio | None:
+        return self._STORAGE.get(f"{self.link.video_id}_audio")
+
+    def _get_audio_fallback(self) -> Audio:
+        return Audio.load(self.link)
+
+    def _get_option_chord_analysis(self) -> ChordAnalysisResult | None:
+        return self._STORAGE.get(f"{self.link.video_id}_chord")
+
+    def _get_option_beat_analysis(self) -> BeatAnalysisResult | None:
+        return self._STORAGE.get(f"{self.link.video_id}_beat")
+
+    @property
+    def cached_audio(self) -> bool:
+        return f"{self.link.video_id}_audio" in self._STORAGE
+
+    @property
+    def cached_chord_analysis(self) -> bool:
+        return f"{self.link.video_id}_chord" in self._STORAGE
+
+    @property
+    def cached_beat_analysis(self) -> bool:
+        return f"{self.link.video_id}_beat" in self._STORAGE

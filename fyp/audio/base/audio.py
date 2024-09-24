@@ -334,7 +334,7 @@ class Audio(TimeSeries):
         self._thread = None
         self._stop_audio = False # Reset the state
 
-    def __add__(self, other: Audio):
+    def __add__(self, other: Audio) -> Audio:
         """Adds two audio together. Currently we only support that `self` and `other` have the same duration, same device, and the same sample rate
         For the nchannels - returns an audio with two channels unless both `self` and `other` has one channel only."""
         assert isinstance(other, Audio)

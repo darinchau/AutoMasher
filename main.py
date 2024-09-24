@@ -1,27 +1,20 @@
 # Searches the database using Rick Astley's "Never Gonna Give You Up" as an example
 
-from fyp.audio.search.search import SearchConfig, SongSearchState, search_song, YouTubeURL
+from fyp import YouTubeURL, MashupConfig, mashup_song
+from fyp.audio.cache import CacheHandler, LocalCache
 
 def main():
-    config = SearchConfig(
-        # Refer to the comments in the SearchConfig class for more info
+    link = YouTubeURL("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    config = MashupConfig(
+        starting_point=42.9, # seconds, next to chorus
+        min_transpose=-3,
         max_transpose=3,
-        chord_model_path="./resources/ckpts/btc_model_large_voca.pt",
-        beat_model_path="./resources/ckpts/beat_transformer.pt",
-        cache_dir="./resources/cache",
-        dataset_path="./resources/dataset/audio-infos-v2.1.db",
-        verbose=True,
-        bar_number=20,
-        nbars=8,
+        _verbose=True
     )
 
-    state = SongSearchState(link=YouTubeURL("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), config=config)
-
     # Search the song
-    scores = search_song(state=state)
-
-    print("Scores:")
-    print(scores)
+    audio = mashup_song(link, config, lambda url: LocalCache("./resources/cache", url))
+    audio.save("output.wav")
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,7 @@
 # Contains the algorithmic implementation to create a simple mashup
 from typing import Any
 import torch
+from math import isclose
 from .. import AudioCollection
 from .. import Audio, AudioMode, AudioCollection
 from ...util import get_url
@@ -84,7 +85,7 @@ def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_subm
     """Creates the song B components that ought to be used for mashup. This includes transposing the parts and aligning song B with song A
 
     Returns the song B parts that should be ready for mashup"""
-    assert song_b_submitted_parts.get_duration() == song_b_submitted_bt.get_duration()
+    assert isclose(song_b_submitted_parts.get_duration(), song_b_submitted_bt.get_duration(), abs_tol=1/44100), f"Song B parts duration {song_b_submitted_parts.get_duration()} does not match the beat analysis duration {song_b_submitted_bt.get_duration()}"
 
     factors, boundaries = calculate_boundaries(song_a_submitted_bt, song_b_submitted_bt)
 
@@ -198,7 +199,18 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
 
     assert mode in (MashupMode.DRUMS_A, MashupMode.VOCAL_A, MashupMode.DRUMS_B, MashupMode.VOCAL_B)
 
-    processed_b_parts = create_mashup_component(submitted_bt_a, submitted_bt_b, transpose, submitted_parts_b, submitted_parts_a["vocals"].nframes, submitted_parts_a["vocals"].sample_rate, submitted_parts_b["vocals"].nframes)
+    print(f"Using mode {mode}")
+    print(f"Vocal A proportions: {vocal_a_proportions}")
+    print(f"Vocal B proportions: {vocal_b_proportions}")
+    print(f"Beat A: {submitted_bt_a.downbeats}")
+    print(f"Beat B: {submitted_bt_b.downbeats}")
+    print(f"Transpose: {transpose}")
+    print(f"Beat A duration: {submitted_bt_a.get_duration()}")
+    print(f"Beat B duration: {submitted_bt_b.get_duration()}")
+    print(f"Parts A duration: {submitted_parts_a.get_duration()}")
+    print(f"Parts B duration: {submitted_parts_b.get_duration()}")
+
+    submitted_parts_b = create_mashup_component(submitted_bt_a, submitted_bt_b, transpose, submitted_parts_b, submitted_parts_a["vocals"].nframes, submitted_parts_a["vocals"].sample_rate, submitted_parts_b["vocals"].nframes)
 
     if mode == MashupMode.VOCAL_A:
         mashup = create_mashup_from_parts(submitted_parts_a["vocals"], submitted_parts_b["drums"], submitted_parts_b["bass"], submitted_parts_b["other"])

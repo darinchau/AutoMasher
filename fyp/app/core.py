@@ -9,7 +9,7 @@ from ..audio.analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_be
 from ..audio.base import AudioCollection
 from ..audio.dataset import SongDataset, DatasetEntry, SongGenre
 from ..audio.search import create_mashup, MashabilityResult, calculate_mashability, MashupMode
-from ..audio.dataset.cache import CacheHandler
+from ..audio.cache import CacheHandler, MemoryCache
 from ..audio.separation import DemucsAudioSeparator
 from ..util import YouTubeURL
 from numpy.typing import NDArray
@@ -57,7 +57,6 @@ class MashupConfig:
         filter_short_song_bar_threshold: The minimum number of bars for a song to be considered long enough. Default is 12.
 
         filter_uncached: Whether to filter out songs that are not cached. Default is True.
-
         """
     starting_point: float
     min_transpose: int = -3
@@ -70,8 +69,6 @@ class MashupConfig:
     filter_first: bool = True
     search_radius: float = 3
     keep_first_k_results: int = 10
-
-    cache: bool = True
 
     filter_uneven_bars: bool = True
     filter_uneven_bars_min_threshold: float = 0.9
@@ -87,9 +84,11 @@ class MashupConfig:
     natural_window_size: int = 10
 
     # The path of stuff should not be exposed to the user
-    dataset_path: str = "resources/dataset/audio-infos-v2.1.db"
-    beat_model_path: str = "resources/ckpts/beat_transformer.pt"
-    chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
+    _dataset_path: str = "resources/dataset/audio-infos-v2.1.db"
+    _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
+    _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
+
+    _verbose: bool = False
 
 def is_regular(downbeats: NDArray[np.float32], range_threshold: float = 0.2, std_threshold: float = 0.1) -> bool:
     """Return true if the downbeats are evenly spaced."""
@@ -113,7 +112,7 @@ def extrapolate_downbeat(downbeats: NDArray[np.float32], t: float, nbars: int):
 
 def load_dataset(config: MashupConfig) -> SongDataset:
     """Load the dataset and apply the filters speciied by config."""
-    dataset = SongDataset.load(config.dataset_path)
+    dataset = SongDataset.load(config._dataset_path)
     filters: list[Callable[[DatasetEntry], bool]] = []
 
     if config.filter_short_song_bar_threshold > 0:
@@ -229,20 +228,25 @@ def get_mashup_result(config: MashupConfig, transpose: int, a_beat: BeatAnalysis
     )
 
 
-def mashup_song(config: MashupConfig, a_url: YouTubeURL, cache_handler_factory: Callable[[YouTubeURL], CacheHandler]):
+def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None):
     """
     Mashup the given audio with the dataset.
     """
     dataset = load_dataset(config)
 
-    a_cache_handler = cache_handler_factory(a_url)
+    if cache_handler_factory is None:
+        cache_handler_factory = lambda x: MemoryCache(x)
+
+    write = print if config._verbose else lambda x: None
+
+    a_cache_handler = cache_handler_factory(link)
     a_audio = a_cache_handler.get_audio()
 
-    beat_result = a_cache_handler.get_beat_analysis_result(fallback = lambda: analyse_beat_transformer(a_audio, model_path = config.beat_model_path))
+    beat_result = a_cache_handler.get_beat_analysis_result(fallback = lambda: analyse_beat_transformer(a_audio, model_path = config._beat_model_path))
     if beat_result.nbars < config.nbars:
         raise InvalidMashup("The audio is too short to mashup with the dataset.")
 
-    a_chord = a_cache_handler.get_chord_analysis_result(fallback = lambda: analyse_chord_transformer(a_audio, model_path = config.chord_model_path))
+    a_chord = a_cache_handler.get_chord_analysis_result(fallback = lambda: analyse_chord_transformer(a_audio, model_path = config._chord_model_path))
 
     a_beat, slice_start_a, slice_end_a = determine_slice_results(a_audio, beat_result, config)
 

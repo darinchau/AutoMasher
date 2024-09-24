@@ -148,7 +148,7 @@ class DatasetEntry:
 
     @property
     def _cache_handler(self):
-        from .cache import LocalCache
+        from ..cache import LocalCache
         return LocalCache("resources/cache", self.url)
 
     def get_audio(self) -> Audio:
