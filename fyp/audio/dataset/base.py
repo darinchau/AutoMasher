@@ -152,11 +152,7 @@ class DatasetEntry:
         return LocalCache("resources/cache", self.url)
 
     def get_audio(self) -> Audio:
-        audio = self._cache_handler.get_audio()
-        if audio is None:
-            audio = Audio.load(self.url)
-            self._cache_handler.store_audio(audio)
-        return audio
+        return self._cache_handler.get_audio()
 
     @property
     def cached(self):

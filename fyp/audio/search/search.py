@@ -137,7 +137,7 @@ class SongSearchState:
                 self.audio,
                 model_path=self.search_config.chord_model_path,
             )
-            self._cache_handler.store_chord_analysis(self._raw_chord_result)
+            self._cache_handler._store_chord_analysis(self._raw_chord_result)
         return self._raw_chord_result
 
     @property
@@ -148,7 +148,7 @@ class SongSearchState:
                 parts = self.raw_parts_result,
                 model_path=self.search_config.beat_model_path
             )
-            self._cache_handler.store_beat_analysis(self._raw_beat_result)
+            self._cache_handler._store_beat_analysis(self._raw_beat_result)
         return self._raw_beat_result
 
     @property

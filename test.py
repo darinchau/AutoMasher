@@ -28,7 +28,7 @@ def main():
     # ct = c.get_chord_analysis() or analyse_chord_transformer(audio)
     # c.store_beat_analysis(bt)
     # c.store_chord_analysis(ct)
-    c.store_audio(audio)
+    c._store_audio(audio)
 
     vocals = DemucsAudioSeparator().separate(audio)["vocals"]
     infos = get_volume(vocals)
