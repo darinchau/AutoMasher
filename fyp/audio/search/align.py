@@ -53,37 +53,34 @@ class MashabilityList:
     def __init__(self):
         self.ls: list[tuple[float, MashabilityResultType]] = []
 
-    def insert(self, score: float, result: MashabilityResultType):
-        self.ls.append((score, result))
+    def insert(self, distance: float, result: MashabilityResultType):
+        self.ls.append((distance, result))
 
     def get(self, keep_first_k: int, filter_top_scores: bool) -> list[tuple[float, MashabilityResult]]:
-        if filter_top_scores:
-            seen: set[YouTubeURL] = set()
+        results = [(distance, MashabilityResult(
+            url=entry.url,
+            start_bar=i,
+            transpose=k,
+            title=entry.audio_name,
+            timestamp=start,
+            genre=entry.genre,
+            views=entry.views
+        )) for distance, (i, k, start, entry) in self.ls]
+
+        # Separate into few cases to make this efficient
+        if keep_first_k > 0 and not filter_top_scores:
+            results = heapq.nsmallest(keep_first_k, results, key=lambda x: x[0]) # This is sorted
+
+        elif filter_top_scores:
+            results_ = sorted(results, key=lambda x: x[0])
+            seen = set()
             results: list[tuple[float, MashabilityResult]] = []
-            for score, (i, k, start, entry) in self.ls:
-                if entry.url not in seen:
-                    seen.add(entry.url)
-                    results.append((score, MashabilityResult(
-                        url=entry.url,
-                        start_bar=i,
-                        transpose=k,
-                        title=entry.audio_name,
-                        timestamp=start,
-                        genre=entry.genre,
-                        views=entry.views
-                    )))
-        else:
-            results = [(score, MashabilityResult(
-                url=entry.url,
-                start_bar=i,
-                transpose=k,
-                title=entry.audio_name,
-                timestamp=start,
-                genre=entry.genre,
-                views=entry.views
-            )) for score, (i, k, start, entry) in self.ls]
-        if keep_first_k > 0:
-            results = heapq.nsmallest(keep_first_k, results, key=lambda x: x[0])
+            for distance, result in results_:
+                if result.url not in seen:
+                    results.append((distance, result))
+                    seen.add(result.url)
+                if len(results) == keep_first_k:
+                    break
         return results
 
 def curve_score(score: float) -> float:

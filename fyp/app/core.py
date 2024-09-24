@@ -96,6 +96,7 @@ class MashupConfig:
     _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
 
     _verbose: bool = False
+    _skip_mashup: bool = False
 
 @dataclass(frozen=True)
 class MashupID:
@@ -106,35 +107,15 @@ class MashupID:
     transpose: int
 
     def to_string(self) -> str:
-        password = os.getenv("SECRET")
-        if password is None:
-            raise ValueError("SECRET environment variable not set.")
-
-        salt = bcrypt.gensalt()
-        pw = bcrypt.kdf(password.encode(), salt, 32, 100)
-        key = base64.urlsafe_b64encode(pw)
-        f = Fernet(key)
         data = f"{self.song_a.video_id}|{self.song_a_start_time}|{self.song_b.video_id}|{self.song_b_start_bar}|{self.transpose}"
-        data = str(len(salt)).encode() + salt + f.encrypt(data.encode())
+        data = data.encode()
         b64_encoded_string = base64.urlsafe_b64encode(data).decode()
-
         return b64_encoded_string
 
     @classmethod
     def from_string(cls, st: str):
-        password = os.getenv("SECRET")
-        if password is None:
-            raise ValueError("SECRET environment variable not set.")
-
-        thing = base64.urlsafe_b64decode(st)
-
-        salt_length = int(thing[:2].decode())
-        salt = thing[2:2+salt_length]
-        pw = bcrypt.kdf(password.encode(), salt, 32, 100)
-        key = base64.urlsafe_b64encode(pw)
-        f = Fernet(key)
-        thing = f.decrypt(thing[2+len(salt):])
-        data = thing.decode().split("|")
+        data = base64.urlsafe_b64encode(st.encode())
+        data = data.decode().split("|")
         return cls(
             song_a=YouTubeURL(f"https://www.youtube.com/watch?v={data[0]}"),
             song_a_start_time=float(data[1]),
@@ -420,7 +401,11 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     if len(scores) == 0:
         raise InvalidMashup("No suitable songs found in the dataset.")
     write(f"Got {len(scores)} results.")
-    for i, (score, result) in enumerate(scores[:100]):
+
+    if config._skip_mashup:
+        return None, scores
+
+    for i, (score, result) in enumerate(scores[:5]):
         mashup_id = MashupID(
             song_a=link,
             song_a_start_time=config.starting_point,
