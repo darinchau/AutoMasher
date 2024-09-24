@@ -13,7 +13,7 @@ def main():
     )
 
     # Search the song
-    audio = mashup_song(link, config, lambda url: LocalCache("./resources/cache", url))
+    audio, scores = mashup_song(link, config, lambda url: LocalCache("./resources/cache", url))
     audio.save("output.wav")
 
 if __name__ == "__main__":

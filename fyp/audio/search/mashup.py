@@ -199,17 +199,6 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
 
     assert mode in (MashupMode.DRUMS_A, MashupMode.VOCAL_A, MashupMode.DRUMS_B, MashupMode.VOCAL_B)
 
-    print(f"Using mode {mode}")
-    print(f"Vocal A proportions: {vocal_a_proportions}")
-    print(f"Vocal B proportions: {vocal_b_proportions}")
-    print(f"Beat A: {submitted_bt_a.downbeats}")
-    print(f"Beat B: {submitted_bt_b.downbeats}")
-    print(f"Transpose: {transpose}")
-    print(f"Beat A duration: {submitted_bt_a.get_duration()}")
-    print(f"Beat B duration: {submitted_bt_b.get_duration()}")
-    print(f"Parts A duration: {submitted_parts_a.get_duration()}")
-    print(f"Parts B duration: {submitted_parts_b.get_duration()}")
-
     submitted_parts_b = create_mashup_component(submitted_bt_a, submitted_bt_b, transpose, submitted_parts_b, submitted_parts_a["vocals"].nframes, submitted_parts_a["vocals"].sample_rate, submitted_parts_b["vocals"].nframes)
 
     if mode == MashupMode.VOCAL_A:
@@ -221,4 +210,4 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
     elif mode == MashupMode.DRUMS_B:
         mashup = create_mashup_from_parts(submitted_parts_b["vocals"], submitted_parts_b["drums"], submitted_parts_a["bass"], submitted_parts_a["other"])
 
-    return mashup
+    return mashup, mode

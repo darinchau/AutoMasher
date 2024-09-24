@@ -47,51 +47,44 @@ class MashabilityResult:
     def __repr__(self):
         return f"MashabilityResult({self.url}/{self.start_bar}/{self.transpose})"
 
-MashabilityResultType = tuple[int, int, Any, DatasetEntry]
-
-# Use a more efficient data scructure to store the scores
-class MashabilityHeap:
-    """A class to store the scores of the mashability of the songs. It keeps the top k scores in a heap."""
-    def __init__(self, keep_first_k: int):
-        assert keep_first_k > 0, "Use a Mashability List instead"
-        self.heap: list[tuple[float, tuple]] = [(float("-inf"), ()) for _ in range(keep_first_k)]
-
-    def insert(self, score: float, id: MashabilityResultType):
-        heapq.heappushpop(self.heap, (-score, id))
-
-    def get(self) -> list[tuple[float, MashabilityResult]]:
-        entries = [(-score, id) for score, id in self.heap if len(id) > 0]
-        ls = MashabilityList()
-        ls.heap = entries
-        return ls.get()
+MashabilityResultType = tuple[int, int, Any, DatasetEntry] # (start_bar, transpose, starting_downbeat, entry)
 
 class MashabilityList:
     def __init__(self):
-        self.heap: list[tuple[float, MashabilityResultType]] = []
+        self.ls: list[tuple[float, MashabilityResultType]] = []
 
-    def insert(self, score: float, id: MashabilityResultType):
-        self.heap.append((score, id))
+    def insert(self, score: float, result: MashabilityResultType):
+        self.ls.append((score, result))
 
-    def get(self) -> list[tuple[float, MashabilityResult]]:
-        return sorted([(score, MashabilityResult(
-            url=entry.url,
-            start_bar=i,
-            transpose=k,
-            title=entry.audio_name,
-            timestamp=start,
-            genre=entry.genre,
-            views=entry.views
-        )) for score, (i, k, start, entry) in self.heap], key=lambda x: x[0])
-
-def filter_first(scores: list[tuple[float, MashabilityResult]]) -> list[tuple[float, MashabilityResult]]:
-    seen = set()
-    result = []
-    for score in scores:
-        id = score[1].url
-        if id not in seen:
-            seen.add(id)
-            result.append(score)
-    return result
+    def get(self, keep_first_k: int, filter_top_scores: bool) -> list[tuple[float, MashabilityResult]]:
+        if filter_top_scores:
+            seen: set[YouTubeURL] = set()
+            results: list[tuple[float, MashabilityResult]] = []
+            for score, (i, k, start, entry) in self.ls:
+                if entry.url not in seen:
+                    seen.add(entry.url)
+                    results.append((score, MashabilityResult(
+                        url=entry.url,
+                        start_bar=i,
+                        transpose=k,
+                        title=entry.audio_name,
+                        timestamp=start,
+                        genre=entry.genre,
+                        views=entry.views
+                    )))
+        else:
+            results = [(score, MashabilityResult(
+                url=entry.url,
+                start_bar=i,
+                transpose=k,
+                title=entry.audio_name,
+                timestamp=start,
+                genre=entry.genre,
+                views=entry.views
+            )) for score, (i, k, start, entry) in self.ls]
+        if keep_first_k > 0:
+            results = heapq.nsmallest(keep_first_k, results, key=lambda x: x[0])
+        return results
 
 def curve_score(score: float) -> float:
     """Returns the curve score"""
@@ -273,7 +266,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
 
     # Precalculate chord distances as a numpy array to take advantage of jit
     distances = _get_distance_array()
-    scores = MashabilityHeap(keep_first_k=keep_first_k) if keep_first_k > 0 else MashabilityList()
+    scores = MashabilityList()
     nbars = len(submitted_beat_result.downbeats)
 
     # Initiate progress bar
@@ -290,7 +283,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
                 continue
 
             times2, chords2 = _slice_chord_result(sample_normalized_chord_times, sample_normalized_chords, i, i+nbars)
-            starting_downbeat = sample_downbeats[i]
+            starting_downbeat: float = sample_downbeats[i]
             for transpose_semitone, times1, chords1 in transposed_crs:
                 new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
                 if new_score > max_score:
@@ -306,9 +299,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
                     entry
                 )
                 scores.insert(new_score, new_id)
-    scores_list = scores.get()
-    if filter_top_scores:
-        scores_list = filter_first(scores_list)
+    scores_list = scores.get(keep_first_k, filter_top_scores)
 
     if should_curve_score:
         scores_list = [(curve_score(x[0]), x[1]) for x in scores_list]

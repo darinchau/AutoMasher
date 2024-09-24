@@ -240,33 +240,57 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     write = print if config._verbose else lambda x: None
 
     a_cache_handler = cache_handler_factory(link)
-    a_audio = a_cache_handler.get_audio()
 
+    write(f"Loading audio for song A from {link}...")
+    a_audio = a_cache_handler.get_audio()
+    write(f"Got audio with duration {a_audio.duration} seconds.")
+
+    write("Analyzing beats for song A...")
     beat_result = a_cache_handler.get_beat_analysis_result(fallback = lambda: analyse_beat_transformer(a_audio, model_path = config._beat_model_path))
     if beat_result.nbars < config.nbars:
         raise InvalidMashup("The audio is too short to mashup with the dataset.")
+    write(f"Got beat analysis result with {beat_result.nbars} bars.")
 
+    write("Analyzing chords for song A...")
     a_chord = a_cache_handler.get_chord_analysis_result(fallback = lambda: analyse_chord_transformer(a_audio, model_path = config._chord_model_path))
+    write(f"Got chord analysis result.")
 
+    write("Determining slice results...")
     a_beat, slice_start_a, slice_end_a = determine_slice_results(a_audio, beat_result, config)
+    write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
 
     # Create the mashup
+    write("Performing search...")
     scores = perform_search(config, a_chord, a_beat, slice_start_a, slice_end_a, dataset)
     if len(scores) == 0:
         raise InvalidMashup("No suitable songs found in the dataset.")
+    write(f"Got {len(scores)} results.")
+    for i, (score, result) in enumerate(scores[:100]):
+        write(f"Result {i + 1}: {result.url} with score {score}")
 
     # TODO iterate through all scores if entries raise invalid mashup
     # or allow users to create multiple mashups
     best_result = scores[0][1]
 
+    write(f"Loading audio for song B from {best_result.url}...")
     b_cache_handler = cache_handler_factory(best_result.url)
     b_audio = b_cache_handler.get_audio()
+    write(f"Got audio with duration {b_audio.duration} seconds.")
+
+    write("Analyzing beats for song B...")
     b_beat = BeatAnalysisResult.from_data_entry(dataset[best_result.url])
     slice_start_b, slice_end_b = b_beat.downbeats[best_result.start_bar], b_beat.downbeats[best_result.start_bar + config.nbars]
     b_beat = b_beat.slice_seconds(slice_start_b, slice_end_b)
+    write(f"Got audio with duration {b_audio.duration} seconds.")
 
+    write("Analyzing parts for song A...")
     a_parts = get_parts_result(a_audio).slice_seconds(slice_start_a, slice_end_a)
+
+    write("Analyzing parts for song B...")
     b_parts = get_parts_result(b_audio).slice_seconds(slice_start_b, slice_end_b)
 
-    mashup = get_mashup_result(config, best_result.transpose, a_beat, b_beat, a_parts, b_parts)
-    return mashup
+    write("Creating mashup...")
+    mashup, mode_used = get_mashup_result(config, best_result.transpose, a_beat, b_beat, a_parts, b_parts)
+    write(f"Got mashup with mode {mode_used}.")
+
+    return mashup, scores
