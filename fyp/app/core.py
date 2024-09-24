@@ -13,13 +13,8 @@ from ..audio.separation import DemucsAudioSeparator
 from ..util import YouTubeURL
 from numpy.typing import NDArray
 import librosa
-import bcrypt
 import base64
-from cryptography.fernet import Fernet
-import json
-import dotenv
-
-dotenv.load_dotenv()
+import copy
 
 class InvalidMashup(Exception):
     pass
@@ -275,12 +270,6 @@ def determine_slice_results(audio: Audio, bt: BeatAnalysisResult, config: Mashup
         downbeats = np.arange(config.nbars) * downbeat_diff + config.starting_point,
     ), config.starting_point, slice_end
 
-# Demucs Stage
-def get_parts_result(audio: Audio) -> DemucsCollection:
-    demucs = DemucsAudioSeparator()
-    parts_result = demucs.separate(audio)
-    return parts_result
-
 # Search stage
 def perform_search(config: MashupConfig, chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult, slice_start: float, slice_end: float, dataset: SongDataset):
     """Perform the search now that everything is properly sliced. Returns the scores."""
@@ -320,7 +309,8 @@ def get_mashup_result(config: MashupConfig, transpose: int, a_beat: BeatAnalysis
         natural_window_size=config.natural_window_size,
     )
 
-def create_mash(cache_handler_factory, dataset: SongDataset, a_audio: Audio, a_beat: BeatAnalysisResult, slice_start_a: float, slice_end_a: float,
+def create_mash(cache_handler_factory: Callable[[YouTubeURL], CacheHandler], dataset: SongDataset,
+                a_parts: DemucsCollection, a_beat: BeatAnalysisResult, slice_start_a: float, slice_end_a: float,
                 best_result_url: YouTubeURL, best_result_start_bar: int, best_result_transpose: int,
                 nbars: int = 8,
                 natural_drum_activity_threshold: float = 1,
@@ -344,10 +334,10 @@ def create_mash(cache_handler_factory, dataset: SongDataset, a_audio: Audio, a_b
     write(f"Got audio with duration {b_audio.duration} seconds.")
 
     write("Analyzing parts for song A...")
-    a_parts = get_parts_result(a_audio).slice_seconds(slice_start_a, slice_end_a)
+    a_parts = a_parts.slice_seconds(slice_start_a, slice_end_a)
 
     write("Analyzing parts for song B...")
-    b_parts = get_parts_result(b_audio).slice_seconds(slice_start_b, slice_end_b)
+    b_parts = b_cache_handler.get_parts_result.slice_seconds(slice_start_b, slice_end_b)
 
     write("Creating mashup...")
     mashup, mode_used = create_mashup(
@@ -376,7 +366,6 @@ def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None
         # Copy all aspects of the config, except for the starting point
         # where we set it to song a's starting point
         # Use a little hack just don't tell anybody else is ok :)
-        import copy
         config = copy.deepcopy(config)
         object.__setattr__(config, "starting_point", mashup_id.song_a_start_time)
     else:
@@ -392,7 +381,7 @@ def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None
     write(f"Got audio with duration {a_audio.duration} seconds.")
 
     write("Analyzing beats for song A...")
-    beat_result = a_cache_handler.get_beat_analysis_result(fallback = lambda: analyse_beat_transformer(a_audio, model_path = config._beat_model_path))
+    beat_result = a_cache_handler.get_beat_analysis_result(model_path = config._beat_model_path)
     if beat_result.nbars < config.nbars:
         raise InvalidMashup("The audio is too short to mashup with the dataset.")
     write(f"Got beat analysis result with {beat_result.nbars} bars.")
@@ -404,7 +393,7 @@ def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None
     # Create the mashup
     mashup = create_mash(cache_handler_factory=cache_handler_factory,
                          dataset=dataset,
-                         a_audio=a_audio,
+                         a_parts=a_cache_handler.get_parts_result(),
                          a_beat=a_beat,
                          slice_start_a=slice_start_a,
                          slice_end_a=slice_end_a,
@@ -444,13 +433,13 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     write(f"Got audio with duration {a_audio.duration} seconds.")
 
     write("Analyzing beats for song A...")
-    beat_result = a_cache_handler.get_beat_analysis_result(fallback = lambda: analyse_beat_transformer(a_audio, model_path = config._beat_model_path))
+    beat_result = a_cache_handler.get_beat_analysis_result(model_path = config._beat_model_path)
     if beat_result.nbars < config.nbars:
         raise InvalidMashup("The audio is too short to mashup with the dataset.")
     write(f"Got beat analysis result with {beat_result.nbars} bars.")
 
     write("Analyzing chords for song A...")
-    a_chord = a_cache_handler.get_chord_analysis_result(fallback = lambda: analyse_chord_transformer(a_audio, model_path = config._chord_model_path))
+    a_chord = a_cache_handler.get_chord_analysis_result(model_path = config._chord_model_path)
     write(f"Got chord analysis result.")
 
     write("Determining slice results...")
@@ -479,7 +468,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
 
     best_result = scores[0][1]
 
-    mashup = create_mash(cache_handler_factory, dataset, a_audio, a_beat, slice_start_a, slice_end_a,
+    mashup = create_mash(cache_handler_factory, dataset, a_cache_handler.get_parts_result(), a_beat, slice_start_a, slice_end_a,
                          best_result.url, best_result.start_bar, best_result.transpose,
                          config.nbars,
                          config.natural_drum_activity_threshold,

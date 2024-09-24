@@ -27,7 +27,8 @@ def analyse_key_center_chroma(f_or_chromagram: ChromaFunction | NDArray[np.float
     if not isinstance(f_or_chromagram, np.ndarray):
         # Use HPSS to extract the harmonic component
         assert audio is not None, "audio must be provided if chroma function is provided"
-        harmonic_component = HPSSAudioSeparator(return_percussive=False).separate(audio)['harmonic']
+        harmonic_component = HPSSAudioSeparator(return_percussive=False).separate(audio).harmonic
+        assert harmonic_component is not None
         chromograph = f_or_chromagram(harmonic_component, hop)
     else:
         chromograph = f_or_chromagram
