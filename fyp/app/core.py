@@ -41,7 +41,7 @@ class MashupConfig:
 
         nbars: The number of bars the resulting mashup will contain. Default is 8.
 
-        max_score: The maximum mashability score allowed for the queried song. Default is infinity.
+        max_distance: The maximum song distance allowed for the queried song. Around 3-5 will give good results. Default is infinity.
 
         filter_first: Whether to include only the best result of each song from the search. This does not affect the runtime of the search since the filtering is done after the search. Default is True.
 
@@ -66,7 +66,7 @@ class MashupConfig:
     max_delta_bpm: float = 1.25
     min_delta_bpm: float = 0.8
     nbars: int = 8
-    max_score: float = float("inf")
+    max_distance: float = float("inf")
     filter_first: bool = True
     search_radius: float = 3
     keep_first_k_results: int = 10
@@ -162,7 +162,7 @@ def validate_config(config: MashupConfig):
     if config.nbars <= 0:
         raise InvalidMashup("Number of bars must be > 0.")
 
-    if config.max_score < 0:
+    if config.max_distance < 0:
         raise InvalidMashup("Maximum score must be >= 0.")
 
     if config.search_radius < 0:
@@ -284,7 +284,7 @@ def perform_search(config: MashupConfig, chord_result: ChordAnalysisResult, subm
         min_music_percentage=config.min_music_percentage,
         max_delta_bpm=config.max_delta_bpm,
         min_delta_bpm=config.min_delta_bpm,
-        max_score=config.max_score,
+        max_distance=config.max_distance,
         keep_first_k=config.keep_first_k_results,
         filter_top_scores=config.filter_first,
         should_curve_score=True,
@@ -337,7 +337,7 @@ def create_mash(cache_handler_factory: Callable[[YouTubeURL], CacheHandler], dat
     a_parts = a_parts.slice_seconds(slice_start_a, slice_end_a)
 
     write("Analyzing parts for song B...")
-    b_parts = b_cache_handler.get_parts_result.slice_seconds(slice_start_b, slice_end_b)
+    b_parts = b_cache_handler.get_parts_result().slice_seconds(slice_start_b, slice_end_b)
 
     write("Creating mashup...")
     mashup, mode_used = create_mashup(

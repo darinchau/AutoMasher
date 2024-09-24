@@ -234,7 +234,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
                             min_music_percentage: float = 0.5,
                             max_delta_bpm: float = 1.1,
                             min_delta_bpm: float = 0.9,
-                            max_score: float = float("inf"),
+                            max_distance: float = float("inf"),
                             keep_first_k: int = 10,
                             filter_top_scores: bool = True,
                             should_curve_score: bool = True,
@@ -282,8 +282,8 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
             times2, chords2 = _slice_chord_result(sample_normalized_chord_times, sample_normalized_chords, i, i+nbars)
             starting_downbeat: float = sample_downbeats[i]
             for transpose_semitone, times1, chords1 in transposed_crs:
-                new_score = _dist_chord_results(times1, times2, chords1, chords2, distances)
-                if new_score > max_score:
+                new_distance = _dist_chord_results(times1, times2, chords1, chords2, distances)
+                if new_distance > max_distance:
                     continue
                 # Use a tuple instead of a dataclass for now, will change it back to a dataclass in scores.get
                 # This is because using tuple literal syntax skips the step to find the dataclass constructor name
@@ -295,7 +295,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
                     starting_downbeat,
                     entry
                 )
-                scores.insert(new_score, new_id)
+                scores.insert(new_distance, new_id)
     scores_list = scores.get(keep_first_k, filter_top_scores)
 
     if should_curve_score:
