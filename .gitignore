@@ -74,6 +74,7 @@ nohup.out
 
 /resources/*
 !resources/assets
+!resources/report.pdf
 !resources/dataset/
 !resources/ckpts
 !resources/dataset/*

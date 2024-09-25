@@ -429,7 +429,6 @@ def mashup_song(link: YouTubeURL,
     write(f"Creating mashup for {link}")
 
     dataset = load_dataset(config)
-    write(f"Loaded dataset with {len(dataset)} songs.")
 
     if link in dataset._data:
         dataset._data.pop(link)
