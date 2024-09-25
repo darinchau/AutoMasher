@@ -88,8 +88,8 @@ def mashup(
 
     try:
         link = get_url(input_yt_link)
-    except ValueError:
-        return gr.Textbox("Error: Invalid YouTube link"), None
+    except Exception as e:
+        return gr.Textbox(f"Error: Invalid YouTube link ({e})"), None
 
     try:
         mashup, _, system_message = mashup_song(link, config, cache_handler_factory)
@@ -101,8 +101,8 @@ def mashup(
 def get_audio_from_link(input_yt_link: str, starting_point: float):
     try:
         link = get_url(input_yt_link)
-    except ValueError:
-        return gr.Textbox("Error: Invalid YouTube link"), None
+    except Exception as e:
+        return gr.Textbox(f"Error: Invalid YouTube link ({e})"), None
 
     title = link.title
     cache_handler = LocalCache(CACHE_DIR, link)
@@ -124,7 +124,7 @@ def get_base64_logo():
 def app():
     with gr.Blocks(title="AutoMasher", css=".center-logo{margin: auto}") as app:
         gr.Markdown("## Auto Masher")
-        gr.HTML(f"""<img class="center-logo" src="{get_base64_logo()}" alt="Auto Masher", width=100px height=100px>""")
+        gr.HTML(f"""<img class="center-logo" src="{get_base64_logo()}" alt="Auto Masher", width=150px height=150px>""")
         gr.Markdown(
             value="This demo is provided for research purposes only. All audio materials used in this pipeline constitutes as research, and thus, pursuant to Section 107 of the 1976 Copyright Act, constitutes as fair use. Please do not use it for commercial purposes."
         )
@@ -203,11 +203,14 @@ def app():
                                 choices=(
                                     list(get_mashup_mode_desc_map().values())
                                 ),
-                                value="Vocal A",
+                                value="Let the system decide",
                                 interactive=True,
-                                info="The mode to use when mashing up the songs. VOCALS_A will keep the vocals of song A and the music of song B. VOCALS_B will keep the vocals of song B and the music of song A" \
-                                    "DRUMS_A will keep the drums of song A and the music of song B. DRUMS_B will keep the drums of song B and the music of song A. VOCALS_NATURAL will pick between VOCALS_A and VOCALS_B based on the activity of the vocals using some heuristics" \
-                                    "DRUMS_NATURAL will pick between DRUMS_A and DRUMS_B based on the activity of the drums using heuristics below. NATURAL will pick between VOCALS_NATURAL and DRUMS_NATURAL based on the activity of the vocals and drums using some heuristics"
+                                info="The mode to use when mashing up the songs. " \
+                                    "Vocals A will keep the vocals of song A and the music of song B. Vocals B will keep the vocals of song B and the music of song A" \
+                                    "DRUMS_A will keep the drums of song A and the music of song B. DRUMS_B will keep the drums of song B and the music of song A. " \
+                                    "VOCALS_NATURAL will pick between VOCALS_A and VOCALS_B based on the activity of the vocals using some heuristics" \
+                                    "DRUMS_NATURAL will pick between DRUMS_A and DRUMS_B based on the activity of the drums using heuristics below."  \
+                                    "NATURAL will pick between VOCALS_NATURAL and DRUMS_NATURAL based on the activity of the vocals and drums using some heuristics"
                             )
                             mashup_id = gr.Textbox(
                                 label="Mashup ID",
@@ -222,7 +225,7 @@ def app():
                                     interactive=True,
                                     value=4.5,
                                     minimum=0,
-                                    info="The maximum 'song distance' allowed between the two songs. Anything above this value will be filtered out. Typically, a value between 3-5 will yield good results. See our paper for more information on song distance"
+                                    info="The maximum 'song distance' allowed between the two songs. Anything above this value will be filtered out. Typically, a value around 5 will yield good results, and a value around 8 will have a more expansive collection of okayish results. See our paper for more information on song distance"
                                 )
                                 keep_first_k_input = gr.Number(
                                     label="Keep first k results",

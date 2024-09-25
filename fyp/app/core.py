@@ -57,7 +57,7 @@ class MashupConfig:
 
         filter_short_song_bar_threshold: The minimum number of bars for a song to be considered long enough. Default is 12.
 
-        filter_uncached: Whether to filter out songs that are not cached. Default is True.
+        filter_uncached: Whether to filter out songs that are not cached. Default is False.
         """
     starting_point: float
     min_transpose: int = -3
@@ -75,7 +75,7 @@ class MashupConfig:
     filter_uneven_bars_min_threshold: float = 0.9
     filter_uneven_bars_max_threshold: float = 1.1
     filter_short_song_bar_threshold: int = 12
-    filter_uncached: bool = True
+    filter_uncached: bool = False
 
     mashup_mode: MashupMode = MashupMode.NATURAL
     natural_drum_activity_threshold: float = 1
@@ -359,7 +359,9 @@ def create_mash(cache_handler_factory: Callable[[YouTubeURL], CacheHandler], dat
     write(f"Got mashup with mode {mode_used}.")
     return mashup
 
-def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None, cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None):
+def mashup_from_id(mashup_id: MashupID | str,
+                   config: MashupConfig | None = None,
+                   cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None) -> Audio:
     if isinstance(mashup_id, str):
         mashup_id = MashupID.from_string(mashup_id)
 
@@ -372,9 +374,13 @@ def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None
     else:
         config = MashupConfig(starting_point=mashup_id.song_a_start_time)
 
+    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
+    write(f"Creating mashup for ID: {mashup_id.to_string()}")
+
     dataset = load_dataset(config)
+    write(f"Loaded dataset with {len(dataset)} songs.")
+
     cache_handler_factory = cache_handler_factory or (lambda x: MemoryCache(x))
-    write = print if config._verbose else lambda x: None
     a_cache_handler = cache_handler_factory(mashup_id.song_a)
 
     write(f"Loading audio for song A from {mashup_id.song_a}...")
@@ -411,13 +417,19 @@ def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None
                          verbose=config._verbose)
     return mashup
 
-def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None):
+def mashup_song(link: YouTubeURL,
+                config: MashupConfig,
+                cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None,
+                dataset: SongDataset | None = None):
     """
     Mashup the given audio with the dataset.
     """
     validate_config(config)
+    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
+    write(f"Creating mashup for {link}")
 
     dataset = load_dataset(config)
+    write(f"Loaded dataset with {len(dataset)} songs.")
 
     if link in dataset._data:
         dataset._data.pop(link)
@@ -425,7 +437,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     if cache_handler_factory is None:
         cache_handler_factory = lambda x: MemoryCache(x)
 
-    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
+    write(f"Loaded dataset with {len(dataset)} songs.")
 
     a_cache_handler = cache_handler_factory(link)
 
@@ -460,7 +472,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
 
     best_result_idx = 0
     best_result = scores[best_result_idx][1]
-    system_messages: list[str] = []
+    system_messages: list[str] = ["Here are some other mashups you can consider:"]
 
     for i, (score, result) in enumerate(scores):
         mashup_id = MashupID(
