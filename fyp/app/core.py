@@ -91,6 +91,7 @@ class MashupConfig:
 
     _verbose: bool = False
     _skip_mashup: bool = False
+    _max_show_results: int = 5 # Maximum number of results to show in the demo message box
 
 @dataclass(frozen=True)
 class MashupID:
@@ -455,20 +456,25 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     write(f"Got {len(scores)} results.")
 
     if config._skip_mashup:
-        return a_audio.slice_seconds(slice_start_a, slice_end_a), scores
+        return a_audio.slice_seconds(slice_start_a, slice_end_a), scores, "Skipped mashup."
 
-    if config._verbose:
-        for i, (score, result) in enumerate(scores[:5]):
-            mashup_id = MashupID(
-                song_a=link,
-                song_a_start_time=config.starting_point,
-                song_b=result.url,
-                song_b_start_bar=result.start_bar,
-                transpose=result.transpose,
-            )
-            write(f"Result {i + 1}: {result.url} with score {score}. ID: {mashup_id.to_string()}")
+    best_result_idx = 0
+    best_result = scores[best_result_idx][1]
+    system_messages: list[str] = []
 
-    best_result = scores[0][1]
+    for i, (score, result) in enumerate(scores):
+        mashup_id = MashupID(
+            song_a=link,
+            song_a_start_time=config.starting_point,
+            song_b=result.url,
+            song_b_start_bar=result.start_bar,
+            transpose=result.transpose,
+        )
+        write(f"Result {i + 1}: {result.url} with score {score}. ID: {mashup_id.to_string()}")
+        if i == best_result_idx and i < config._max_show_results:
+            system_messages = [f"Created mashup with {best_result.title} ({best_result.url}) with score {scores[0][0]} (ID: {mashup_id.to_string()})"] + system_messages
+        elif i < config._max_show_results:
+            system_messages.append(f"> {result.title} {result.url} with score {score}. ID: {mashup_id.to_string()}")
 
     mashup = create_mash(cache_handler_factory, dataset, a_cache_handler.get_parts_result(), a_beat, slice_start_a, slice_end_a,
                          best_result.url, best_result.start_bar, best_result.transpose,
@@ -481,4 +487,5 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
                          config.mashup_mode,
                          verbose = config._verbose)
 
-    return mashup, scores
+    system_messages = ["Mashup completed!"] + system_messages
+    return mashup, scores, "\n".join(system_messages)

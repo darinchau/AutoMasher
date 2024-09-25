@@ -5,7 +5,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 from copy import deepcopy
-from ... import Audio
+from ..base import Audio
+from ...util import get_url
 from ...util import YouTubeURL
 from enum import Enum
 import numpy as np
@@ -179,7 +180,7 @@ class SongDataset:
         if isinstance(url, YouTubeURL):
             return self._data[url]
         if isinstance(url, str):
-            return self._data[YouTubeURL(url)]
+            return self._data[get_url(url)]
         if isinstance(url, int):
             return list(self._data.values())[url]
         raise TypeError(f"Invalid type for url: {type(url)}")

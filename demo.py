@@ -8,12 +8,14 @@
 # Internally its basically the main.py code but with a GUI wrapper around it.
 # The GUI will be built using gradio
 
+import os
+import base64
 import gradio as gr
 import traceback
 from fyp.util import is_ipython, is_colab
 from fyp.app import mashup_from_id
 from fyp.audio.cache import LocalCache
-from fyp import mashup_song, MashupConfig, MashupMode, YouTubeURL, InvalidMashup, Audio
+from fyp import mashup_song, MashupConfig, MashupMode, get_url, InvalidMashup, Audio
 
 # Set to None to disable caching
 CACHE_DIR: str | None = "./resources/cache"
@@ -85,20 +87,20 @@ def mashup(
             return gr.Textbox(f"Error: {e}"), None
 
     try:
-        link = YouTubeURL(input_yt_link)
+        link = get_url(input_yt_link)
     except ValueError:
         return gr.Textbox("Error: Invalid YouTube link"), None
 
     try:
-        mashup, _ = mashup_song(link, config, cache_handler_factory)
-        return gr.Textbox("Mashup complete"), pack_audio(mashup)
+        mashup, _, system_message = mashup_song(link, config, cache_handler_factory)
+        return gr.Textbox(system_message), pack_audio(mashup)
     except Exception as e:
         print(traceback.format_exc())
         return gr.Textbox(f"Error: {e}"), None
 
 def get_audio_from_link(input_yt_link: str, starting_point: float):
     try:
-        link = YouTubeURL(input_yt_link)
+        link = get_url(input_yt_link)
     except ValueError:
         return gr.Textbox("Error: Invalid YouTube link"), None
 
@@ -115,12 +117,16 @@ def get_audio_from_link(input_yt_link: str, starting_point: float):
 
     return gr.Textbox(title), pack_audio(audio)
 
+def get_base64_logo():
+    with open("resources/assets/auto_mashup.png", "rb") as f:
+        return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
+
 def app():
-    with gr.Blocks(title="AutoMasher") as app:
+    with gr.Blocks(title="AutoMasher", css=".center-logo{margin: auto}") as app:
         gr.Markdown("## Auto Masher")
-        gr.Markdown("""![Auto Masher](./resources/assets/auto_mashup.png)""")
+        gr.HTML(f"""<img class="center-logo" src="{get_base64_logo()}" alt="Auto Masher", width=100px height=100px>""")
         gr.Markdown(
-            value="This software is provided for research and demo purposes only. All audio materials used in this pipeline constitutes as research, and thus, pursuant to Section 107 of the 1976 Copyright Act, constitutes as fair use. Please do not use it for commercial purposes."
+            value="This demo is provided for research purposes only. All audio materials used in this pipeline constitutes as research, and thus, pursuant to Section 107 of the 1976 Copyright Act, constitutes as fair use. Please do not use it for commercial purposes."
         )
         with gr.TabItem("Create Mashup"):
             with gr.Row():
@@ -207,7 +213,7 @@ def app():
                                 label="Mashup ID",
                                 placeholder="Enter Mashup ID",
                                 interactive=True,
-                                info="If you have a mashup ID, you can enter it here to recreate the mashup"
+                                info="If you have a mashup ID, you can enter it here to recreate the mashup. In this case the song link and starting point will be ignored"
                             )
                         with gr.Column():
                             with gr.Row():
@@ -311,4 +317,4 @@ def app():
 
 
 demo = app()
-demo.launch(debug=True)
+demo.launch(debug=True, allowed_paths=[os.path.abspath("resources/assets")])
