@@ -128,23 +128,26 @@ def app():
                     input_yt_link = gr.Textbox(
                         label="Input YouTube Link",
                         placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-                        interactive=True
+                        interactive=True,
+                        info="Paste a YouTube link here to get started",
                     )
                     starting_point = gr.Number(
                         label="Starting point (seconds)",
                         value=42.0,
                         interactive=True,
-                        minimum=0.
+                        minimum=0,
+                        info="Pick a complete verse, ideally at the start of the chorus, to get the best results",
                     )
                     title = gr.Textbox(
                         label="Video Title",
                         placeholder="Rick Astley - Never Gonna Give You Up",
-                        interactive=False
+                        interactive=False,
+                        info="The title of the video will be displayed here",
                     )
                 with gr.Column():
                     input_audio = gr.Audio(label="Input Audio")
                     refresh_button = gr.Button(
-                        "Refresh input audio", variant="primary"
+                        "Refresh input audio", variant="primary",
                     )
                     refresh_button.click(
                         get_audio_from_link,
@@ -154,7 +157,7 @@ def app():
             with gr.Accordion("Advanced Settings"):
                 with gr.Group():
                     with gr.Row(variant="panel"):
-                        with gr.Column(scale=1.8): # type: ignore
+                        with gr.Column(scale=1.3): # type: ignore
                             with gr.Row():
                                 min_transpose_slider = gr.Slider(
                                     label="Min Transpose",
@@ -162,6 +165,7 @@ def app():
                                     maximum=6,
                                     value=-3,
                                     interactive=True,
+                                    info="The minimum number of semitones to transpose the song. The search result will include songs transposed between min_transpose and max_transpose",
                                 )
                                 max_transpose_slider = gr.Slider(
                                     label="Max Transpose",
@@ -169,6 +173,7 @@ def app():
                                     maximum=6,
                                     value=3,
                                     interactive=True,
+                                    info="The maximum number of semitones to transpose the song. The search result will include songs transposed between min_transpose and max_transpose",
                                 )
                             with gr.Row():
                                 min_delta_bpm_slider = gr.Slider(
@@ -177,6 +182,7 @@ def app():
                                     maximum=2,
                                     value=0.8,
                                     interactive=True,
+                                    info="The minimum relative BPM difference between the two songs. Say song A has 100 BPM, then song B can have a BPM between 100 * min_delta_bpm and 100 * max_delta_bpm"
                                 )
                                 max_delta_bpm_slider = gr.Slider(
                                     label="Max Delta BPM",
@@ -184,6 +190,7 @@ def app():
                                     maximum=2,
                                     value=1.25,
                                     interactive=True,
+                                    info="The maximum relative BPM difference between the two songs. Say song A has 100 BPM, then song B can have a BPM between 100 * min_delta_bpm and 100 * max_delta_bpm"
                                 )
                             mashup_mode = gr.Radio(
                                 label="Mashup Mode",
@@ -192,10 +199,15 @@ def app():
                                 ),
                                 value="Vocal A",
                                 interactive=True,
+                                info="The mode to use when mashing up the songs. VOCALS_A will keep the vocals of song A and the music of song B. VOCALS_B will keep the vocals of song B and the music of song A" \
+                                    "DRUMS_A will keep the drums of song A and the music of song B. DRUMS_B will keep the drums of song B and the music of song A. VOCALS_NATURAL will pick between VOCALS_A and VOCALS_B based on the activity of the vocals using some heuristics" \
+                                    "DRUMS_NATURAL will pick between DRUMS_A and DRUMS_B based on the activity of the drums using heuristics below. NATURAL will pick between VOCALS_NATURAL and DRUMS_NATURAL based on the activity of the vocals and drums using some heuristics"
                             )
                             mashup_id = gr.Textbox(
                                 label="Mashup ID",
-                                placeholder="Enter Mashup ID"
+                                placeholder="Enter Mashup ID",
+                                interactive=True,
+                                info="If you have a mashup ID, you can enter it here to recreate the mashup"
                             )
                         with gr.Column():
                             with gr.Row():
@@ -203,43 +215,54 @@ def app():
                                     label="Max Song Distance",
                                     interactive=True,
                                     value=4.5,
-                                    minimum=0
+                                    minimum=0,
+                                    info="The maximum 'song distance' allowed between the two songs. Anything above this value will be filtered out. Typically, a value between 3-5 will yield good results. See our paper for more information on song distance"
                                 )
                                 keep_first_k_input = gr.Number(
                                     label="Keep first k results",
                                     interactive=True,
                                     value=5,
+                                    minimum=-1,
+                                    info = "Keep only the top k results from the pipeline instead of returning all results. This will make some parts slightly more efficient but mostly it's for debugging purposes. Set to -1 to keep all results"
                                 )
                             with gr.Row():
                                 filter_first = gr.Checkbox(
-                                    label="Filter First", interactive=True
+                                    label="Filter First",
+                                    interactive=True,
+                                    value=True,
+                                    info="Filter only the best match from each song. Say if song A matches with song B at both bar 8 with a score of 85 and bar 16 with a score of 90. If filter_first is True, the pipeline will only consider the match at bar 16. If filter_first is False, both results will be returned"
                                 )
                                 filter_uneven_bars = gr.Checkbox(
                                     label="Filter Uneven Bars",
                                     interactive=True,
-                                    value=True
+                                    value=True,
+                                    info="Filter out songs in the dataset that might have a faulty beat detection result which is characterized by uneven bar lengths. This will also filter out songs that have drastic tempo changes"
                                 )
                             with gr.Row():
                                 filter_uneven_bars_min_threshold_input = gr.Number(
                                     label="Min Threshold",
                                     interactive=True,
-                                    value=0.9
+                                    value=0.9,
+                                    info="Filter out songs in the dataset that might have a faulty beat detection result which is characterized by uneven bar lengths. This will also filter out songs that have drastic tempo changes"
                                 )
                                 filter_uneven_bars_max_threshold_input = gr.Number(
                                     label="Max Threshold",
                                     interactive=True,
-                                    value=1.1
+                                    value=1.1,
+                                    info="Filter out songs in the dataset that might have a faulty beat detection result which is characterized by uneven bar lengths. This will also filter out songs that have drastic tempo changes"
                                 )
                             with gr.Row():
                                 filter_short_song_bar_threshold_input = gr.Number(
                                     label="Short Song Bar Threshold",
                                     interactive=True,
-                                    value=12
+                                    value=12,
+                                    info="Filter out songs in the dataset that might have a faulty beat detection result which is characterized by too few number of bars. This will filter out songs that has less than filter_short_song_bar_threshold bars"
                                 )
                                 search_radius_input = gr.Number(
                                     label="Search Radius",
                                     interactive=True,
-                                    value=3
+                                    value=3,
+                                    info="The range to perform beat extrapolation. Keep at 3 unless you know what you're doing"
                                 )
 
             with gr.Group():
