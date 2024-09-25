@@ -1,1 +1,1 @@
-from .core import MashupConfig, mashup_song
+from .core import MashupConfig, mashup_song, mashup_from_id

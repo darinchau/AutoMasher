@@ -456,15 +456,16 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     if config._skip_mashup:
         return a_audio.slice_seconds(slice_start_a, slice_end_a), scores
 
-    for i, (score, result) in enumerate(scores[:5]):
-        mashup_id = MashupID(
-            song_a=link,
-            song_a_start_time=config.starting_point,
-            song_b=result.url,
-            song_b_start_bar=result.start_bar,
-            transpose=result.transpose,
-        )
-        write(f"Result {i + 1}: {result.url} with score {score}. ID: {mashup_id.to_string()}")
+    if config._verbose:
+        for i, (score, result) in enumerate(scores[:5]):
+            mashup_id = MashupID(
+                song_a=link,
+                song_a_start_time=config.starting_point,
+                song_b=result.url,
+                song_b_start_bar=result.start_bar,
+                transpose=result.transpose,
+            )
+            write(f"Result {i + 1}: {result.url} with score {score}. ID: {mashup_id.to_string()}")
 
     best_result = scores[0][1]
 
