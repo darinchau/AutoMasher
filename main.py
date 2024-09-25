@@ -13,11 +13,6 @@ def main():
         min_transpose=-3,
         max_transpose=3,
 
-        # The amount of music required in the searched song.
-        # A higher value will forbid segments like the end credits to be used in the mashup
-        # This is a legacy feature and is not recommended to be used
-        min_music_percentage=0,
-
         # The maximum and minimum relative BPM difference between the two songs
         # Say song A has 100 BPM, then song B can have a BPM between 100 * min_delta_bpm and 100 * max_delta_bpm
         # Anything outside of this range will be filtered out
@@ -59,10 +54,6 @@ def main():
         # which is characterized by too few number of bars
         # This will filter out songs that has less than filter_short_song_bar_threshold bars
         filter_short_song_bar_threshold=12,
-
-        # Only keep songs which audio is cached
-        # This is a legacy feature and is not recommended to be used
-        filter_uncached=True,
 
         # The mode to use when mashing up the songs
         # VOCALS_A will keep the vocals of song A and the music of song B
