@@ -78,7 +78,7 @@ to create a faster loading version of the dataset.
 ## Inner Workings
 We have collected about 19000 songs from YouTube and processed them to extract the chords and beats. We estimate the chords of the song using [BTC-ISMIR19](https://github.com/jayg996/BTC-ISMIR19) (Park and Choi, 2019) and beats using a slightly modified version of [Beat-Transformer](https://github.com/zhaojw1998/Beat-Transformer) (Zhao, Xia, and Wang, 2022). We also used [Demucs](https://github.com/facebookresearch/demucs) (Defossez, 2020) to separate the tracks of a song.
 
-Refer to our report for more details.
+Refer to our report (under `resources/report.pdf`) for more details.
 
 ### The data collection pipeline
 <img
