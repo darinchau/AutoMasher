@@ -62,7 +62,7 @@ class MashupConfig:
     starting_point: float
     min_transpose: int = -3
     max_transpose: int = 3
-    min_music_percentage: float = 0.8
+    min_music_percentage: float = 0
     max_delta_bpm: float = 1.25
     min_delta_bpm: float = 0.8
     nbars: int = 8

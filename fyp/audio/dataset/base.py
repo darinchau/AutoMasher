@@ -156,7 +156,7 @@ class DatasetEntry:
 
     @property
     def cached(self):
-        return os.path.exists(self._cache_handler.cached_audio)
+        return self._cache_handler.cached_audio
 
     @staticmethod
     def from_url(url: YouTubeURL, playlist: str | None = None, genre: SongGenre = SongGenre.UNKNOWN):
