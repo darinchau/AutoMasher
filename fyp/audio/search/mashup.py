@@ -157,6 +157,8 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
 
     vocal_a_proportions: float | None = None
     vocal_b_proportions: float | None = None
+    drum_a_pass_threshold: bool | None = None
+    drum_b_pass_threshold: bool | None = None
 
     if mode in (MashupMode.NATURAL, MashupMode.VOCALS_NATURAL):
         vocal_a_volume = calculate_average_volume(submitted_parts_a.vocals, natural_window_size, volume_hop)

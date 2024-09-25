@@ -358,7 +358,7 @@ def create_mash(cache_handler_factory: Callable[[YouTubeURL], CacheHandler], dat
     write(f"Got mashup with mode {mode_used}.")
     return mashup
 
-def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None, cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None, verbose: bool = False):
+def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None, cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None):
     if isinstance(mashup_id, str):
         mashup_id = MashupID.from_string(mashup_id)
 
@@ -373,7 +373,7 @@ def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None
 
     dataset = load_dataset(config)
     cache_handler_factory = cache_handler_factory or (lambda x: MemoryCache(x))
-    write = print if verbose else lambda x: None
+    write = print if config._verbose else lambda x: None
     a_cache_handler = cache_handler_factory(mashup_id.song_a)
 
     write(f"Loading audio for song A from {mashup_id.song_a}...")
@@ -407,7 +407,7 @@ def mashup_from_id(mashup_id: MashupID | str, config: MashupConfig | None = None
                          natural_vocal_proportion_threshold=config.natural_vocal_proportion_threshold,
                          natural_window_size=config.natural_window_size,
                          mashup_mode=config.mashup_mode,
-                         verbose=verbose)
+                         verbose=config._verbose)
     return mashup
 
 def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None):
@@ -424,7 +424,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
     if cache_handler_factory is None:
         cache_handler_factory = lambda x: MemoryCache(x)
 
-    write = print if config._verbose else lambda x: None
+    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
 
     a_cache_handler = cache_handler_factory(link)
 
@@ -448,6 +448,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, cache_handler_factory: C
 
     # Create the mashup
     write("Performing search...")
+    write(str(config))
     scores = perform_search(config, a_chord, a_beat, slice_start_a, slice_end_a, dataset)
     if len(scores) == 0:
         raise InvalidMashup("No suitable songs found in the dataset.")

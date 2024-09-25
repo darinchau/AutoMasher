@@ -17,3 +17,10 @@ def is_ipython():
         return True
     except NameError:
         return False
+
+def is_colab():
+    try:
+        import google.colab
+        return True
+    except ImportError:
+        return False

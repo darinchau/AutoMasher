@@ -73,6 +73,7 @@ nohup.out
 .vscode
 
 /resources/*
+!resources/assets
 !resources/dataset/
 !resources/ckpts
 !resources/dataset/*
