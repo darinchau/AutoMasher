@@ -2,7 +2,7 @@
 
 import os
 from typing import Any
-from ...audio import Audio, AudioMode
+from ...audio import Audio
 from .base import BeatAnalysisResult
 from typing import Callable
 import numpy as np
@@ -54,7 +54,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
     assert parts is not None
     assert duration > 0
 
-    parts = {k: v.resample(44100).to_nchannels(AudioMode.STEREO) for k, v in parts.items()}
+    parts = {k: v.resample(44100).to_nchannels(2) for k, v in parts.items()}
 
     # Detect whether the parts is Demucs or Spleeter or something else
     assert parts is not None
