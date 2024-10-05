@@ -34,15 +34,13 @@ class MashabilityResult:
     transpose: Number of semitones to transpose the sample song to match the submitted song
     title: The title of the song
     timestamp: The timestamp of the song in the Audio
-    genre: The genre of the song
-    views: The number of views of the song as of the time of the dataset creation"""
+    genre: The genre of the song"""
     url: YouTubeURL
     start_bar: int
     transpose: int
     title: str
     timestamp: float
     genre: SongGenre
-    views: int
 
     def __repr__(self):
         return f"MashabilityResult({self.url}/{self.start_bar}/{self.transpose})"
@@ -64,7 +62,6 @@ class MashabilityList:
             title=entry.audio_name,
             timestamp=start,
             genre=entry.genre,
-            views=entry.views
         )) for distance, (i, k, start, entry) in self.ls]
 
         # Separate into few cases to make this efficient

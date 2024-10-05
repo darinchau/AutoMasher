@@ -2,7 +2,7 @@
 from typing import Any
 import torch
 from math import isclose
-from .. import Audio, AudioMode, DemucsCollection
+from ..base import Audio, DemucsCollection
 from ...util import get_url
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from ..manipulation import HighpassFilter, PitchShift

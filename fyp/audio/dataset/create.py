@@ -81,7 +81,7 @@ def get_demucs():
 
 def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None, genre: SongGenre, *, verbose: bool = True) -> DatasetEntry | str:
     if verbose:
-        print(f"Audio length: {audio.duration} ({YouTube(video_url).length})")
+        print(f"Audio length: {audio.duration} ({YouTubeURL(video_url).length})")
     length = audio.duration
 
     if verbose:
@@ -94,7 +94,7 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None
     if len(labels) != len(chord_times):
         return f"Length mismatch: labels({len(labels)}) != chord_times({len(chord_times)})"
 
-    if not chord_times or chord_times[-1] > length:
+    if len(chord_times) == 0 or chord_times[-1] > length:
         return f"Chord times error: {video_url}"
 
     if not all([t1 < t2 for t1, t2 in zip(chord_times, chord_times[1:])]):
@@ -119,8 +119,6 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None
     if not downbeats or downbeats[-1] > length:
         return f"Downbeats error: {video_url}"
 
-    yt = YouTube(video_url)
-
     if verbose:
         print("Creating entry...")
     return create_entry(
@@ -130,8 +128,8 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None
         chords = labels.tolist(),
         chord_times = chord_times.tolist(),
         genre = genre,
-        audio_name = yt.title,
+        audio_name = YouTubeURL(video_url).title,
         url = video_url,
         playlist = playlist_url,
-        views = yt.views
+        views = YouTubeURL(video_url).get_views()
     )

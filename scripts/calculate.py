@@ -2,11 +2,7 @@
 # This creates a dataset of audio features from a playlist of songs
 
 import os
-from pytube import YouTube
-from pytube import Playlist
 from fyp import Audio
-from fyp.audio.separation import DemucsAudioSeparator
-from fyp.audio.analysis import analyse_beat_transformer, analyse_chord_transformer
 from fyp.audio.dataset import DatasetEntry, SongGenre
 from fyp.audio.dataset.compress import DatasetEntryEncoder
 from fyp.audio.dataset.create import process_audio_
@@ -17,6 +13,14 @@ import traceback
 from tqdm.auto import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import tempfile
+
+try:
+    from pytube import Playlist, YouTube
+except ImportError:
+    try:
+        from pytubefix import Playlist, YouTube
+    except ImportError:
+        raise ImportError("Please install the pytube library to download the audio. You can install it using `pip install pytube` or `pip install pytubefix`")
 
 def filter_song(yt: YouTube) -> bool:
     """Returns True if the song should be processed, False otherwise."""
@@ -176,9 +180,7 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
             processed_urls.add(file[:-5])
 
     # Debug only
-    print("Processed URLs:")
-    for url in processed_urls:
-        print(url)
+    print(f"Number of processed URLs: {len(processed_urls)}")
 
     # Get all video url datas
     urls: list[str] = []
@@ -237,7 +239,7 @@ def clean_playlist_queue(queue_path: str):
 # Main function
 def main():
     queue_path = "./scripts/playlist_queue.txt"
-    dataset_path = "./resources/dataset/audio-infos-v2"
+    dataset_path = "./resources/dataset/audio-infos-v3"
     error_file = "./scripts/error.txt"
 
     # Sanity check
