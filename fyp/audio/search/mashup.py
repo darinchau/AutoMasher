@@ -129,7 +129,7 @@ def create_mashup_from_parts(vocals: Audio, drums: Audio, bass: Audio, other: Au
     filtered_vocals_current_volume = filtered_vocals._data[..., 0].square().mean().sqrt().item()
     filtered_vocals_data = filtered_vocals._data * baseline_volume * 1.1 / filtered_vocals_current_volume
 
-    mashup = torch.stack([backing_track, filtered_vocals_data], dim = 0).sum(dim = 0)
+    mashup = torch.stack([backing_track, filtered_vocals_data[..., 0]], dim = 0).sum(dim = 0)
     mashup = Audio(mashup, vocals.sample_rate)
     return mashup
 
