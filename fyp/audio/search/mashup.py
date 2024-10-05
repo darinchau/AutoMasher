@@ -9,12 +9,12 @@ from ..manipulation import HighpassFilter, PitchShift
 from ..search.align import MashabilityResult, calculate_boundaries
 from ...util import YouTubeURL
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 import numpy as np
 from numpy.typing import NDArray
 import librosa
 
-class MashupMode(StrEnum):
+class MashupMode(Enum):
     """The swap algorithm to use for the mashup
 
     Vocals and drum swapping are especially helpful and effective (Cite: X. Wu and A. Horner)"""
