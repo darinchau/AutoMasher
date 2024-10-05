@@ -70,7 +70,9 @@ def main():
         natural_drum_proportion_threshold=0.8,
         natural_vocal_activity_threshold=1,
         natural_vocal_proportion_threshold=0.8,
-        natural_window_size=10
+        natural_window_size=10,
+
+        _verbose=True
     )
 
     # Search the song

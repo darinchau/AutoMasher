@@ -3,7 +3,7 @@
 from enum import Enum
 import torch
 import torchaudio.transforms as T
-from .base import AudioTransform
+from .base import AudioTransform, Audio
 from torch import Tensor
 
 class FadeType(Enum):
@@ -20,9 +20,10 @@ class FadeExact(AudioTransform):
         self.fadein = fade_in_frames
         self.fadeout = fade_out_frames
 
-    def apply(self, audio: Tensor, sample_rate: int) -> Tensor:
+    def apply(self, audio_: Audio) -> Audio:
+        audio = audio_._data[..., 0]
         fade = T.Fade(fade_in_len = self.fadein, fade_out_len = self.fadeout, fade_shape = self.mode.value)
-        return fade(audio)
+        return Audio(fade(audio), audio_.sample_rate)
 
 class Fade(AudioTransform):
     """Makes the audio fade in and fade out by a certain number of seconds. Mode specifies the fade mode."""
@@ -31,7 +32,7 @@ class Fade(AudioTransform):
         self.fadeout = fade_out_seconds
         self.mode = mode
 
-    def apply(self, audio: Tensor, sample_rate: int) -> Tensor:
-        fadein = int(self.fadein * sample_rate)
-        fadeout = int(self.fadeout * sample_rate)
-        return FadeExact(fadein, fadeout, self.mode).apply(audio, sample_rate)
+    def apply(self, audio: Audio) -> Audio:
+        fadein = int(self.fadein * audio.sample_rate)
+        fadeout = int(self.fadeout * audio.sample_rate)
+        return FadeExact(fadein, fadeout, self.mode).apply(audio)

@@ -1,6 +1,6 @@
 import torch
 import torchaudio.functional as F
-from .base import AudioTransform
+from .base import AudioTransform, Audio
 from torch import Tensor
 
 class LowpassFilter(AudioTransform):
@@ -10,8 +10,10 @@ class LowpassFilter(AudioTransform):
         self.cutoff_freq = cutoff_freq
         self.Q = Q
 
-    def apply(self, audio: Tensor, sample_rate: int) -> Tensor:
-        return F.lowpass_biquad(audio, sample_rate, self.cutoff_freq, self.Q)
+    def apply(self, audio: Audio) -> Audio:
+        sample_rate = int(audio.sample_rate)
+        y = audio._data[..., 0]
+        return Audio(F.lowpass_biquad(y, sample_rate, self.cutoff_freq, self.Q), sample_rate)
 
 class HighpassFilter(AudioTransform):
     """Implements the highpass filter."""
@@ -20,5 +22,7 @@ class HighpassFilter(AudioTransform):
         self.cutoff_freq = cutoff_freq
         self.Q = Q
 
-    def apply(self, audio: Tensor, sample_rate: int) -> Tensor:
-        return F.highpass_biquad(audio, sample_rate, self.cutoff_freq, self.Q)
+    def apply(self, audio: Audio) -> Audio:
+        sample_rate = int(audio.sample_rate)
+        y = audio._data[..., 0]
+        return Audio(F.highpass_biquad(y, sample_rate, self.cutoff_freq, self.Q), sample_rate)

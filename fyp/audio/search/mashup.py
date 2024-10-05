@@ -54,7 +54,7 @@ def cross_fade(song1: Audio, song2: Audio, fade_duration: float, cross_fade_mode
     result: ( ==== Song 1 ==== ) ( == Cross Fade == ) ( ==== Song 2 ====)
     """
     if song2.sample_rate != song1.sample_rate:
-        song2 = song2.resample(song1.sample_rate)
+        song2 = song2.resample(int(song1.sample_rate))
 
     if song2.nchannels != song1.nchannels:
         song2 = song2.to_nchannels(song1.nchannels)
@@ -76,8 +76,8 @@ def cross_fade(song1: Audio, song2: Audio, fade_duration: float, cross_fade_mode
     song2_fade_in = song2._data[:, :fade_duration_frames, 0] * fade_in
     cross_fade = Audio(data = song1_fade_out + song2_fade_in, sample_rate = song1.sample_rate)
 
-    song1_normal = song1.slice(0, song1.nframes - fade_duration_frames)
-    song2_normal = song2.slice(fade_duration_frames, song2.nframes)
+    song1_normal = song1.slice_frames(0, song1.nframes - fade_duration_frames)
+    song2_normal = song2.slice_frames(fade_duration_frames, song2.nframes)
     return song1_normal.join(cross_fade).join(song2_normal)
 
 def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_submitted_bt: BeatAnalysisResult, transpose: int, song_b_submitted_parts: DemucsCollection, song_a_nframes: int, song_a_sr: int, song_b_nframes: int):
@@ -92,7 +92,7 @@ def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_subm
     trimmed_parts: dict[str, Audio] = {}
     pitchshift = PitchShift(nsteps=transpose)
     for key, value in song_b_submitted_parts.items():
-        trimmed_parts[key] = value.apply(pitchshift)
+        trimmed_parts[key] = pitchshift.apply(value)
 
     # Pad the output just in case
     for key, value in trimmed_parts.items():
@@ -107,28 +107,31 @@ def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_subm
     return trimmed_portion
 
 def create_mashup_from_parts(vocals: Audio, drums: Audio, bass: Audio, other: Audio, left_pan: float = 0.15):
-	# Baseline volume
-	baseline_volume = 0.1
+    # Baseline volume
+    baseline_volume = 0.1
 
-	# Make vocals 1.1x louder than others
-	vocals = vocals.mix_to_stereo(left_mix = left_pan)
+    # Make vocals 1.1x louder than others
+    vocals = vocals.mix_to_stereo(left_mix = left_pan)
 
-	# Assuming the other 3 parts are well mixed
-	bass = bass.mix_to_stereo(left_mix = -left_pan)
-	drums = drums.mix_to_stereo(left_mix = left_pan * 2)
-	other = other.mix_to_stereo(left_mix = -left_pan * 2)
+    # Assuming the other 3 parts are well mixed
+    bass = bass.mix_to_stereo(left_mix = -left_pan)
+    drums = drums.mix_to_stereo(left_mix = left_pan * 2)
+    other = other.mix_to_stereo(left_mix = -left_pan * 2)
 
-	backing_track = bass + drums + other
-	backing_track = backing_track.set_volume(baseline_volume)
+    backing_track_tensor = torch.stack([drums._data[..., 0], bass._data[..., 0], other._data[..., 0]], dim = 0).sum(dim = 0)
+    backing_track_current_volume = backing_track_tensor.square().mean().sqrt().item()
+    backing_track = backing_track_tensor * baseline_volume / backing_track_current_volume
 
-	highpass = HighpassFilter(300) #TODO change to smth determined with the spectrogram of song instead of 300
+    highpass = HighpassFilter(300) #TODO change to smth determined with the spectrogram of song instead of 300
 
-	filtered_vocals = vocals.apply(highpass)
+    filtered_vocals = highpass.apply(vocals)
 
-	filtered_vocals = filtered_vocals.set_volume(baseline_volume * 1.1)
+    filtered_vocals_current_volume = filtered_vocals._data[..., 0].square().mean().sqrt().item()
+    filtered_vocals_data = filtered_vocals._data * baseline_volume * 1.1 / filtered_vocals_current_volume
 
-	mashup = backing_track + filtered_vocals
-	return mashup
+    mashup = torch.stack([backing_track, filtered_vocals_data], dim = 0).sum(dim = 0)
+    mashup = Audio(mashup, vocals.sample_rate)
+    return mashup
 
 def calculate_average_volume(audio: Audio, window_size: int, hop: int = 512) -> NDArray[np.float32]:
     vol = get_volume(audio, hop)
@@ -201,7 +204,7 @@ def create_mashup(submitted_bt_a: BeatAnalysisResult,
 
     assert mode in (MashupMode.DRUMS_A, MashupMode.VOCAL_A, MashupMode.DRUMS_B, MashupMode.VOCAL_B)
 
-    submitted_parts_b = create_mashup_component(submitted_bt_a, submitted_bt_b, transpose, submitted_parts_b, submitted_parts_a.vocals.nframes, submitted_parts_a.vocals.sample_rate, submitted_parts_b.vocals.nframes)
+    submitted_parts_b = create_mashup_component(submitted_bt_a, submitted_bt_b, transpose, submitted_parts_b, submitted_parts_a.vocals.nframes, int(submitted_parts_a.vocals.sample_rate), submitted_parts_b.vocals.nframes)
 
     if verbose:
         print("Creating mashup with mode", mode)
