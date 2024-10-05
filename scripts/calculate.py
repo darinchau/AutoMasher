@@ -155,7 +155,7 @@ def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, pla
     cleanup_temp_dir()
 
 # Calculates features for an entire playlist. Returns false if the calculation fails at any point
-def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: str):
+def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: str, queue_path: str):
     clear_output()
 
     # Get and confirm playlist url
@@ -190,6 +190,10 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
             urls.append(url)
             processed_urls.add(url)
 
+        # Be aggressive with the number of songs and add all the channels' songs into it
+        # Trying to assume that if a channel has a song in the playlist, all of its uploads will be songs
+        add_playlist_to_queue(YouTube(url).channel_id, batch_genre.value, queue_path)
+
     # Calculate features
     calculate_url_list(urls, batch_genre, dataset_path, playlist_url, title)
 
@@ -218,29 +222,38 @@ def update_playlist_process_queue(success: bool, playlist_url: str, genre_name: 
         for line in lines:
             if line.startswith("###"):
                 file.write(line)
-            else:
-                if line.strip() == f"{playlist_url} {genre_name}":
-                    if success:
-                        file.write(f"### Processed: {playlist_url} {genre_name}\n")
-                    else:
-                        file.write(f"### Failed: {playlist_url} {genre_name} ({error})\n")
+            elif line.strip() == f"{playlist_url} {genre_name}":
+                if success:
+                    file.write(f"### Processed: {playlist_url} {genre_name}\n")
                 else:
-                    file.write(line)
+                    file.write(f"### Failed: {playlist_url} {genre_name} ({error})\n")
+            else:
+                file.write(line)
 
 def clean_playlist_queue(queue_path: str):
     with open(queue_path, "r") as f:
         playlist = f.readlines()
 
     playlist = sorted(set([x.strip() for x in playlist]))
+    playlist = [x for x in playlist if len(x.strip()) > 0]
 
     with open(queue_path, "w") as f:
         f.write("\n".join(playlist))
+        f.write("\n")
+
+def add_playlist_to_queue(playlist_url: str, genre_name: str, queue_path: str):
+    with open(queue_path, "a") as file:
+        file.write(f"\n{playlist_url} {genre_name}\n")
+    clean_playlist_queue(queue_path)
 
 # Main function
 def main():
     queue_path = "./scripts/playlist_queue.txt"
     dataset_path = "./resources/dataset/audio-infos-v3"
     error_file = "./scripts/error.txt"
+
+    add_playlist_to_queue("", "pop", queue_path)
+    return
 
     # Sanity check
     if not os.path.exists(queue_path):
