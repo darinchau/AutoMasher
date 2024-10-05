@@ -90,3 +90,4 @@ scripts/*
 !scripts/playlist_queue.txt
 *.lprof
 wandb
+scripts/playlist_queue.txt
