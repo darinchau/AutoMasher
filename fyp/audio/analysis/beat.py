@@ -74,7 +74,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
         raise ValueError("Unknown audio type - found the following keys: " + str(key_set))
 
     assert set(parts_dict.keys()) == expected_key_set
-    with warnings.catch_warnings(action="ignore"):
+    with warnings.catch_warnings():
         beat_frames, downbeat_frames = inference(parts_dict, model_path=model_path, use_loaded_model=use_loaded_model)
 
     # Empirically, the downbeat frames are not always the same as the beat frames
