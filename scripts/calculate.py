@@ -54,6 +54,9 @@ def write_error(error: str, exec: Exception, error_file: str = "./scripts/error.
 
 def get_video_urls(playlist_url: str):
     playlist = Playlist(playlist_url)
+    if playlist_url[0] == "U":
+        # Can lift this later. Let's see the effect of this first
+        return  sorted(list(playlist.video_urls), key=lambda x: x.views, reverse=True)[:20]
     return playlist.video_urls
 
 def is_youtube_playlist(link: str):
@@ -194,7 +197,12 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
 
         # Be aggressive with the number of songs and add all the channels' songs into it
         # Trying to assume that if a channel has a song in the playlist, all of its uploads will be songs
-        add_playlist_to_queue(YouTube(url).channel_id, batch_genre.value, queue_path)
+        channel_id = YouTube(get_url(url)).channel_id
+        if channel_id is None or not channel_id or channel_id == "None":
+            continue
+        # The cleanup function will automatically remove duplicates so we don't need to worry about that
+        # inefficient but convenient
+        add_playlist_to_queue(channel_id, batch_genre.value, queue_path)
 
     # Calculate features
     calculate_url_list(urls, batch_genre, dataset_path, playlist_url, title)
