@@ -32,7 +32,7 @@ class DemucsCollection(TimeSeries):
         return self._vocals
 
     def get_duration(self) -> float:
-        return self._bass.get_duration()
+        return self._bass.duration
 
     def change_speed(self, speed: float) -> DemucsCollection:
         return DemucsCollection(
@@ -60,7 +60,7 @@ class DemucsCollection(TimeSeries):
 
     @property
     def sample_rate(self) -> int:
-        return self._bass.sample_rate
+        return int(self._bass.sample_rate)
 
     @property
     def nframes(self) -> int:
@@ -122,7 +122,7 @@ class HPSSCollection(TimeSeries):
         return self._percussive
 
     def get_duration(self) -> float:
-        return self._harmonic.get_duration() if self._harmonic else self._percussive.get_duration() if self._percussive else 0
+        return self._harmonic.duration if self._harmonic else self._percussive.duration if self._percussive else 0
 
     def change_speed(self, speed: float) -> HPSSCollection:
         return HPSSCollection(
@@ -144,7 +144,8 @@ class HPSSCollection(TimeSeries):
 
     @property
     def sample_rate(self) -> int:
-        return self._harmonic.sample_rate if self._harmonic else self._percussive.sample_rate if self._percussive else 0
+        sr = self._harmonic.sample_rate if self._harmonic else self._percussive.sample_rate if self._percussive else 0
+        return int(sr)
 
     @property
     def nframes(self) -> int:
