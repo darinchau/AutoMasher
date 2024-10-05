@@ -104,7 +104,7 @@ class DemucsAudioSeparator:
 
         Returns: a demucs audio collection. The returned audio is guaranteed to have the same sample rate as the original audio"""
         audio_ = audio.resample(self.sample_rate).to_nchannels(AudioMode.MONO if self.nchannels == 1 else AudioMode.STEREO)
-        components, name_indices = self.pipeline(audio_.get_data(), **kwargs)
+        components, name_indices = self.pipeline(audio_._data[..., 0], **kwargs)
         dct = {k: Audio(components[v].clone(), self.sample_rate).resample(int(audio.sample_rate)).pad(audio.nframes) for k, v in name_indices.items()}
         return DemucsCollection(
             vocals=dct['vocals'],

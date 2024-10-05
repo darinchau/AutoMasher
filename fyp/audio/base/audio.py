@@ -2,4 +2,4 @@
 ## https://github.com/darinchau/musicencoders
 ## To prevent existing code from breaking, the audio class is reexported here.
 
-from musicencoders.audio import Audio, AudioMode
+from musicencoders import Audio, AudioMode
