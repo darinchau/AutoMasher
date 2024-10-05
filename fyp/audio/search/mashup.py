@@ -72,8 +72,8 @@ def cross_fade(song1: Audio, song2: Audio, fade_duration: float, cross_fade_mode
     fade_in = fade_in.view(1, -1)
     fade_out = fade_out.view(1, -1)
 
-    song1_fade_out = song1._data[:, -fade_duration_frames:] * fade_out
-    song2_fade_in = song2._data[:, :fade_duration_frames] * fade_in
+    song1_fade_out = song1._data[:, -fade_duration_frames:, 0] * fade_out
+    song2_fade_in = song2._data[:, :fade_duration_frames, 0] * fade_in
     cross_fade = Audio(data = song1_fade_out + song2_fade_in, sample_rate = song1.sample_rate)
 
     song1_normal = song1.slice(0, song1.nframes - fade_duration_frames)

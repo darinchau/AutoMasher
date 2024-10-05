@@ -64,5 +64,5 @@ class Reverb(AudioTransform):
         the ReverbSettings enum class for prespecified settings."""
         assert self._mode in ('full', 'valid', 'same')
         aux = self._aux.resample(target_sr=sample_rate)
-        augmented = F.fftconvolve(audio, aux._data, mode=self._mode)
+        augmented = F.fftconvolve(audio, aux._data[..., 0], mode=self._mode)
         return augmented

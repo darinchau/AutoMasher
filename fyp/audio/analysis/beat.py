@@ -46,7 +46,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
                 "other": parts.other,
             }
         elif isinstance(parts, dict):
-            duration = list(parts.values())[0].get_duration()
+            duration = list(parts.values())[0].duration
         else:
             raise ValueError("Unknown parts type")
 
@@ -64,11 +64,11 @@ def analyse_beat_transformer(audio: Audio | None = None,
     if key_set == expected_key_set:
         # Spleeter audio
         for k in key_set:
-            parts_dict[k] = parts[k]._data.numpy().T
+            parts_dict[k] = parts[k].numpy(keep_dims=True).T
     elif key_set == {"vocals", "bass", "drums", "other"}:
         # Demucs audio
         for k in key_set:
-            parts_dict[k] = parts[k]._data.numpy().T
+            parts_dict[k] = parts[k].numpy(keep_dims=True).T
         parts_dict['piano'] = np.zeros_like(parts_dict['vocals'])
     else:
         raise ValueError("Unknown audio type - found the following keys: " + str(key_set))
