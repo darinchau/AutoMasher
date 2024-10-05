@@ -90,22 +90,53 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None
     cr = chord_result.group()
     labels = cr.labels
     chord_times = cr.times
+    # Check if the length of the labels and chord times are the same
     if len(labels) != len(chord_times):
         return f"Length mismatch: labels({len(labels)}) != chord_times({len(chord_times)})"
 
+    # Check if the chord times are sorted monotonically
     if len(chord_times) == 0 or chord_times[-1] > length:
         return f"Chord times error: {video_url}"
 
+    # Check if the chord times are sorted monotonically
     if not all([t1 < t2 for t1, t2 in zip(chord_times, chord_times[1:])]):
         return f"Chord times not sorted monotonically: {video_url}"
+
+    # New in v3: Check if there are enough chords
+    no_chord_duration = 0.
+    for t1, t2, c in zip(chord_times, chord_times[1:], labels):
+        if c == get_inv_voca_map()["No chord"]:
+            no_chord_duration += t2 - t1
+    if no_chord_duration > 0.5 * length:
+        return f"Too much no chord: {video_url} ({no_chord_duration}) (Proportion: {no_chord_duration / length})"
 
     if verbose:
         print("Separating audio...")
     parts = get_demucs().separate(audio)
 
+    # New in v3: Check if there are enough vocals
+    mean_vocal_volume = parts.vocals.stft()._data.abs().mean()
+    if mean_vocal_volume < 0.4:
+        return f"Too few vocals: {video_url} ({mean_vocal_volume})"
+
     if verbose:
         print(f"Analysing beats...")
     beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
+
+    # New in v3: Reject if there are too few downbeats
+    if len(beat_result.downbeats) < 12:
+        return f"Too few downbeats: {video_url} ({len(beat_result.downbeats)})"
+
+    # New in v3: Reject songs with weird meters
+    beat_align_idx = np.abs(beat_result.beats[:, None] - beat_result.downbeats[None, :]).argmin(axis = 0)
+    nbeat_in_bar = beat_align_idx[1:] - beat_align_idx[:-1]
+    if not np.all(nbeat_in_bar == nbeat_in_bar[0]) and nbeat_in_bar[0] in (3, 4):
+        return f"Weird meter: {video_url} ({nbeat_in_bar})"
+
+    # New in v3: Reject songs with a bad alignment
+    beat_alignment = np.abs(beat_result.beats[:, None] - beat_result.downbeats[None, :]).min(axis = 0)
+    if np.max(beat_alignment) > 0.1:
+        return f"Bad alignment: {video_url} ({np.max(beat_alignment)})"
 
     if verbose:
         print("Postprocessing...")

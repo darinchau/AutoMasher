@@ -86,6 +86,8 @@ def process_audio(audio: Audio, video_url: YouTubeURL, playlist_url: str, genre:
     processed = process_audio_(audio, video_url, playlist_url, genre, verbose=True)
     if isinstance(processed, str):
         print(processed)
+        with open("rejected.txt", "a") as file:
+            file.write(f"{video_url} {processed}\n")
         time.sleep(1)
         return None
     return processed
@@ -252,9 +254,6 @@ def main():
     dataset_path = "./resources/dataset/audio-infos-v3"
     error_file = "./scripts/error.txt"
 
-    add_playlist_to_queue("", "pop", queue_path)
-    return
-
     # Sanity check
     if not os.path.exists(queue_path):
         print("No playlist queue found.")
@@ -270,7 +269,7 @@ def main():
 
         playlist_url, genre_name = next_playlist
         try:
-            calculate_playlist(playlist_url, SongGenre(genre_name), dataset_path)
+            calculate_playlist(playlist_url, SongGenre(genre_name), dataset_path, queue_path)
             update_playlist_process_queue(True, playlist_url, genre_name, queue_path)
         except Exception as e:
             write_error(f"Failed to process playlist: {playlist_url} {genre_name}", e, error_file)
