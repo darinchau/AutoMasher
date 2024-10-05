@@ -5,7 +5,6 @@ from ...util.note import get_inv_voca_map
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer
 from ..separation import DemucsAudioSeparator
-from pytube import YouTube
 from ... import Audio
 
 # This is now not needed during the search step because we have precalculated it
