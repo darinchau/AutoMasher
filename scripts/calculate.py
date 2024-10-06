@@ -82,7 +82,7 @@ def process_audio(audio: Audio, video_url: YouTubeURL, playlist_url: str, genre:
     processed = process_audio_(audio, video_url, playlist_url, genre, verbose=True)
     if isinstance(processed, str):
         print(processed)
-        with open("rejected.txt", "a") as file:
+        with open("scripts/rejected.txt", "a") as file:
             file.write(f"{video_url} {processed}\n")
         time.sleep(1)
         return None
@@ -161,10 +161,11 @@ def get_playlist_title_and_video(key: str) -> tuple[str, list[YouTube]]:
         else:
             pl = Playlist(key)
         urls = list(pl.video_urls) # Un-defer the generator to make sure any errors are raised here
-        try:
-            return pl.title, urls
-        except Exception as e:
-            return f"Playlist {key}", urls
+        if urls:
+            try:
+                return pl.title, urls
+            except Exception as e:
+                return f"Playlist {key}", urls
     except Exception as e:
         e1 = e
         pass
@@ -175,10 +176,11 @@ def get_playlist_title_and_video(key: str) -> tuple[str, list[YouTube]]:
         else:
             ch = Channel(key)
         urls = list(ch.video_urls)
-        try:
-            return ch.title, urls
-        except Exception as e:
-            return f"Channel {key}", urls
+        if urls:
+            try:
+                return ch.title, urls
+            except Exception as e:
+                return f"Channel {key}", urls
     except Exception as e:
         e2 = e
         pass

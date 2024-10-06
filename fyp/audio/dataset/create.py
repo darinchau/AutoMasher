@@ -151,6 +151,12 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None
 
     if verbose:
         print("Creating entry...")
+
+    try:
+        views = YouTubeURL(video_url).get_views()
+    except Exception as e:
+        views = 42069                               # Deprecated in v3: No views - so subsitute with a filler if not fetched
+
     return create_entry(
         length = audio.duration,
         beats = beats,
@@ -160,6 +166,6 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None
         genre = genre,
         audio_name = YouTubeURL(video_url).title,
         url = video_url,
-        playlist = playlist_url,
-        views = YouTubeURL(video_url).get_views()
+        playlist = None,                            # Deprecated in v3: No playlist
+        views = views
     )

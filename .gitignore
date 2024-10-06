@@ -87,7 +87,5 @@ resources/dataset/audio-infos-v2.1.db
 scripts/*
 !scripts/*.py
 !scripts/*.ipynb
-!scripts/playlist_queue.txt
 *.lprof
 wandb
-scripts/playlist_queue.txt
