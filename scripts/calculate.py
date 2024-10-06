@@ -15,10 +15,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import tempfile
 
 try:
-    from pytube import Playlist, YouTube
+    from pytube import Playlist, YouTube, Channel
 except ImportError:
     try:
-        from pytubefix import Playlist, YouTube
+        from pytubefix import Playlist, YouTube, Channel
     except ImportError:
         raise ImportError("Please install the pytube library to download the audio. You can install it using `pip install pytube` or `pip install pytubefix`")
 
@@ -51,13 +51,6 @@ def write_error(error: str, exec: Exception, error_file: str = "./scripts/error.
         file.write("".join(traceback.format_exception(exec)))
         file.write("\n\n")
         print("ERROR: " + error)
-
-def get_video_urls(playlist_url: str):
-    playlist = Playlist(playlist_url)
-    if playlist_url[0] == "U":
-        # Can lift this later. Let's see the effect of this first
-        return  sorted(list(playlist.video_urls), key=lambda x: x.views, reverse=True)[:20]
-    return playlist.video_urls
 
 def is_youtube_playlist(link: str):
     return "playlist?list=" in link
@@ -159,20 +152,46 @@ def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, pla
         save_dataset_entry(entry, dataset_path)
     cleanup_temp_dir()
 
+def get_playlist_title_and_video(key: str) -> tuple[str, list[YouTube]]:
+    # Messy code dont look D:
+    e1 = e2 = None
+    try:
+        if not "playlist?list=" in key:
+            pl = Playlist(f"https://www.youtube.com/playlist?list={key}")
+        else:
+            pl = Playlist(key)
+        urls = list(pl.video_urls) # Un-defer the generator to make sure any errors are raised here
+        try:
+            return pl.title, urls
+        except Exception as e:
+            return f"Playlist {key}", urls
+    except Exception as e:
+        e1 = e
+        pass
+
+    try:
+        if not "channel/" in key:
+            ch = Channel(f"https://www.youtube.com/channel/{key}")
+        else:
+            ch = Channel(key)
+        urls = list(ch.video_urls)
+        try:
+            return ch.title, urls
+        except Exception as e:
+            return f"Channel {key}", urls
+    except Exception as e:
+        e2 = e
+        pass
+
+    # Format error message
+    raise ValueError(f"Invalid channel or playlist: {key} (Playlist error: {e1}, Channel error: {e2})")
+
 # Calculates features for an entire playlist. Returns false if the calculation fails at any point
 def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: str, queue_path: str):
     clear_output()
 
     # Get and confirm playlist url
-    if not is_youtube_playlist(playlist_url):
-        playlist_url = f"https://www.youtube.com/playlist?list={playlist_url}"
-
-    print(f"Processing playlist: {playlist_url}")
-
-    try:
-        title = Playlist(playlist_url).title
-    except Exception as e:
-        raise RuntimeError(f"It seems like what you entered is not a valid playlist: {e}")
+    title, video_ids = get_playlist_title_and_video(playlist_url)
     print("Playlist title: " + title)
 
     # Initialize dataset
@@ -189,8 +208,10 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
 
     # Get all video url datas
     urls: list[str] = []
-    for url in tqdm(get_video_urls(playlist_url), desc="Getting URLs from playlist..."):
+    for url in tqdm(video_ids, desc="Getting URLs from playlist..."):
+        # Legacy step to normalize the video ID - should be removable
         url = get_video_id(url)
+
         if url not in processed_urls:
             urls.append(url)
             processed_urls.add(url)
@@ -198,7 +219,7 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         # Be aggressive with the number of songs and add all the channels' songs into it
         # Trying to assume that if a channel has a song in the playlist, all of its uploads will be songs
         channel_id = YouTube(get_url(url)).channel_id
-        if channel_id is None or not channel_id or channel_id == "None":
+        if channel_id is None or not channel_id or channel_id.lower().strip() == "none":
             continue
         # The cleanup function will automatically remove duplicates so we don't need to worry about that
         # inefficient but convenient
