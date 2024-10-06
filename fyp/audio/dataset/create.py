@@ -118,9 +118,10 @@ def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTub
         return f"Too few downbeats: {video_url} ({len(br.downbeats)})"
 
     # New in v3: Reject songs with weird meters
+    # Remove all songs with 3/4 meter as well because 96% of the songs are 4/4
     beat_align_idx = np.abs(br.beats[:, None] - br.downbeats[None, :]).argmin(axis = 0)
     nbeat_in_bar = beat_align_idx[1:] - beat_align_idx[:-1]
-    if not np.all(nbeat_in_bar == nbeat_in_bar[0]) and nbeat_in_bar[0] in (3, 4):
+    if not np.all(nbeat_in_bar == 4):
         return f"Weird meter: {video_url} ({nbeat_in_bar})"
 
     # New in v3: Reject songs with a bad alignment
