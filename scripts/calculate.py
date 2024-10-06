@@ -219,13 +219,14 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         # Be aggressive with the number of songs and add all the channels' songs into it
         # Trying to assume that if a channel has a song in the playlist, all of its uploads will be songs
         try:
-            channel_id = yt.channel_id
-            if channel_id is None or not channel_id or channel_id.lower().strip() == "none":
-                continue
-            # The cleanup function will automatically remove duplicates so we don't need to worry about that
-            # inefficient but convenient
-            add_playlist_to_queue(channel_id, batch_genre.value, queue_path)
+            ch = Channel(yt.channel_url) if isinstance(yt, YouTube) else Channel(YouTube(video_url).channel_url)
+            for video in ch.video_urls:
+                video_url = get_url(video.watch_url) if isinstance(video, YouTube) else get_url(video)
+                if video_url.video_id not in processed_video_ids:
+                    urls.append(video_url)
+                    processed_video_ids.add(video_url.video_id)
         except Exception as e:
+            print(e)
             pass
 
     # Calculate features
