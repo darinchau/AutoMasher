@@ -5,7 +5,8 @@ from ...util.note import get_inv_voca_map
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer
 from ..separation import DemucsAudioSeparator
-from ... import Audio
+from ...audio.base import Audio
+from ...audio.base.audio_collection import DemucsCollection
 
 # This is now not needed during the search step because we have precalculated it
 def get_music_duration(chord_result: ChordAnalysisResult):
@@ -78,19 +79,11 @@ def get_demucs():
         _DEMUCS = DemucsAudioSeparator()
     return _DEMUCS
 
-def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, verbose: bool = True, mean_vocal_threshold: float = 0.1) -> DatasetEntry | str:
-    if verbose:
-        print(f"Audio length: {audio.duration} ({YouTubeURL(video_url).length})")
-    length = audio.duration
-
-    if verbose:
-        print(f"Analysing chords...")
-    chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
-
-    cr = chord_result.group()
+# Returns None if the chord result is valid, otherwise returns an error message
+def verify_chord_result(cr: ChordAnalysisResult, length: float, video_url: YouTubeURL | None = None) -> str | None:
     labels = cr.labels
     chord_times = cr.times
-    # Check if the length of the labels and chord times are the same
+
     if len(labels) != len(chord_times):
         return f"Length mismatch: labels({len(labels)}) != chord_times({len(chord_times)})"
 
@@ -110,44 +103,75 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
     if no_chord_duration > 0.5 * length:
         return f"Too much no chord: {video_url} ({no_chord_duration}) (Proportion: {no_chord_duration / length})"
 
-    if verbose:
-        print("Separating audio...")
-    parts = get_demucs().separate(audio)
+    return None
 
+def verify_parts_result(parts: DemucsCollection, mean_vocal_threshold: float, video_url: YouTubeURL | None = None) -> str | None:
     # New in v3: Check if there are enough vocals
     mean_vocal_volume = parts.vocals.stft()._data.abs().mean()
     if mean_vocal_volume < mean_vocal_threshold:
         return f"Too few vocals: {video_url} ({mean_vocal_volume})"
+    return None
 
-    if verbose:
-        print(f"Analysing beats...")
-    beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
-
+def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTubeURL | None = None) -> str | None:
     # New in v3: Reject if there are too few downbeats
-    if len(beat_result.downbeats) < 12:
-        return f"Too few downbeats: {video_url} ({len(beat_result.downbeats)})"
+    if len(br.downbeats) < 12:
+        return f"Too few downbeats: {video_url} ({len(br.downbeats)})"
 
     # New in v3: Reject songs with weird meters
-    beat_align_idx = np.abs(beat_result.beats[:, None] - beat_result.downbeats[None, :]).argmin(axis = 0)
+    beat_align_idx = np.abs(br.beats[:, None] - br.downbeats[None, :]).argmin(axis = 0)
     nbeat_in_bar = beat_align_idx[1:] - beat_align_idx[:-1]
     if not np.all(nbeat_in_bar == nbeat_in_bar[0]) and nbeat_in_bar[0] in (3, 4):
         return f"Weird meter: {video_url} ({nbeat_in_bar})"
 
     # New in v3: Reject songs with a bad alignment
-    beat_alignment = np.abs(beat_result.beats[:, None] - beat_result.downbeats[None, :]).min(axis = 0)
+    beat_alignment = np.abs(br.beats[:, None] - br.downbeats[None, :]).min(axis = 0)
     if np.max(beat_alignment) > 0.1:
         return f"Bad alignment: {video_url} ({np.max(beat_alignment)})"
 
-    if verbose:
-        print("Postprocessing...")
-    beats: list[float] = beat_result.beats.tolist()
-    downbeats: list[float] = beat_result.downbeats.tolist()
-
-    if not beats or beats[-1] > length:
+    # Check if beats and downbeats make sense
+    if len(br.beats) == 0 or br.beats[-1] >= length:
         return f"Beats error: {video_url}"
 
-    if not downbeats or downbeats[-1] > length:
+    if len(br.downbeats) == 0 or br.downbeats[-1] >= length:
         return f"Downbeats error: {video_url}"
+
+    return None
+
+def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, verbose: bool = True, mean_vocal_threshold: float = 0.1) -> DatasetEntry | str:
+    if verbose:
+        print(f"Audio length: {audio.duration} ({YouTubeURL(video_url).length})")
+    length = audio.duration
+
+    if verbose:
+        print(f"Analysing chords...")
+    chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
+
+    cr = chord_result.group()
+    error = verify_chord_result(cr, length, video_url)
+    if error is not None:
+        return error
+
+    if verbose:
+        print("Separating audio...")
+    parts = get_demucs().separate(audio)
+    error = verify_parts_result(parts, mean_vocal_threshold, video_url)
+    if error is not None:
+        return error
+
+    if verbose:
+        print(f"Analysing beats...")
+    beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
+    error = verify_beats_result(beat_result, length, video_url)
+    if error is not None:
+        return error
+
+    if verbose:
+        print("Postprocessing...")
+
+    beats: list[float] = beat_result.beats.tolist()
+    downbeats: list[float] = beat_result.downbeats.tolist()
+    labels = cr.labels
+    chord_times = cr.times
 
     if verbose:
         print("Creating entry...")
@@ -155,7 +179,7 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
     try:
         views = YouTubeURL(video_url).get_views()
     except Exception as e:
-        views = 42069                               # Deprecated in v3: No views - so subsitute with a filler if not fetched
+        views = 42069 # Deprecated in v3: No views - so subsitute with a filler if not fetched
 
     return create_entry(
         length = audio.duration,
@@ -166,6 +190,6 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
         genre = genre,
         audio_name = YouTubeURL(video_url).title,
         url = video_url,
-        playlist = None,                            # Deprecated in v3: No playlist
+        playlist = None, # Deprecated in v3: No playlist
         views = views
     )
