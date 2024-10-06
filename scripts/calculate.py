@@ -4,7 +4,7 @@
 import os
 from fyp import Audio
 from fyp.audio.dataset import DatasetEntry, SongGenre
-from fyp.audio.dataset.compress import DatasetEntryEncoder
+from fyp.audio.dataset.v3 import DatasetEntryEncoder
 from fyp.audio.dataset.create import process_audio_
 from fyp.util import is_ipython, clear_cuda
 from fyp.util import get_video_id, get_url, YouTubeURL
@@ -74,7 +74,7 @@ def cleanup_temp_dir():
 def get_processed_urls(dataset_path: str) -> set[str]:
     processed_urls = set()
     for file in os.listdir(dataset_path):
-        if file.endswith(".data"):
+        if file.endswith(".dat3"):
             processed_urls.add(file[:-5])
     return processed_urls
 
@@ -110,7 +110,7 @@ def download_audio(urls: list[YouTubeURL]):
 def save_dataset_entry(entry: DatasetEntry, dataset_path: str):
     encoder = DatasetEntryEncoder()
     b = encoder.encode(entry)
-    with open(os.path.join(dataset_path, f"{entry.url.video_id}.data"), "wb") as file:
+    with open(os.path.join(dataset_path, f"{entry.url.video_id}.dat3"), "wb") as file:
         file.write(bytes(b))
 
 def calculate_url_list(urls: list[YouTubeURL], genre: SongGenre, dataset_path: str, title: str):
@@ -201,8 +201,8 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
 
     processed_video_ids = set()
     for file in os.listdir(dataset_path):
-        if file.endswith(".data"):
-            processed_video_ids.add(file[:-5])
+        if file.endswith(".dat3"):
+            processed_video_ids.add(file[:-6])
 
     # Debug only
     print(f"Number of processed URLs: {len(processed_video_ids)}")

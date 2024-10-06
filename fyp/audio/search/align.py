@@ -38,9 +38,12 @@ class MashabilityResult:
     url: YouTubeURL
     start_bar: int
     transpose: int
-    title: str
     timestamp: float
     genre: SongGenre
+
+    @property
+    def title(self):
+        return self.url.title
 
     def __repr__(self):
         return f"MashabilityResult({self.url}/{self.start_bar}/{self.transpose})"
@@ -59,7 +62,6 @@ class MashabilityList:
             url=entry.url,
             start_bar=i,
             transpose=k,
-            title=entry.audio_name,
             timestamp=start,
             genre=entry.genre,
         )) for distance, (i, k, start, entry) in self.ls]
