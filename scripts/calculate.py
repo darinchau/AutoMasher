@@ -198,32 +198,35 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
     if not os.path.exists(dataset_path):
         os.makedirs(dataset_path)
 
-    processed_urls = set()
+    processed_video_ids = set()
     for file in os.listdir(dataset_path):
         if file.endswith(".data"):
-            processed_urls.add(file[:-5])
+            processed_video_ids.add(file[:-5])
 
     # Debug only
-    print(f"Number of processed URLs: {len(processed_urls)}")
+    print(f"Number of processed URLs: {len(processed_video_ids)}")
 
     # Get all video url datas
     urls: list[str] = []
-    for url in tqdm(video_ids, desc="Getting URLs from playlist..."):
+    for yt in tqdm(video_ids, desc="Getting URLs from playlist..."):
         # Legacy step to normalize the video ID - should be removable
-        url = get_video_id(url)
+        video_id = yt.video_id
 
-        if url not in processed_urls:
-            urls.append(url)
-            processed_urls.add(url)
+        if video_id not in processed_video_ids:
+            urls.append(video_id)
+            processed_video_ids.add(video_id)
 
         # Be aggressive with the number of songs and add all the channels' songs into it
         # Trying to assume that if a channel has a song in the playlist, all of its uploads will be songs
-        channel_id = YouTube(get_url(url)).channel_id
-        if channel_id is None or not channel_id or channel_id.lower().strip() == "none":
-            continue
-        # The cleanup function will automatically remove duplicates so we don't need to worry about that
-        # inefficient but convenient
-        add_playlist_to_queue(channel_id, batch_genre.value, queue_path)
+        try:
+            channel_id = yt.channel_id
+            if channel_id is None or not channel_id or channel_id.lower().strip() == "none":
+                continue
+            # The cleanup function will automatically remove duplicates so we don't need to worry about that
+            # inefficient but convenient
+            add_playlist_to_queue(channel_id, batch_genre.value, queue_path)
+        except Exception as e:
+            pass
 
     # Calculate features
     calculate_url_list(urls, batch_genre, dataset_path, playlist_url, title)
