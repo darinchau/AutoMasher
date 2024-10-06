@@ -57,7 +57,6 @@ class DatasetEntry:
     downbeats: list[float] - The time in seconds where the downbeats are
     beats: list[float] - The time in seconds where the beats are
     genre: SongGenre - The genre of the song
-    audio_name: str - The name of the audio file
     url: str - The url of the youtube video
     playlist: str - The url of the youtube playlist this song is taken from
     views: int - The number of views of the video at the time of scraping
@@ -69,21 +68,11 @@ class DatasetEntry:
     downbeats: list[float]
     beats: list[float]
     genre: SongGenre
-    audio_name: str
     url: YouTubeURL
-    playlist: str | None
     views: int
     length: float
     normalized_chord_times: list[float]
     music_duration: list[float]
-
-    @staticmethod
-    def get_playlist_prepend():
-        return "https://www.youtube.com/playlist?list="
-
-    @staticmethod
-    def get_url_prepend():
-        return "https://www.youtube.com/watch?v="
 
     def __post_init__(self):
         assert len(self.chords) == len(self.chord_times) == len(self.normalized_chord_times), f"{len(self.chords)} != {len(self.chord_times)} != {len(self.normalized_chord_times)}"
@@ -92,7 +81,6 @@ class DatasetEntry:
         assert all(0 <= c < 170 for c in self.chords), f"Invalid chords: {self.chords}"
         assert all(0 <= c < 600 for c in self.downbeats), f"Invalid downbeats: {self.downbeats}"
         assert all(0 <= c < 600 for c in self.beats), f"Invalid beats: {self.beats}"
-        assert self.playlist is None or self.playlist.startswith(self.get_playlist_prepend())
         assert self.views >= 0
         assert self.length > 0
         assert _is_sorted(self.chord_times)
@@ -100,18 +88,14 @@ class DatasetEntry:
         assert _is_sorted(self.beats)
 
     def __repr__(self):
-        return f"DatasetEntry({self.audio_name} [{self.url.video_id}])"
+        return f"DatasetEntry([{self.url.video_id}])"
 
     def equal(self, value: DatasetEntry, *, eps: float = 1e-5) -> bool:
         """Check if the given value is equal to this entry. This is useful for testing purposes.
         This is a bit more lenient than __eq__ as it allows for some floating point error."""
         if self.url != value.url:
             return False
-        if self.audio_name != value.audio_name:
-            return False
         if self.genre != value.genre:
-            return False
-        if self.playlist != value.playlist:
             return False
         if self.views != value.views:
             return False
@@ -160,10 +144,10 @@ class DatasetEntry:
         return self._cache_handler.cached_audio
 
     @staticmethod
-    def from_url(url: YouTubeURL, playlist: str | None = None, genre: SongGenre = SongGenre.UNKNOWN):
+    def from_url(url: YouTubeURL, genre: SongGenre = SongGenre.UNKNOWN):
         from .create import process_audio_
         audio = Audio.load(url)
-        entry = process_audio_(audio, url, playlist, genre, verbose=False)
+        entry = process_audio_(audio, url, genre, verbose=False)
         if isinstance(entry, str):
             raise ValueError(f"Failed to process audio: {entry}")
         return entry
@@ -210,34 +194,19 @@ class SongDataset:
 
     @staticmethod
     def load(dataset_path: str):
-        """Load the dataset from hugging face. The dataset can be in one of the following formats:
-        - A local directory with a hugging face dataset
-        - A hugging face remote path
-        - A local directory containing a bunch of compressed DatasetEntry files
-        - A file saved using the SongDatasetEncoder"""
+        """Loads a v3 dataset from the given path. The path can either be a file or a folder containing v3 .dat3 files
+
+        If you want to load v1/v2 dataset, refer to fyp.audio.dataset.legacy.load_dataset_legacy()"""
+        from .v3 import SongDatasetEncoder, DatasetEntryEncoder
 
         if os.path.isfile(dataset_path):
-            from .compress import SongDatasetEncoder, FastSongDatasetEncoder
             try:
                 return SongDatasetEncoder().read_from_path(dataset_path)
             except Exception as e:
-                try:
-                    return FastSongDatasetEncoder().read_from_path(dataset_path)
-                except Exception as e:
-                    pass
+                pass
 
-        try:
-            from .v1 import load_dataset_v1
-            return load_dataset_v1(dataset_path)
-        except Exception as e:
-            pass
-
-        assert os.path.exists(dataset_path) and os.path.isdir(dataset_path), f"Invalid dataset path: {dataset_path}"
-
-        # If .data file exists, we assume that the dataset is a directory containing compressed DatasetEntry files
-        data_files = [f for f in os.listdir(dataset_path) if f.endswith(".data")]
+        data_files = [f for f in os.listdir(dataset_path) if f.endswith(".dat3")]
         if data_files:
-            from .compress import DatasetEntryEncoder
             dataset = SongDataset()
             encoder = DatasetEntryEncoder()
             for data_file in data_files:

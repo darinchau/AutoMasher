@@ -1,14 +1,14 @@
 # python -m scripts.pack_dataset from the root directory
-# Packs the audio-infos-v2 dataset into a single, compressed dataset file
+# Packs the audio-infos-v3 dataset into a single, compressed dataset file
 
 import os
 from tqdm.auto import tqdm
 from fyp.audio.dataset import DatasetEntry, SongDataset, SongGenre
-from fyp.audio.dataset.compress import DatasetEntryEncoder, SongDatasetEncoder
+from fyp.audio.dataset.v3 import DatasetEntryEncoder, SongDatasetEncoder
 
 def main():
-    path_in = "./resources/dataset/audio-infos-v2"
-    path_out = "./resources/dataset/audio-infos-v2.db"
+    path_in = "./resources/dataset/audio-infos-v3"
+    path_out = "./resources/dataset/audio-infos-v3.db"
 
     audio_datas = os.listdir(path_in)
     dataset = SongDataset()

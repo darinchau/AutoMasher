@@ -41,7 +41,7 @@ def get_normalized_chord_result(cr: ChordAnalysisResult, br: BeatAnalysisResult)
 
 # Create a dataset entry from the given data
 def create_entry(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
-                    *, genre: SongGenre, audio_name: str, url: YouTubeURL, playlist: str | None, views: int):
+                    *, genre: SongGenre, url: YouTubeURL, views: int):
     """Creates the dataset entry from the data - performs normalization and music duration postprocessing"""
     chord_result = ChordAnalysisResult.from_data(length, chords, chord_times).group()
     beat_result = BeatAnalysisResult.from_data(length, beats, downbeats)
@@ -63,9 +63,7 @@ def create_entry(length: float, beats: list[float], downbeats: list[float], chor
         downbeats=downbeats,
         beats=beats,
         genre=genre,
-        audio_name=audio_name,
         url=url,
-        playlist=playlist,
         views=views,
         length=length,
         normalized_chord_times=normalized_cr.times.tolist(),
@@ -188,8 +186,6 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
         chords = labels.tolist(),
         chord_times = chord_times.tolist(),
         genre = genre,
-        audio_name = YouTubeURL(video_url).title,
         url = video_url,
-        playlist = None, # Deprecated in v3: No playlist
         views = views
     )

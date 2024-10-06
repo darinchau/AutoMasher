@@ -5,14 +5,14 @@ import re
 import struct
 from abc import ABC, abstractmethod
 from typing import Iterator, TypeVar, Generic
-from .base import DatasetEntry, SongDataset, SongGenre
-from ...util import get_url
+from ..base import DatasetEntry, SongDataset, SongGenre
+from ....util import get_url
 from collections import Counter
 import numpy as np
 from math import ceil, exp
 from typing import Iterator
 import struct
-from .create import create_entry
+from ..create import create_entry
 import zlib
 
 T = TypeVar('T')
@@ -281,7 +281,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         self.int64_encoder = Int64Encoder()
 
     def encode(self, data: DatasetEntry) -> Iterator[int]:
-        playlist_id = data.playlist[len(DatasetEntry.get_playlist_prepend()):] if data.playlist else ""
+        playlist_id = "" # Deprecated in v3 - No playlist. Kept for compatibility
 
         yield from self.chord_labels_encoder.encode(data.chords)
         yield from self.chord_time_encoder.encode(data.chord_times)
@@ -292,7 +292,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         yield from self.int64_encoder.encode(data.views)
         yield from self.float32_encoder.encode(data.length)
         yield from self.string_encoder.encode(playlist_id)
-        yield from self.string_encoder.encode(data.audio_name)
+        yield from self.string_encoder.encode(f"Song {data.url.video_id}") # Deprecated in v3 - No audio name. Kept for compatibility
 
     def decode(self, data: Iterator[int]) -> DatasetEntry:
         chords = self.chord_labels_encoder.decode(data)
@@ -314,9 +314,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
             chord_times=chord_times,
             genre=genre,
             views=views,
-            audio_name=audio_name,
             url=get_url(youtube_id),
-            playlist=f"{DatasetEntry.get_playlist_prepend()}{playlist_id}"
         )
 
         return entry

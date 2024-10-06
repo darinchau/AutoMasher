@@ -1,23 +1,19 @@
-# A little utility we keep that makes sure the dataset loads properly
-
 # This module contains code that compresses the SongDataset into a binary format
 
-import os
 import numpy as np
 import re
 import struct
 from abc import ABC, abstractmethod
 from typing import Iterator, TypeVar, Generic
-from fyp.audio.dataset.base import DatasetEntry, SongDataset, SongGenre
-from fyp.util import get_url
+from .base import DatasetEntry, SongDataset, SongGenre
+from ...util import get_url
 from collections import Counter
 import numpy as np
 from math import ceil, exp
 from typing import Iterator
 import struct
-from fyp.audio.dataset.create import create_entry
+from .create import create_entry
 import zlib
-import unittest
 
 T = TypeVar('T')
 class BitsEncoder(ABC, Generic[T]):
@@ -270,10 +266,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
     - Beats: Same as downbeats
     - YouTube ID: Null-terminated unicode string in bytes array format
     - Song Genre: There are only 8 genres but lets use one byte for it
-    - Views: unsigned 64 bit integer format
     - Length: Signed 32 bit floating point number
-    - Playlist ID: Null-terminated unicode string in bytes array format
-    - Title: Null-terminated unicode string in bytes array format
     """
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
         self.chord_time_encoder = ChordTimesEncoder(chord_time_resolution)
@@ -285,8 +278,6 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         self.int64_encoder = Int64Encoder()
 
     def encode(self, data: DatasetEntry) -> Iterator[int]:
-        playlist_id = data.playlist[len(DatasetEntry.get_playlist_prepend()):] if data.playlist else ""
-
         yield from self.chord_labels_encoder.encode(data.chords)
         yield from self.chord_time_encoder.encode(data.chord_times)
         yield from self.beat_time_encoder.encode(data.downbeats)
@@ -295,8 +286,6 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         yield from self.genre_encoder.encode(data.genre)
         yield from self.int64_encoder.encode(data.views)
         yield from self.float32_encoder.encode(data.length)
-        yield from self.string_encoder.encode(playlist_id)
-        yield from self.string_encoder.encode(data.audio_name)
 
     def decode(self, data: Iterator[int]) -> DatasetEntry:
         chords = self.chord_labels_encoder.decode(data)
@@ -307,8 +296,6 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         genre = self.genre_encoder.decode(data)
         views = self.int64_encoder.decode(data)
         length = self.float32_encoder.decode(data)
-        playlist_id = self.string_encoder.decode(data)
-        audio_name = self.string_encoder.decode(data)
 
         entry = create_entry(
             length=length,
@@ -318,16 +305,14 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
             chord_times=chord_times,
             genre=genre,
             views=views,
-            audio_name=audio_name,
             url=get_url(youtube_id),
-            playlist=f"{DatasetEntry.get_playlist_prepend()}{playlist_id}"
         )
 
         return entry
 
 class SongDatasetEncoder(BitsEncoder[SongDataset]):
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
-        self.entry_encoder = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
+        self.entry_encoder: BitsEncoder[DatasetEntry] = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
         self.int64_encoder = Int64Encoder()
         self.checksum_encoder = Int32Encoder()
 
@@ -355,22 +340,3 @@ class SongDatasetEncoder(BitsEncoder[SongDataset]):
             entry = self.entry_encoder.decode(data_binary)
             dataset.add_entry(entry)
         return dataset
-
-class DatasetTest(unittest.TestCase):
-    def test_load_dataset(self):
-        path = "resources/dataset/audio-infos-v2.db"
-        ds1 = SongDataset.load(path) # This will use the default compressors from dataset.compress
-        ds2 = SongDatasetEncoder().read_from_path(path) # This will use the archived old method that is known to be ok
-        self.assertEqual(ds1, ds2)
-
-    def test_uncompressed_dataset(self):
-        path = "resources/dataset/audio-infos-v2.db"
-        path2 = "resources/dataset/audio-infos-v2.1.db"
-        if not os.path.exists(path2):
-            return
-
-        from fyp.audio.dataset.compress import FastSongDatasetEncoder
-        ds1 = SongDataset.load(path)
-        ds2 = FastSongDatasetEncoder().read_from_path(path2)
-
-        self.assertEqual(ds1, ds2)
