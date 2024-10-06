@@ -78,7 +78,7 @@ def get_demucs():
         _DEMUCS = DemucsAudioSeparator()
     return _DEMUCS
 
-def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None, genre: SongGenre, *, verbose: bool = True) -> DatasetEntry | str:
+def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, verbose: bool = True, mean_vocal_threshold: float = 0.1) -> DatasetEntry | str:
     if verbose:
         print(f"Audio length: {audio.duration} ({YouTubeURL(video_url).length})")
     length = audio.duration
@@ -116,7 +116,7 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, playlist_url: str | None
 
     # New in v3: Check if there are enough vocals
     mean_vocal_volume = parts.vocals.stft()._data.abs().mean()
-    if mean_vocal_volume < 0.4:
+    if mean_vocal_volume < mean_vocal_threshold:
         return f"Too few vocals: {video_url} ({mean_vocal_volume})"
 
     if verbose:

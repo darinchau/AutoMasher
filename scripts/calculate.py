@@ -78,8 +78,8 @@ def get_processed_urls(dataset_path: str) -> set[str]:
             processed_urls.add(file[:-5])
     return processed_urls
 
-def process_audio(audio: Audio, video_url: YouTubeURL, playlist_url: str, genre: SongGenre):
-    processed = process_audio_(audio, video_url, playlist_url, genre, verbose=True)
+def process_audio(audio: Audio, video_url: YouTubeURL, genre: SongGenre):
+    processed = process_audio_(audio, video_url, genre, verbose=True)
     if isinstance(processed, str):
         print(processed)
         with open("scripts/rejected.txt", "a") as file:
@@ -113,16 +113,15 @@ def save_dataset_entry(entry: DatasetEntry, dataset_path: str):
     with open(os.path.join(dataset_path, f"{entry.url.video_id}.data"), "wb") as file:
         file.write(bytes(b))
 
-def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, playlist_url: str, title: str):
+def calculate_url_list(urls: list[YouTubeURL], genre: SongGenre, dataset_path: str, title: str):
     if len(urls) > 300:
-        calculate_url_list(urls[:300], genre, dataset_path, playlist_url, title)
-        calculate_url_list(urls[300:], genre, dataset_path, playlist_url, title)
+        calculate_url_list(urls[:300], genre, dataset_path, title)
+        calculate_url_list(urls[300:], genre, dataset_path, title)
         return
 
     t = time.time()
     last_t = None
-    youtube_urls = [get_url(url) for url in urls]
-    for i, (audio, url) in enumerate(download_audio(youtube_urls)):
+    for i, (audio, url) in enumerate(download_audio(urls)):
         if not audio:
             continue
 
@@ -140,7 +139,7 @@ def calculate_url_list(urls: list[str], genre: SongGenre, dataset_path: str, pla
         clear_cuda()
 
         try:
-            entry = process_audio(audio, url, playlist_url, genre=genre)
+            entry = process_audio(audio, url, genre=genre)
             print(f"Entry processed: {url}")
         except Exception as e:
             write_error(f"Failed to process video: {url}", e)
@@ -209,13 +208,13 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
     print(f"Number of processed URLs: {len(processed_video_ids)}")
 
     # Get all video url datas
-    urls: list[str] = []
+    urls: list[YouTubeURL] = []
     for yt in tqdm(video_ids, desc="Getting URLs from playlist..."):
-        video_id = yt.video_id if isinstance(yt, YouTube) else get_video_id(yt)
+        video_url = get_url(yt.watch_url) if isinstance(yt, YouTube) else get_url(yt)
 
-        if video_id not in processed_video_ids:
-            urls.append(video_id)
-            processed_video_ids.add(video_id)
+        if video_url.video_id not in processed_video_ids:
+            urls.append(video_url)
+            processed_video_ids.add(video_url.video_id)
 
         # Be aggressive with the number of songs and add all the channels' songs into it
         # Trying to assume that if a channel has a song in the playlist, all of its uploads will be songs
@@ -230,7 +229,7 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
             pass
 
     # Calculate features
-    calculate_url_list(urls, batch_genre, dataset_path, playlist_url, title)
+    calculate_url_list(urls, batch_genre, dataset_path, title)
 
 #### Driver code and functions ####
 def get_next_playlist_to_process(queue_path: str) -> tuple[str, str] | None:
