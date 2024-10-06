@@ -61,15 +61,19 @@ def log(message: str, verbose: bool = True):
 
 def cleanup_temp_dir():
     clear_output()
-    current_dir = tempfile.gettempdir()
-    for filename in os.listdir(current_dir):
-        if filename.endswith('.wav') or filename.endswith('.mp4'):
-            file_path = os.path.join(current_dir, filename)
-            try:
-                os.remove(file_path)
-                print(f"Deleted {filename}")
-            except Exception as e:
-                print(f"Failed to delete file: {file_path}")
+    dirs = [tempfile.gettempdir()]
+    if os.path.isdir("./.cache"):
+        dirs.append("./.cache")
+
+    for current_dir in dirs:
+        for filename in os.listdir(current_dir):
+            if filename.endswith('.wav') or filename.endswith('.mp4'):
+                file_path = os.path.join(current_dir, filename)
+                try:
+                    os.remove(file_path)
+                    print(f"Deleted {filename}")
+                except Exception as e:
+                    print(f"Failed to delete file: {file_path}")
 
 def get_processed_urls(dataset_path: str) -> set[str]:
     processed_urls = set()
