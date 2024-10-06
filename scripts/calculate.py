@@ -209,8 +209,7 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
     # Get all video url datas
     urls: list[str] = []
     for yt in tqdm(video_ids, desc="Getting URLs from playlist..."):
-        # Legacy step to normalize the video ID - should be removable
-        video_id = yt.video_id
+        video_id = yt.video_id if isinstance(yt, YouTube) else get_video_id(yt)
 
         if video_id not in processed_video_ids:
             urls.append(video_id)
