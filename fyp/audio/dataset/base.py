@@ -163,7 +163,7 @@ class DatasetEntry:
     def from_url(url: YouTubeURL, playlist: str | None = None, genre: SongGenre = SongGenre.UNKNOWN):
         from .create import process_audio_
         audio = Audio.load(url)
-        entry = process_audio_(audio, url, playlist, genre, verbose=False)
+        entry = process_audio_(audio, url, genre, verbose=False)
         if isinstance(entry, str):
             raise ValueError(f"Failed to process audio: {entry}")
         return entry
