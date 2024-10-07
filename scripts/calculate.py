@@ -7,10 +7,10 @@ from fyp.audio.dataset import DatasetEntry, SongGenre
 from fyp.audio.dataset.v3 import DatasetEntryEncoder
 from fyp.audio.dataset.create import process_audio_
 from fyp.util import is_ipython, clear_cuda
-from fyp.util import get_video_id, get_url, YouTubeURL
+from fyp.util import get_url, YouTubeURL
 import time
 import traceback
-from tqdm.auto import tqdm
+from tqdm.auto import tqdm, trange
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import tempfile
 
@@ -155,7 +155,7 @@ def calculate_url_list(urls: list[YouTubeURL], genre: SongGenre, dataset_path: s
         save_dataset_entry(entry, dataset_path)
     cleanup_temp_dir()
 
-def get_playlist_title_and_video(key: str) -> tuple[str, list[YouTube]]:
+def get_playlist_title_and_video(key: str) -> tuple[str, list[YouTubeURL]]:
     # Messy code dont look D:
     e1 = e2 = None
     try:
@@ -164,6 +164,7 @@ def get_playlist_title_and_video(key: str) -> tuple[str, list[YouTube]]:
         else:
             pl = Playlist(key)
         urls = list(pl.video_urls) # Un-defer the generator to make sure any errors are raised here
+        urls = [get_url(url.watch_url) if isinstance(url, YouTube) else get_url(url) for url in urls]
         if urls:
             try:
                 return pl.title, urls
@@ -179,6 +180,7 @@ def get_playlist_title_and_video(key: str) -> tuple[str, list[YouTube]]:
         else:
             ch = Channel(key)
         urls = list(ch.video_urls)
+        urls = [get_url(url.watch_url) if isinstance(url, YouTube) else get_url(url) for url in urls]
         if urls:
             try:
                 return ch.title, urls
@@ -189,6 +191,12 @@ def get_playlist_title_and_video(key: str) -> tuple[str, list[YouTube]]:
         pass
 
     # Format error message
+    too_many_requests = ("http" in str(e1).lower() and "429" in str(e1)) or ("http" in str(e2).lower() and "429" in str(e2))
+    if too_many_requests:
+        for i in trange(300, desc="Waiting 5 minutes before we try again..."):
+            time.sleep(1)
+            return get_playlist_title_and_video(key)
+
     raise ValueError(f"Invalid channel or playlist: {key} (Playlist error: {e1}, Channel error: {e2})")
 
 # Calculates features for an entire playlist. Returns false if the calculation fails at any point
@@ -196,7 +204,7 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
     clear_output()
 
     # Get and confirm playlist url
-    title, video_ids = get_playlist_title_and_video(playlist_url)
+    title, video_urls = get_playlist_title_and_video(playlist_url)
     print("Playlist title: " + title)
 
     # Initialize dataset
@@ -213,9 +221,7 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
 
     # Get all video url datas
     urls: list[YouTubeURL] = []
-    for yt in tqdm(video_ids, desc="Getting URLs from playlist..."):
-        video_url = get_url(yt.watch_url) if isinstance(yt, YouTube) else get_url(yt)
-
+    for video_url in tqdm(video_urls, desc="Getting URLs from playlist..."):
         if video_url.video_id not in processed_video_ids:
             urls.append(video_url)
             processed_video_ids.add(video_url.video_id)
@@ -223,7 +229,8 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
         # Be aggressive with the number of songs and add all the channels' songs into it
         # Trying to assume that if a channel has a song in the playlist, all of its uploads will be songs
         try:
-            ch = Channel(yt.channel_url) if isinstance(yt, YouTube) else Channel(YouTube(video_url).channel_url)
+            yt = YouTube(video_url)
+            ch = Channel(yt.channel_url)
             for video in ch.video_urls:
                 video_url = get_url(video.watch_url) if isinstance(video, YouTube) else get_url(video)
                 if video_url.video_id not in processed_video_ids:
