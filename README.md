@@ -15,7 +15,7 @@ Auto Masher has been awarded the second-runner up in Best Final Year Project Awa
 # Installation
 
 ## Requirements
-- Python 3.12
+- Python 3.12 (should theoretically work with Python 3.10+. Tested only on Python 3.12)
 - A decent GPU with some VRAM (>= 4GB) if possible
 - C++14 compatible compiler (for `madmom` library)
 - `ffmpeg` installed on your system and added to your PATH
@@ -47,7 +47,7 @@ If prompted, install `madmom` by running the following commands
 ```bash
 pip install git+https://github.com/darinchau/madmom
 ```
-(The `madmom` library is a forked version of the original library with minor modifications)
+(The `madmom` library is a forked version of the original library to ensure consistency)
 
 `main.py` provides a little code example of how to use the pipeline.
 
@@ -65,7 +65,7 @@ python -m scripts.calculate
 ```
 In the file `scripts/playlist_queue.txt` you can add the YouTube playlist URLs you want to download. The script will download the songs and process them to extract the chords and beats.
 
-The dataset will be saved in a folder in `resources/dataset/` in a `.data` file. Run the script
+The dataset will be saved in a folder in `resources/dataset/` in a `.dat3` file. Run the script
 ```bash
 python -m scripts.pack_dataset
 ```
@@ -113,7 +113,7 @@ Refer to our report (under `resources/report.pdf`) for more details.
 Contributions are welcome! Please raise an issue or a pull request if you have any suggestions or improvements.
 
 # Special Thanks
-- Prof. Andrew Horner, our wonderful supervisor and his guidance
+- Prof. Andrew Horner, our wonderful supervisor for his guidance
 - Joshua Chang, Harris Lau, Anthony Chan, our amazing teammates for their hard work
 - The developers of the libraries we used
 - Everyone else who helped us along the way
