@@ -201,7 +201,14 @@ def validate_config(config: MashupConfig):
 
 def load_dataset(config: MashupConfig) -> SongDataset:
     """Load the dataset and apply the filters speciied by config."""
-    dataset = SongDataset.load(config._dataset_path)
+    try:
+        dataset = SongDataset.load(config._dataset_path)
+    except Exception as e:
+        if ".fast.db" in config._dataset_path:
+            new_path = config._dataset_path.replace(".fast.db", ".db")
+            dataset = SongDataset.load(new_path)
+        else:
+            raise ValueError("Failed to load dataset") from e
     filters: list[Callable[[DatasetEntry], bool]] = []
 
     if config.filter_short_song_bar_threshold > 0:
