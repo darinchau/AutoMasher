@@ -103,24 +103,20 @@ class MashupID:
     transpose: int
 
     def to_string(self) -> str:
-        data = f"{self.song_a.video_id}|{self.song_a_start_time}|{self.song_b.video_id}|{self.song_b_start_bar}|{self.transpose}"
-        if len(data) % 3 != 0:
-            data += "|" * (3 - len(data) % 3)
-        data = data.encode()
-        b64_encoded_string = base64.urlsafe_b64encode(data).decode()
-        return b64_encoded_string
+        song_a_start_time_str = str(self.song_a_start_time * 1000).rjust(6, "0")
+        song_b_start_bar_str = str(self.song_b_start_bar).rjust(3, "0")
+        transpose_str = str(self.transpose + 6).rjust(2, "0")
+        return f"{self.song_a.video_id}{song_a_start_time_str}{self.song_b.video_id}{song_b_start_bar_str}{transpose_str}"
 
     @classmethod
     def from_string(cls, st: str):
-        data = base64.urlsafe_b64decode(st.encode())
-        data = data.decode().split("|")
-        return cls(
-            song_a=get_url(data[0]),
-            song_a_start_time=float(data[1]),
-            song_b=get_url(data[2]),
-            song_b_start_bar=int(data[3]),
-            transpose=int(data[4]),
-        )
+        assert len(st) == 33
+        song_a = YouTubeURL(get_url(st[:11]))
+        song_a_start_time = int(st[11:17]) / 1000
+        song_b = YouTubeURL(get_url(st[17:28]))
+        song_b_start_bar = int(st[28:31])
+        transpose = int(st[31:33]) - 6
+        return cls(song_a, song_a_start_time, song_b, song_b_start_bar, transpose)
 
 def is_regular(downbeats: NDArray[np.float32], range_threshold: float = 0.2, std_threshold: float = 0.1) -> bool:
     """Return true if the downbeats are evenly spaced."""
@@ -202,7 +198,14 @@ def validate_config(config: MashupConfig):
 
 def load_dataset(config: MashupConfig) -> SongDataset:
     """Load the dataset and apply the filters speciied by config."""
-    dataset = SongDataset.load(config._dataset_path)
+    try:
+        dataset = SongDataset.load(config._dataset_path)
+    except Exception as e:
+        if ".fast.db" in config._dataset_path:
+            new_path = config._dataset_path.replace(".fast.db", ".db")
+            dataset = SongDataset.load(new_path)
+        else:
+            raise ValueError("Failed to load dataset") from e
     filters: list[Callable[[DatasetEntry], bool]] = []
 
     if config.filter_short_song_bar_threshold > 0:
