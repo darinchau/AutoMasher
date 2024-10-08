@@ -340,3 +340,25 @@ class SongDatasetEncoder(BitsEncoder[SongDataset]):
             entry = self.entry_encoder.decode(data_binary)
             dataset.add_entry(entry)
         return dataset
+
+class FastSongDatasetEncoder(BitsEncoder[SongDataset]):
+    def __init__(self):
+        self.checksum_encoder = Int32Encoder()
+
+    def encode(self, data: SongDataset) -> Iterator[int]:
+        import pickle
+        b = pickle.dumps(data)
+        data_compressed = zlib.compress(b, level=9)
+        checksum = zlib.adler32(data_compressed)
+        yield from self.checksum_encoder.encode(checksum)
+        yield from data_compressed
+
+
+    def decode(self, data: Iterator[int]) -> SongDataset:
+        checksum = self.checksum_encoder.decode(data)
+        data_compressed = bytes(data)
+        if checksum != zlib.adler32(data_compressed):
+            raise ValueError("Checksum mismatch")
+        data_binary = zlib.decompress(data_compressed)
+        import pickle
+        return pickle.loads(data_binary)

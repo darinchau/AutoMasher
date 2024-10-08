@@ -80,6 +80,7 @@ nohup.out
 !resources/dataset/*
 resources/dataset/*/
 resources/dataset/audio-infos-v2.1.db
+resources/dataset/*.fast.db
 
 *.ipynb
 !demo.ipynb
