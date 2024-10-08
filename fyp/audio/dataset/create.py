@@ -2,7 +2,7 @@
 import numpy as np
 from .base import SongGenre, DatasetEntry
 from ...util.note import get_inv_voca_map
-from ...util import YouTubeURL
+from ...util import YouTubeURL, get_url
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer
 from ..separation import DemucsAudioSeparator
 from ...audio.base import Audio
@@ -140,7 +140,7 @@ def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTub
 
 def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, verbose: bool = True, mean_vocal_threshold: float = 0.1) -> DatasetEntry | str:
     if verbose:
-        print(f"Audio length: {audio.duration} ({YouTubeURL(video_url).length})")
+        print(f"Audio length: {audio.duration} ({get_url(video_url).length})")
     length = audio.duration
 
     if verbose:
@@ -178,7 +178,7 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
         print("Creating entry...")
 
     try:
-        views = YouTubeURL(video_url).get_views()
+        views = get_url(video_url).get_views()
     except Exception as e:
         views = 42069 # Deprecated in v3: No views - so subsitute with a filler if not fetched
 

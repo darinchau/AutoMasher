@@ -10,7 +10,7 @@ from ..audio.dataset import SongDataset, DatasetEntry, SongGenre
 from ..audio.search import create_mashup, MashabilityResult, calculate_mashability, MashupMode
 from ..audio.cache import CacheHandler, MemoryCache
 from ..audio.separation import DemucsAudioSeparator
-from ..util import YouTubeURL
+from ..util import YouTubeURL, get_url
 from numpy.typing import NDArray
 import librosa
 import base64
@@ -114,9 +114,9 @@ class MashupID:
         data = base64.urlsafe_b64decode(st.encode())
         data = data.decode().split("|")
         return cls(
-            song_a=YouTubeURL(f"https://www.youtube.com/watch?v={data[0]}"),
+            song_a=get_url(data[0]),
             song_a_start_time=float(data[1]),
-            song_b=YouTubeURL(f"https://www.youtube.com/watch?v={data[2]}"),
+            song_b=get_url(data[2]),
             song_b_start_bar=int(data[3]),
             transpose=int(data[4]),
         )
