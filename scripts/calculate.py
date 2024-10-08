@@ -238,7 +238,6 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
                     urls.append(video_url)
                     processed_video_ids.add(video_url.video_id)
             while random.random() < 0.4:
-                print("Sleeping for 1 second...")
                 time.sleep(1)
 
         except Exception as e:
