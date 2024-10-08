@@ -225,7 +225,7 @@ def app():
                                 max_distance_input = gr.Number(
                                     label="Max Song Distance",
                                     interactive=True,
-                                    value=4.5,
+                                    value=8,
                                     minimum=0,
                                     info="The maximum 'song distance' allowed between the two songs. Anything above this value will be filtered out. Typically, a value around 5 will yield good results, and a value around 8 will have a more expansive collection of okayish results. See our paper for more information on song distance"
                                 )
