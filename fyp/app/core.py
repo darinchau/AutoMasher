@@ -481,7 +481,7 @@ def mashup_song(link: YouTubeURL,
     for i, (score, result) in enumerate(scores):
         mashup_id = MashupID(
             song_a=link,
-            song_a_start_time=config.starting_point,
+            song_a_start_time=slice_start_a,
             song_b=result.url,
             song_b_start_bar=result.start_bar,
             transpose=result.transpose,
