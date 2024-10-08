@@ -13,6 +13,7 @@ import traceback
 from tqdm.auto import tqdm, trange
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import tempfile
+import random
 
 try:
     from pytube import Playlist, YouTube, Channel
@@ -236,6 +237,10 @@ def calculate_playlist(playlist_url: str, batch_genre: SongGenre, dataset_path: 
                 if video_url.video_id not in processed_video_ids:
                     urls.append(video_url)
                     processed_video_ids.add(video_url.video_id)
+            while random.random() < 0.4:
+                print("Sleeping for 1 second...")
+                time.sleep(1)
+
         except Exception as e:
             print(e)
             pass

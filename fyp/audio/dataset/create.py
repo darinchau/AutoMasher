@@ -110,21 +110,23 @@ def verify_parts_result(parts: DemucsCollection, mean_vocal_threshold: float, vi
         return f"Too few vocals: {video_url} ({mean_vocal_volume})"
     return None
 
-def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTubeURL | None = None) -> str | None:
+def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTubeURL | None = None, reject_weird_meter: bool = True, bad_alignment_threshold: float = 0.1) -> str | None:
+    """Verify the beat result. If strict is True, then it will reject songs with weird meters."""
     # New in v3: Reject if there are too few downbeats
     if len(br.downbeats) < 12:
         return f"Too few downbeats: {video_url} ({len(br.downbeats)})"
 
     # New in v3: Reject songs with weird meters
     # Remove all songs with 3/4 meter as well because 96% of the songs are 4/4
+    # This is rejecting way too many songs. Making this optional
     beat_align_idx = np.abs(br.beats[:, None] - br.downbeats[None, :]).argmin(axis = 0)
     nbeat_in_bar = beat_align_idx[1:] - beat_align_idx[:-1]
-    if not np.all(nbeat_in_bar == 4):
+    if reject_weird_meter and not np.all(nbeat_in_bar == 4):
         return f"Weird meter: {video_url} ({nbeat_in_bar})"
 
     # New in v3: Reject songs with a bad alignment
     beat_alignment = np.abs(br.beats[:, None] - br.downbeats[None, :]).min(axis = 0)
-    if np.max(beat_alignment) > 0.1:
+    if np.max(beat_alignment) > bad_alignment_threshold:
         return f"Bad alignment: {video_url} ({np.max(beat_alignment)})"
 
     # Check if beats and downbeats make sense
