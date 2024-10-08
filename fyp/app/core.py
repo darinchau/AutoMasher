@@ -103,10 +103,12 @@ class MashupID:
     transpose: int
 
     def to_string(self) -> str:
-        song_a_start_time_str = str(self.song_a_start_time * 1000).rjust(6, "0")
+        song_a_start_time_str = str(int(self.song_a_start_time * 1000)).rjust(6, "0")
         song_b_start_bar_str = str(self.song_b_start_bar).rjust(3, "0")
         transpose_str = str(self.transpose + 6).rjust(2, "0")
-        return f"{self.song_a.video_id}{song_a_start_time_str}{self.song_b.video_id}{song_b_start_bar_str}{transpose_str}"
+        id = f"{self.song_a.video_id}{song_a_start_time_str}{self.song_b.video_id}{song_b_start_bar_str}{transpose_str}"
+        assert len(id) == 33
+        return id
 
     @classmethod
     def from_string(cls, st: str):
