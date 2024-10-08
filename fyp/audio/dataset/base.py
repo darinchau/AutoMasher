@@ -197,13 +197,19 @@ class SongDataset:
         """Loads a v3 dataset from the given path. The path can either be a file or a folder containing v3 .dat3 files
 
         If you want to load v1/v2 dataset, refer to fyp.audio.dataset.legacy.load_dataset_legacy()"""
-        from .v3 import SongDatasetEncoder, DatasetEntryEncoder
+        from .v3 import SongDatasetEncoder, DatasetEntryEncoder, FastSongDatasetEncoder
+
+        if os.path.isfile(dataset_path) and "fast.db" in dataset_path:
+            try:
+                return FastSongDatasetEncoder().read_from_path(dataset_path)
+            except Exception as e:
+                raise ValueError(f"Error reading dataset: {e}")
 
         if os.path.isfile(dataset_path):
             try:
                 return SongDatasetEncoder().read_from_path(dataset_path)
             except Exception as e:
-                pass
+                raise ValueError(f"Error reading dataset: {e}")
 
         data_files = [f for f in os.listdir(dataset_path) if f.endswith(".dat3")]
         if data_files:

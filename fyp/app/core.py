@@ -85,7 +85,7 @@ class MashupConfig:
     natural_window_size: int = 10
 
     # The path of stuff should not be exposed to the user
-    _dataset_path: str = "resources/dataset/audio-infos-v2.1.db"
+    _dataset_path: str = "resources/dataset/audio-infos-v3.0.fast.db"
     _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
     _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
 

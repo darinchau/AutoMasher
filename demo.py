@@ -33,7 +33,7 @@ def get_mashup_mode_desc_map():
 
 def pack_audio(audio: Audio):
     return gr.Audio((
-        audio.sample_rate,
+        int(audio.sample_rate),
         audio.numpy()
     ))
 
@@ -56,7 +56,7 @@ def mashup(
     search_radius_input: int,
 ):
     cache_handler_factory = lambda url: LocalCache(CACHE_DIR, url)
-    mashup_mode = MashupMode.NATURAL if not mashup_mode.strip() else {
+    mashup_mode_ = MashupMode.NATURAL if not mashup_mode.strip() else {
         v: k for k, v in get_mashup_mode_desc_map().items()
     }[mashup_mode]
 
@@ -67,7 +67,7 @@ def mashup(
         min_delta_bpm=min_delta_bpm_slider,
         max_delta_bpm=max_delta_bpm_slider,
         max_distance=max_distance_input,
-        mashup_mode=mashup_mode,
+        mashup_mode=mashup_mode_,
         filter_first=filter_first,
         search_radius=search_radius_input,
         keep_first_k_results=keep_first_k_input,
@@ -171,6 +171,7 @@ def app():
                                     maximum=6,
                                     value=-3,
                                     interactive=True,
+                                    step=1,
                                     info="The minimum number of semitones to transpose the song. The search result will include songs transposed between min_transpose and max_transpose",
                                 )
                                 max_transpose_slider = gr.Slider(
@@ -179,6 +180,7 @@ def app():
                                     maximum=6,
                                     value=3,
                                     interactive=True,
+                                    step=1,
                                     info="The maximum number of semitones to transpose the song. The search result will include songs transposed between min_transpose and max_transpose",
                                 )
                             with gr.Row():

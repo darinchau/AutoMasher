@@ -108,6 +108,8 @@ class LocalCache(CacheHandler):
     def __init__(self, cache_dir: str | None, link: YouTubeURL) -> None:
         super().__init__(link)
         self.cache_dir = cache_dir
+        if cache_dir is not None:
+            os.makedirs(cache_dir, exist_ok=True)
 
     @property
     def _audio_save_path(self) -> str:
