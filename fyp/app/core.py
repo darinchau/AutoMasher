@@ -420,6 +420,14 @@ def mashup_from_id(mashup_id: MashupID | str,
                          natural_window_size=config.natural_window_size,
                          mashup_mode=config.mashup_mode,
                          verbose=config._verbose)
+
+    if config.save_original:
+        a_audio.save(f".cache/{mashup_id.to_string()}_a.mp3")
+        b_audio = cache_handler_factory(mashup_id.song_b).get_audio()
+        b_beat = BeatAnalysisResult.from_data_entry(dataset[mashup_id.song_b])
+        slice_start_b, slice_end_b = b_beat.downbeats[mashup_id.song_b_start_bar], b_beat.downbeats[mashup_id.song_b_start_bar + config.nbars]
+        b_audio.slice_seconds(slice_start_b, slice_end_b).save(f".cache/{mashup_id.to_string()}_b.mp3")
+
     return mashup
 
 def mashup_song(link: YouTubeURL,
