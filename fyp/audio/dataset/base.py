@@ -117,20 +117,6 @@ class DatasetEntry:
             return False
         return True
 
-    def get_valid_starting_points(self, nbars: int, min_music_percentage: float) -> Iterable[int]:
-        """Returns a list of valid starting points based on the min_music_percentage and nbars.
-        Fundamentally this is the following code, just optimized:
-
-        [i for i in range(len(self.downbeats) - nbars) if sum(self.music_duration[i:i + nbars]) >= min_music_percentage * nbars]"""
-        cumulative_music_durations = np.cumsum(self.music_duration)
-        cumulative_music_durations[nbars:] = cumulative_music_durations[nbars:] - cumulative_music_durations[:-nbars]
-        cumulative_music_durations = cumulative_music_durations[nbars-1:-1]
-        min_music_duration = min_music_percentage * nbars
-
-        # Find the indices where the sum of the music duration is greater than the minimum music duration
-        valid_indices = np.where(cumulative_music_durations >= min_music_duration)[0]
-        return valid_indices
-
     @property
     def _cache_handler(self):
         from ..cache import LocalCache

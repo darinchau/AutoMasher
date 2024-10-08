@@ -2,7 +2,7 @@
 from ...util.note import get_chord_notes
 from dataclasses import dataclass
 from typing import Any
-from ... import Audio
+from ..base.audio import Audio
 from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map, get_chord_note_inv
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
@@ -227,6 +227,29 @@ def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: Be
 
     return factors.tolist(), boundaries.tolist()
 
+def get_valid_starting_points(music_duration: list[float],
+                              sample_downbeats: NDArray[np.float64],
+                              sample_beats: NDArray[np.float64],
+                              nbars: int,
+                              min_music_percentage: float) -> list[int]:
+    cumulative_music_durations = np.cumsum(music_duration)
+    cumulative_music_durations[nbars:] = cumulative_music_durations[nbars:] - cumulative_music_durations[:-nbars]
+    cumulative_music_durations = cumulative_music_durations[nbars-1:-1]
+    good_music_duration = cumulative_music_durations >= min_music_percentage * nbars
+
+    # Make sure all the nbars of indices have 4 beats and a good alignment
+    beat_alignment_arr = np.abs(sample_beats[:, None] - sample_downbeats[None, :])
+    beat_align_idx = beat_alignment_arr.argmin(axis = 0)
+    is_4_beats = (beat_align_idx[1:] - beat_align_idx[:-1]) == 4
+    beat_alignment = beat_alignment_arr.min(axis = 0)
+    is_alignment_within_tolerance = (beat_alignment < 0.1)[:-1]
+    good_alignment = np.convolve(is_4_beats & is_alignment_within_tolerance, np.ones(nbars, dtype=int), mode='valid') == nbars
+
+    # Find the indices where the sum of the music duration is greater than the minimum music duration
+    # and satisfy the beat alignment
+    valid_indices = np.where(good_music_duration & good_alignment)[0]
+    return valid_indices.tolist()
+
 def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
                             dataset: SongDataset,
                             max_transpose: typing.Union[int, tuple[int, int]] = 3,
@@ -273,13 +296,13 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
         submitted_beat_times = np.append(submitted_beat_result.downbeats, submitted_beat_result.duration)
         submitted_beat_times_diff = submitted_beat_times[1:] - submitted_beat_times[:-1]
 
-        for i in entry.get_valid_starting_points(nbars, min_music_percentage):
+        for i in get_valid_starting_points(entry.music_duration, sample_downbeats, np.array(entry.beats, dtype=np.float64), nbars, min_music_percentage):
             is_bpm_within_tolerance = _calculate_tolerance(submitted_beat_times_diff, sample_downbeats, max_delta_bpm, min_delta_bpm, nbars, i)
             if not is_bpm_within_tolerance:
                 continue
 
             times2, chords2 = _slice_chord_result(sample_normalized_chord_times, sample_normalized_chords, i, i+nbars)
-            starting_downbeat: float = sample_downbeats[i]
+            starting_downbeat: float = sample_downbeats[i].item()
             for transpose_semitone, times1, chords1 in transposed_crs:
                 new_distance = _dist_chord_results(times1, times2, chords1, chords2, distances)
                 if new_distance > max_distance:
