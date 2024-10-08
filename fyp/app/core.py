@@ -83,6 +83,7 @@ class MashupConfig:
     natural_vocal_activity_threshold: float = 1
     natural_vocal_proportion_threshold: float = 0.8
     natural_window_size: int = 10
+    save_original: bool = False # If true, save the original audio in "./.cache"
 
     # The path of stuff should not be exposed to the user
     _dataset_path: str = "resources/dataset/audio-infos-v3.0.fast.db"
@@ -321,6 +322,7 @@ def create_mash(cache_handler_factory: Callable[[YouTubeURL], CacheHandler], dat
                 natural_window_size: int = 10,
                 mashup_mode: MashupMode = MashupMode.NATURAL,
                 verbose: bool = False):
+    """Creates the mashup from the given parameters. Returns the mashup and the original audio for track B."""
     write = print if verbose else lambda x: None
 
     write(f"Loading audio for song B from {best_result_url}...")
@@ -332,7 +334,7 @@ def create_mash(cache_handler_factory: Callable[[YouTubeURL], CacheHandler], dat
     b_beat = BeatAnalysisResult.from_data_entry(dataset[best_result_url])
     slice_start_b, slice_end_b = b_beat.downbeats[best_result_start_bar], b_beat.downbeats[best_result_start_bar + nbars]
     b_beat = b_beat.slice_seconds(slice_start_b, slice_end_b)
-    write(f"Got audio with duration {b_audio.duration} seconds.")
+    write(f"Got beat analysis result with {b_beat.nbars} bars.")
 
     write("Analyzing parts for song A...")
     a_parts = a_parts.slice_seconds(slice_start_a, slice_end_a)
@@ -497,6 +499,20 @@ def mashup_song(link: YouTubeURL,
                          config.natural_window_size,
                          config.mashup_mode,
                          verbose = config._verbose)
+
+    if config.save_original:
+        mashup_id = MashupID(
+            song_a=link,
+            song_a_start_time=config.starting_point,
+            song_b=best_result.url,
+            song_b_start_bar=best_result.start_bar,
+            transpose=best_result.transpose,
+        )
+        a_audio.save(f".cache/{mashup_id.to_string()}_a.mp3")
+        b_audio = cache_handler_factory(best_result.url).get_audio()
+        b_beat = BeatAnalysisResult.from_data_entry(dataset[best_result.url])
+        slice_start_b, slice_end_b = b_beat.downbeats[best_result.start_bar], b_beat.downbeats[best_result.start_bar + config.nbars]
+        b_audio.slice_seconds(slice_start_b, slice_end_b).save(f".cache/{mashup_id.to_string()}_b.mp3")
 
     system_messages = ["Mashup completed!"] + system_messages
     return mashup, scores, "\n".join(system_messages)
