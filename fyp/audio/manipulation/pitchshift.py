@@ -11,5 +11,5 @@ class PitchShift(AudioTransform):
         self.nsteps = nsteps
 
     def apply(self, audio: Audio) -> Audio:
-        y = audio._data[..., 0]
-        return Audio(F.pitch_shift(y, int(audio.sample_rate), self.nsteps), audio.sample_rate)
+        y = audio.data
+        return Audio(F.pitch_shift(y, audio.sample_rate, self.nsteps), audio.sample_rate)

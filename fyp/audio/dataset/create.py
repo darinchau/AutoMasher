@@ -106,7 +106,7 @@ def verify_chord_result(cr: ChordAnalysisResult, length: float, video_url: YouTu
 
 def verify_parts_result(parts: DemucsCollection, mean_vocal_threshold: float, video_url: YouTubeURL | None = None) -> str | None:
     # New in v3: Check if there are enough vocals
-    mean_vocal_volume = parts.vocals.stft()._data.abs().mean()
+    mean_vocal_volume = parts.vocals.volume
     if mean_vocal_volume < mean_vocal_threshold:
         return f"Too few vocals: {video_url} ({mean_vocal_volume})"
     return None

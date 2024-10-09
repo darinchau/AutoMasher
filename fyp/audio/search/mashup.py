@@ -72,8 +72,8 @@ def cross_fade(song1: Audio, song2: Audio, fade_duration: float, cross_fade_mode
     fade_in = fade_in.view(1, -1)
     fade_out = fade_out.view(1, -1)
 
-    song1_fade_out = song1._data[:, -fade_duration_frames:, 0] * fade_out
-    song2_fade_in = song2._data[:, :fade_duration_frames, 0] * fade_in
+    song1_fade_out = song1.data[:, -fade_duration_frames:] * fade_out
+    song2_fade_in = song2.data[:, :fade_duration_frames] * fade_in
     cross_fade = Audio(data = song1_fade_out + song2_fade_in, sample_rate = song1.sample_rate)
 
     song1_normal = song1.slice_frames(0, song1.nframes - fade_duration_frames)
@@ -118,7 +118,7 @@ def create_mashup_from_parts(vocals: Audio, drums: Audio, bass: Audio, other: Au
     drums = drums.mix_to_stereo(left_mix = left_pan * 2)
     other = other.mix_to_stereo(left_mix = -left_pan * 2)
 
-    backing_track_tensor = torch.stack([drums._data[..., 0], bass._data[..., 0], other._data[..., 0]], dim = 0).sum(dim = 0)
+    backing_track_tensor = torch.stack([drums._data, bass._data, other._data], dim = 0).sum(dim = 0)
     backing_track_current_volume = backing_track_tensor.square().mean().sqrt().item()
     backing_track = backing_track_tensor * baseline_volume / backing_track_current_volume
 
@@ -126,10 +126,10 @@ def create_mashup_from_parts(vocals: Audio, drums: Audio, bass: Audio, other: Au
 
     filtered_vocals = highpass.apply(vocals)
 
-    filtered_vocals_current_volume = filtered_vocals._data[..., 0].square().mean().sqrt().item()
+    filtered_vocals_current_volume = filtered_vocals._data.square().mean().sqrt().item()
     filtered_vocals_data = filtered_vocals._data * baseline_volume * 1.1 / filtered_vocals_current_volume
 
-    mashup = torch.stack([backing_track, filtered_vocals_data[..., 0]], dim = 0).sum(dim = 0)
+    mashup = torch.stack([backing_track, filtered_vocals_data], dim = 0).sum(dim = 0)
     mashup = Audio(mashup, vocals.sample_rate)
     return mashup
 

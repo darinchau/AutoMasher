@@ -132,7 +132,6 @@ def extrapolate_downbeat(downbeats: NDArray[np.float32], t: float, nbars: int):
     """Extrapolate the downbeats to the starting point t. Returns the new downbeats and the new duration.
 
     Starting point is guaranteed >= 0"""
-    print(downbeats.tolist(), t, nbars)
     downbeat_diffs = downbeats[1:] - downbeats[:-1]
     downbeat_diff = np.mean(downbeat_diffs).item()
     # TODO write better code when I am awake and well

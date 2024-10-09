@@ -21,7 +21,7 @@ class FadeExact(AudioTransform):
         self.fadeout = fade_out_frames
 
     def apply(self, audio_: Audio) -> Audio:
-        audio = audio_._data[..., 0]
+        audio = audio_.data
         fade = T.Fade(fade_in_len = self.fadein, fade_out_len = self.fadeout, fade_shape = self.mode.value)
         return Audio(fade(audio), audio_.sample_rate)
 
