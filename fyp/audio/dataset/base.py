@@ -131,9 +131,9 @@ class DatasetEntry:
 
     @staticmethod
     def from_url(url: YouTubeURL, genre: SongGenre = SongGenre.UNKNOWN):
-        from .create import process_audio_
+        from .create import process_audio
         audio = Audio.load(url)
-        entry = process_audio_(audio, url, genre, verbose=False)
+        entry = process_audio(audio, url, genre, verbose=False)
         if isinstance(entry, str):
             raise ValueError(f"Failed to process audio: {entry}")
         return entry

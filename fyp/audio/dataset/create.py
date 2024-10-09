@@ -139,7 +139,7 @@ def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTub
 
     return None
 
-def process_audio_(audio: Audio,
+def process_audio(audio: Audio,
                    video_url: YouTubeURL,
                    genre: SongGenre, *,
                    verbose: bool = True,
