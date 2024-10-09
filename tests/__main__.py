@@ -3,7 +3,9 @@
 # Please open a PR if you could add more test cases :D
 import unittest
 from fyp.audio.search.align import get_valid_starting_points
+from fyp.app.core import extrapolate_downbeat
 import numpy as np
+from math import isclose
 
 class AutoMasherTests(unittest.TestCase):
     def test_get_valid_starting_points(self):
@@ -25,3 +27,12 @@ class AutoMasherTests(unittest.TestCase):
         assert len(md) == len(downbeats)
         result = get_valid_starting_points(md, downbeats, beats, 4, 0.99)
         assert result == [0, 5, 6]
+
+    def test_downbeat_extrapolation(self):
+        x, start = extrapolate_downbeat(
+            np.array([107.13, 110.31, 113.40, 116.51, 119.62, 122.74, 125.87, 129.01]),
+            70,
+            8
+        )
+        self.assertTrue(isclose(x[0], 69.62143, abs_tol=1e-4))
+        self.assertTrue(start > 0)

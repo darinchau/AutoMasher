@@ -138,7 +138,7 @@ def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTub
 
     return None
 
-def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, verbose: bool = True, mean_vocal_threshold: float = 0.1) -> DatasetEntry | str:
+def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, verbose: bool = True, reject_weird_meter: bool = False, mean_vocal_threshold: float = 0.1) -> DatasetEntry | str:
     if verbose:
         print(f"Audio length: {audio.duration} ({get_url(video_url).length})")
     length = audio.duration
@@ -162,7 +162,7 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
     if verbose:
         print(f"Analysing beats...")
     beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
-    error = verify_beats_result(beat_result, length, video_url)
+    error = verify_beats_result(beat_result, length, video_url, reject_weird_meter=reject_weird_meter)
     if error is not None:
         return error
 

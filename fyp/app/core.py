@@ -132,10 +132,16 @@ def extrapolate_downbeat(downbeats: NDArray[np.float32], t: float, nbars: int):
     """Extrapolate the downbeats to the starting point t. Returns the new downbeats and the new duration.
 
     Starting point is guaranteed >= 0"""
+    print(downbeats.tolist(), t, nbars)
     downbeat_diffs = downbeats[1:] - downbeats[:-1]
     downbeat_diff = np.mean(downbeat_diffs).item()
-    start: float = downbeat_diff - round((downbeats[0] - t) / downbeat_diff)
-    if start < 0:
+    # TODO write better code when I am awake and well
+    start = downbeats[0]
+    while start > t:
+        start -= downbeat_diff
+    while start < 0:
+        start += downbeat_diff
+    if abs(start - t) > abs(start + downbeat_diff - t):
         start += downbeat_diff
     new_downbeats = np.arange(nbars) * downbeat_diff + start
     return new_downbeats.astype(np.float32), downbeat_diff * nbars
@@ -257,6 +263,7 @@ def determine_slice_results(audio: Audio, bt: BeatAnalysisResult, config: Mashup
                 beats = np.empty_like(new_downbeats),
                 downbeats = new_downbeats,
             )
+            print(new_downbeats, new_duration)
             return bt, new_downbeats[0], new_downbeats[0] + new_duration
 
         # Unable to extrapolate the result. Fall through and handle later
@@ -268,14 +275,7 @@ def determine_slice_results(audio: Audio, bt: BeatAnalysisResult, config: Mashup
     # Our current last resort is to pretend the starting point is the first downbeat
     # This is not ideal but it is the best we can do for now
     # TODO in the future if there are ways to detect music phrase boundaries reliably, we can use that to determine the starting point
-    tempo, _ = librosa.beat.beat_track(y=audio.numpy(), sr=audio.sample_rate)
-    downbeat_diff = 60 / tempo * 4
-    slice_end = config.starting_point + config.nbars * downbeat_diff
-    return BeatAnalysisResult(
-        duration=config.nbars * downbeat_diff,
-        beats = np.array([], dtype=np.float32),
-        downbeats = np.arange(config.nbars) * downbeat_diff + config.starting_point,
-    ), config.starting_point, slice_end
+    raise InvalidMashup("Unable to find a valid starting point.")
 
 # Search stage
 def perform_search(config: MashupConfig, chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult, slice_start: float, slice_end: float, dataset: SongDataset):
@@ -366,6 +366,14 @@ def create_mash(cache_handler_factory: Callable[[YouTubeURL], CacheHandler], dat
     write(f"Got mashup with mode {mode_used}.")
     return mashup
 
+def save_mashup(mashup_id: MashupID, config: MashupConfig, a_audio: Audio, b_audio: Audio, mashup: Audio, dataset: SongDataset, slice_start_a: float, slice_end_a: float):
+    a_audio.slice_seconds(slice_start_a, slice_end_a).save(f".cache/{mashup_id.to_string()}_a.mp3")
+    b_beat = BeatAnalysisResult.from_data_entry(dataset[mashup_id.song_b])
+    slice_start_b, slice_end_b = b_beat.downbeats[mashup_id.song_b_start_bar], b_beat.downbeats[mashup_id.song_b_start_bar + config.nbars]
+    b_audio.slice_seconds(slice_start_b, slice_end_b).save(f".cache/{mashup_id.to_string()}_b.mp3")
+    mashup.save(f".cache/{mashup_id.to_string()}_mashup.mp3")
+    print(mashup.nchannels)
+
 def mashup_from_id(mashup_id: MashupID | str,
                    config: MashupConfig | None = None,
                    cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None) -> Audio:
@@ -402,6 +410,7 @@ def mashup_from_id(mashup_id: MashupID | str,
 
     write("Determining slice results...")
     a_beat, slice_start_a, slice_end_a = determine_slice_results(a_audio, beat_result, config)
+    assert slice_start_a >= 0, "Starting point must be >= 0"
     write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
 
     # Create the mashup
@@ -424,11 +433,7 @@ def mashup_from_id(mashup_id: MashupID | str,
                          verbose=config._verbose)
 
     if config.save_original:
-        a_audio.save(f".cache/{mashup_id.to_string()}_a.mp3")
-        b_audio = cache_handler_factory(mashup_id.song_b).get_audio()
-        b_beat = BeatAnalysisResult.from_data_entry(dataset[mashup_id.song_b])
-        slice_start_b, slice_end_b = b_beat.downbeats[mashup_id.song_b_start_bar], b_beat.downbeats[mashup_id.song_b_start_bar + config.nbars]
-        b_audio.slice_seconds(slice_start_b, slice_end_b).save(f".cache/{mashup_id.to_string()}_b.mp3")
+        save_mashup(mashup_id, config, a_audio, cache_handler_factory(mashup_id.song_b).get_audio(), mashup, dataset, slice_start_a, slice_end_a)
 
     return mashup
 
@@ -471,6 +476,7 @@ def mashup_song(link: YouTubeURL,
 
     write("Determining slice results...")
     a_beat, slice_start_a, slice_end_a = determine_slice_results(a_audio, beat_result, config)
+    assert slice_start_a >= 0, "Starting point must be >= 0"
     write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
 
     # Create the mashup
@@ -516,16 +522,12 @@ def mashup_song(link: YouTubeURL,
     if config.save_original:
         mashup_id = MashupID(
             song_a=link,
-            song_a_start_time=config.starting_point,
+            song_a_start_time=slice_start_a,
             song_b=best_result.url,
             song_b_start_bar=best_result.start_bar,
             transpose=best_result.transpose,
         )
-        a_audio.save(f".cache/{mashup_id.to_string()}_a.mp3")
-        b_audio = cache_handler_factory(best_result.url).get_audio()
-        b_beat = BeatAnalysisResult.from_data_entry(dataset[best_result.url])
-        slice_start_b, slice_end_b = b_beat.downbeats[best_result.start_bar], b_beat.downbeats[best_result.start_bar + config.nbars]
-        b_audio.slice_seconds(slice_start_b, slice_end_b).save(f".cache/{mashup_id.to_string()}_b.mp3")
+        save_mashup(mashup_id, config, a_audio, cache_handler_factory(best_result.url).get_audio(), mashup, dataset, slice_start_a, slice_end_a)
 
     system_messages = ["Mashup completed!"] + system_messages
     return mashup, scores, "\n".join(system_messages)
