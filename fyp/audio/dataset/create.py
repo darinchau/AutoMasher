@@ -1,5 +1,6 @@
 # Exports the create entry method
 import numpy as np
+from typing import Callable
 from .base import SongGenre, DatasetEntry
 from ...util.note import get_inv_voca_map
 from ...util import YouTubeURL, get_url
@@ -138,7 +139,15 @@ def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTub
 
     return None
 
-def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, verbose: bool = True, reject_weird_meter: bool = False, mean_vocal_threshold: float = 0.1) -> DatasetEntry | str:
+def process_audio_(audio: Audio,
+                   video_url: YouTubeURL,
+                   genre: SongGenre, *,
+                   verbose: bool = True,
+                   reject_weird_meter: bool = False,
+                   mean_vocal_threshold: float = 0.1,
+                   additional_parts_verification: Callable[[DemucsCollection], str | None] = lambda _: None,
+                   additional_beats_verification: Callable[[BeatAnalysisResult], str | None] = lambda _: None,
+                   additional_chords_verification: Callable[[ChordAnalysisResult], str | None] = lambda _: None) -> tuple[DatasetEntry, DemucsCollection] | str:
     if verbose:
         print(f"Audio length: {audio.duration} ({get_url(video_url).length})")
     length = audio.duration
@@ -152,6 +161,11 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
     if error is not None:
         return error
 
+    if additional_chords_verification is not None:
+        error = additional_chords_verification(cr)
+        if error is not None:
+            return error
+
     if verbose:
         print("Separating audio...")
     parts = get_demucs().separate(audio)
@@ -159,12 +173,22 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
     if error is not None:
         return error
 
+    if additional_parts_verification is not None:
+        error = additional_parts_verification(parts)
+        if error is not None:
+            return error
+
     if verbose:
         print(f"Analysing beats...")
     beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
     error = verify_beats_result(beat_result, length, video_url, reject_weird_meter=reject_weird_meter)
     if error is not None:
         return error
+
+    if additional_beats_verification is not None:
+        error = additional_beats_verification(beat_result)
+        if error is not None:
+            return error
 
     if verbose:
         print("Postprocessing...")
@@ -191,4 +215,4 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
         genre = genre,
         url = video_url,
         views = views
-    )
+    ), parts
