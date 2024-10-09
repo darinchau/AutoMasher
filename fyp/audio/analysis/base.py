@@ -8,7 +8,6 @@ import librosa
 from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map
 from ...audio import Audio
 import torch
-from ..base import TimeSeries
 from numpy.typing import NDArray
 import numpy as np
 import numba
@@ -16,10 +15,8 @@ import json
 from ..dataset import DatasetEntry
 import re
 
-_CADENCE_RESULT = re.compile(r"^(?:I|II|III|IV|V|VI|VII) ?-> ?(?:I|II|III|IV|V|VI|VII)$")
-
 @dataclass(frozen=True)
-class BeatAnalysisResult(TimeSeries):
+class BeatAnalysisResult:
     """A class that represents the result of a beat analysis."""
     duration: float
     beats: NDArray[np.float32]
@@ -148,7 +145,7 @@ class KeyAnalysisResult:
         plt.show()
 
 @dataclass(frozen=True)
-class ChordAnalysisResult(TimeSeries):
+class ChordAnalysisResult:
     """A class with the following attributes:
 
     labels: list[int] - The chord labels for each frame

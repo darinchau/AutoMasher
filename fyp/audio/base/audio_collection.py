@@ -1,12 +1,11 @@
 from __future__ import annotations
 import os
 from .audio import Audio
-from .time_series import TimeSeries
 from typing import Callable
 import zipfile
 import tempfile
 
-class DemucsCollection(TimeSeries):
+class DemucsCollection:
     def __init__(self, bass: Audio, drums: Audio, other: Audio, vocals: Audio):
         assert bass.nframes == drums.nframes == other.nframes == vocals.nframes, "All audios must have the same number of frames"
         assert bass.sample_rate == drums.sample_rate == other.sample_rate == vocals.sample_rate, "All audios must have the same sample rate"
@@ -106,7 +105,34 @@ class DemucsCollection(TimeSeries):
                     vocals=Audio.load(os.path.join(tmpdirname, "vocals." + inner_format))
                 )
 
-class HPSSCollection(TimeSeries):
+    @staticmethod
+    def join_all(segments: list[DemucsCollection]) -> DemucsCollection:
+        """Join all the segments together"""
+        if len(segments) == 0:
+            raise ValueError("Cannot join an empty list of segments")
+        if len(segments) == 1:
+            return segments[0]
+        result = segments[0]
+        duration = result.get_duration()
+        for segment in segments[1:]:
+            result = result.join(segment)
+            duration += segment.get_duration()
+        return result
+
+    def align_from_boundaries(self, factors: list[float], boundaries: list[float]):
+        """Align the segments to the boundaries"""
+        assert len(factors) == len(boundaries)
+        result = self
+        boundaries = [0] + boundaries
+        segments = []
+        for i in range(len(factors)):
+            segment = result.slice_seconds(boundaries[i], boundaries[i + 1])
+            segment = segment.change_speed(factors[i])
+            segments.append(segment)
+        result = self.join_all(segments)
+        return result
+
+class HPSSCollection:
     def __init__(self, harmonic: Audio | None, percussive: Audio | None):
         assert not harmonic or not percussive or harmonic.nframes == percussive.nframes, "All audios must have the same number of frames"
         assert not harmonic or not percussive or harmonic.sample_rate == percussive.sample_rate, "All audios must have the same sample rate"
