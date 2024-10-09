@@ -145,6 +145,8 @@ def process_audio(audio: Audio,
                    verbose: bool = True,
                    reject_weird_meter: bool = False,
                    mean_vocal_threshold: float = 0.1,
+                   chord_model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
+                   beat_model_path: str = "./resources/ckpts/beat_transformer.pt",
                    additional_parts_verification: Callable[[DemucsCollection], str | None] = lambda _: None,
                    additional_beats_verification: Callable[[BeatAnalysisResult], str | None] = lambda _: None,
                    additional_chords_verification: Callable[[ChordAnalysisResult], str | None] = lambda _: None) -> tuple[DatasetEntry, DemucsCollection] | str:
@@ -154,7 +156,7 @@ def process_audio(audio: Audio,
 
     if verbose:
         print(f"Analysing chords...")
-    chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
+    chord_result = analyse_chord_transformer(audio, model_path=chord_model_path, use_loaded_model=True)
 
     cr = chord_result.group()
     error = verify_chord_result(cr, length, video_url)
@@ -180,7 +182,7 @@ def process_audio(audio: Audio,
 
     if verbose:
         print(f"Analysing beats...")
-    beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
+    beat_result = analyse_beat_transformer(parts=parts, model_path=beat_model_path, use_loaded_model=True)
     error = verify_beats_result(beat_result, length, video_url, reject_weird_meter=reject_weird_meter)
     if error is not None:
         return error
