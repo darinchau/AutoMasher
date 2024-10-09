@@ -376,7 +376,7 @@ class Audio:
         else:
             newself = self
             newother = other
-        newdata = torch.zeros((nchannels, self.nframes + other.nframes, 1), dtype=torch.float32)
+        newdata = torch.zeros((nchannels, self.nframes + other.nframes), dtype=torch.float32)
         newdata[:, :self.nframes] = newself._data
         newdata[:, self.nframes:] = newother._data
         return Audio(newdata, self.sample_rate)

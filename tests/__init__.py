@@ -2,6 +2,9 @@
 # Please add more test cases as you see fit
 # Please open a PR if you could add more test cases :D
 import unittest
+import torch
+import numpy as np
+from fyp import Audio
 from fyp.audio.search.align import get_valid_starting_points
 from fyp.app.core import extrapolate_downbeat
 from fyp.util.url import get_url
@@ -51,3 +54,132 @@ class TestYouTubeURL(unittest.TestCase):
         for url in urls:
             yt = get_url(url)
             self.assertEqual(yt.video_id, "dQw4w9WgXcQ", msg=f"Failed at {url}")
+
+class TestAudio(unittest.TestCase):
+    def test_init_audio(self):
+        # Mono audio
+        mono_tensor = torch.randn(1, 1000, dtype=torch.float32)
+        mono_audio = Audio(mono_tensor, 44100)
+        self.assertTrue(mono_audio.nchannels.value == 1)
+
+        # Stereo audio
+        stereo_tensor = torch.randn(2, 1000, dtype=torch.float32)
+        stereo_audio = Audio(stereo_tensor, 44100)
+        self.assertTrue(stereo_audio.nchannels.value == 2)
+
+        # Invalid audio
+        with self.assertRaises(AssertionError):
+            invalid_tensor = torch.randn(3, 1000, dtype=torch.float32)
+            invalid_audio = Audio(invalid_tensor, 44100)
+
+        # Invalid audio - wrong dtype
+        with self.assertRaises(AssertionError):
+            invalid_tensor = torch.randn(2, 1000, dtype=torch.float64)
+            invalid_audio = Audio(invalid_tensor, 44100)
+
+    def test_slice_seconds(self):
+        tensor = torch.randn(2, 44100, dtype=torch.float32)
+        audio = Audio(tensor, 44100)
+        sliced = audio.slice_seconds(0, 0.5)
+        self.assertTrue(sliced.duration == 0.5)
+        self.assertTrue(sliced.nchannels.value == 2)
+        self.assertTrue(sliced.sample_rate == 44100)
+        self.assertTrue(sliced.nframes == 22050)
+        self.assertTrue(torch.equal(sliced.data, tensor[:, :22050]))
+
+    def test_pad(self):
+        tensor = torch.randn(2, 1000, dtype=torch.float32)
+        audio = Audio(tensor, 44100)
+        padded = audio.pad(2000, front=False)
+        self.assertTrue(padded.nchannels.value == 2)
+        self.assertTrue(padded.sample_rate == 44100)
+        self.assertTrue(padded.nframes == 2000)
+        self.assertTrue(torch.equal(padded.data[:, :1000], tensor))
+
+        padded_front = audio.pad(2000, front=True)
+        self.assertTrue(padded_front.nchannels.value == 2)
+        self.assertTrue(padded_front.sample_rate == 44100)
+        self.assertTrue(padded_front.nframes == 2000)
+        self.assertTrue(torch.equal(padded_front.data[:, -1000:], tensor))
+
+        padded_short_front = audio.pad(500, front=True)
+        self.assertTrue(padded_short_front.nframes == 500)
+        self.assertTrue(torch.equal(padded_short_front.data, tensor[:, -500:]))
+
+        padded_short_back = audio.pad(500, front=False)
+        self.assertTrue(padded_short_back.nframes == 500)
+        self.assertTrue(torch.equal(padded_short_back.data, tensor[:, :500]))
+
+    def test_change_speed(self):
+        tensor = torch.randn(2, 44100, dtype=torch.float32)
+        audio = Audio(tensor, 44100)
+        faster = audio.change_speed(2)
+        self.assertTrue(faster.duration == 0.5)
+        self.assertTrue(faster.nchannels.value == 2)
+        self.assertTrue(faster.sample_rate == 44100)
+        self.assertTrue(faster.nframes == 22050)
+
+        slower = audio.change_speed(0.5)
+        self.assertTrue(slower.duration == 2)
+        self.assertTrue(slower.nchannels.value == 2)
+        self.assertTrue(slower.sample_rate == 44100)
+        self.assertTrue(slower.nframes == 88200)
+
+    def test_resample(self):
+        tensor = torch.randn(2, 44100, dtype=torch.float32)
+        audio = Audio(tensor, 44100)
+        resampled = audio.resample(22050)
+        self.assertTrue(resampled.duration == audio.duration)
+        self.assertTrue(resampled.nchannels.value == 2)
+        self.assertTrue(resampled.sample_rate == 22050)
+        self.assertTrue(resampled.nframes == 22050)
+
+    def test_to_nchannels(self):
+        tensor = torch.randn(2, 1000, dtype=torch.float32)
+        audio = Audio(tensor, 44100)
+        mono = audio.to_nchannels(1)
+        self.assertTrue(mono.nchannels.value == 1)
+        self.assertTrue(mono.sample_rate == 44100)
+        self.assertTrue(mono.nframes == 1000)
+
+        stereo = audio.to_nchannels(2)
+        self.assertTrue(stereo.nchannels.value == 2)
+        self.assertTrue(stereo.sample_rate == 44100)
+        self.assertTrue(stereo.nframes == 1000)
+
+    def test_slice_frames(self):
+        tensor = torch.randn(2, 1000, dtype=torch.float32)
+        audio = Audio(tensor, 44100)
+        sliced = audio.slice_frames(100, 200)
+        self.assertTrue(sliced.nframes == 100)
+        self.assertTrue(torch.equal(sliced.data, tensor[:, 100:200]))
+
+        sliced2 = audio.slice_frames(100, -1)
+        self.assertTrue(sliced2.nframes == 900)
+        self.assertTrue(torch.equal(sliced2.data, tensor[:, 100:]))
+
+        sliced3 = audio.slice_frames(0, 100)
+        self.assertTrue(sliced3.nframes == 100)
+        self.assertTrue(torch.equal(sliced3.data, tensor[:, :100]))
+
+        # Invalid slice
+        with self.assertRaises(AssertionError):
+            audio.slice_frames(100, 50)
+
+        # Invalid slice - OOB
+        with self.assertRaises(AssertionError):
+            audio.slice_frames(100, 1001)
+
+        # Valid slice - till the end
+        sliced4 = audio.slice_frames(100, 1000)
+        self.assertTrue(sliced4.nframes == 900)
+        self.assertTrue(torch.equal(sliced4.data, tensor[:, 100:]))
+
+    def test_join(self):
+        tensor1 = torch.randn(2, 1000, dtype=torch.float32)
+        tensor2 = torch.randn(2, 1000, dtype=torch.float32)
+        audio1 = Audio(tensor1, 44100)
+        audio2 = Audio(tensor2, 44100)
+        joined = audio1.join(audio2)
+        self.assertTrue(joined.nframes == 2000)
+        self.assertTrue(torch.equal(joined.data, torch.cat([tensor1, tensor2], dim=1)))
