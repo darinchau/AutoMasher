@@ -35,14 +35,29 @@ class YouTubeURL(str):
         """Gets the title of the video."""
         return to_youtube(self).title
 
-    @property
-    def length(self):
+    def get_length(self):
         """Gets the length of the video in seconds."""
-        return to_youtube(self).length
+        yt = to_youtube(self)
+        vid_info = yt.vid_info
+        if vid_info is None:
+            return None
+        video_details = vid_info.get("videoDetails")
+        if video_details is None:
+            return None
+        length = video_details.get("lengthSeconds")
+        return int(length) if length is not None else None
 
     def get_views(self):
         """Gets the number of views of the video."""
-        return to_youtube(self).views
+        yt = to_youtube(self)
+        vid_info = yt.vid_info
+        if vid_info is None:
+            return None
+        video_details = vid_info.get("videoDetails")
+        if video_details is None:
+            return None
+        views = video_details.get("viewCount")
+        return int(views) if views is not None else None
 
 def to_youtube(link_or_video_id: str):
     link_or_video_id = link_or_video_id.strip()

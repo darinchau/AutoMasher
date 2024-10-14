@@ -151,7 +151,7 @@ def process_audio(audio: Audio,
                    additional_beats_verification: Callable[[BeatAnalysisResult], str | None] = lambda _: None,
                    additional_chords_verification: Callable[[ChordAnalysisResult], str | None] = lambda _: None) -> tuple[DatasetEntry, DemucsCollection] | str:
     if verbose:
-        print(f"Audio length: {audio.duration} ({get_url(video_url).length})")
+        print(f"Audio length: {audio.duration} ({get_url(video_url).get_length()})")
     length = audio.duration
 
     if verbose:
@@ -205,6 +205,8 @@ def process_audio(audio: Audio,
 
     try:
         views = get_url(video_url).get_views()
+        if views is None:
+            views = 42069
     except Exception as e:
         views = 42069 # Deprecated in v3: No views - so subsitute with a filler if not fetched
 
