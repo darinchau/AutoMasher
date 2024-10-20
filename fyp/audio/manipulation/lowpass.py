@@ -12,7 +12,7 @@ class LowpassFilter(AudioTransform):
 
     def apply(self, audio: Audio) -> Audio:
         sample_rate = int(audio.sample_rate)
-        y = audio._data[..., 0]
+        y = audio.data
         return Audio(F.lowpass_biquad(y, sample_rate, self.cutoff_freq, self.Q), sample_rate)
 
 class HighpassFilter(AudioTransform):
@@ -24,5 +24,5 @@ class HighpassFilter(AudioTransform):
 
     def apply(self, audio: Audio) -> Audio:
         sample_rate = int(audio.sample_rate)
-        y = audio._data[..., 0]
+        y = audio.data
         return Audio(F.highpass_biquad(y, sample_rate, self.cutoff_freq, self.Q), sample_rate)

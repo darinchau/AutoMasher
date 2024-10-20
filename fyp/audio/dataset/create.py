@@ -1,5 +1,6 @@
 # Exports the create entry method
 import numpy as np
+from typing import Callable
 from .base import SongGenre, DatasetEntry
 from ...util.note import get_inv_voca_map
 from ...util import YouTubeURL, get_url
@@ -105,7 +106,7 @@ def verify_chord_result(cr: ChordAnalysisResult, length: float, video_url: YouTu
 
 def verify_parts_result(parts: DemucsCollection, mean_vocal_threshold: float, video_url: YouTubeURL | None = None) -> str | None:
     # New in v3: Check if there are enough vocals
-    mean_vocal_volume = parts.vocals.stft()._data.abs().mean()
+    mean_vocal_volume = parts.vocals.volume
     if mean_vocal_volume < mean_vocal_threshold:
         return f"Too few vocals: {video_url} ({mean_vocal_volume})"
     return None
@@ -138,19 +139,34 @@ def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTub
 
     return None
 
-def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, verbose: bool = True, mean_vocal_threshold: float = 0.1) -> DatasetEntry | str:
+def process_audio(audio: Audio,
+                   video_url: YouTubeURL,
+                   genre: SongGenre, *,
+                   verbose: bool = True,
+                   reject_weird_meter: bool = False,
+                   mean_vocal_threshold: float = 0.1,
+                   chord_model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
+                   beat_model_path: str = "./resources/ckpts/beat_transformer.pt",
+                   additional_parts_verification: Callable[[DemucsCollection], str | None] = lambda _: None,
+                   additional_beats_verification: Callable[[BeatAnalysisResult], str | None] = lambda _: None,
+                   additional_chords_verification: Callable[[ChordAnalysisResult], str | None] = lambda _: None) -> tuple[DatasetEntry, DemucsCollection] | str:
     if verbose:
-        print(f"Audio length: {audio.duration} ({get_url(video_url).length})")
+        print(f"Audio length: {audio.duration} ({get_url(video_url).get_length()})")
     length = audio.duration
 
     if verbose:
         print(f"Analysing chords...")
-    chord_result = analyse_chord_transformer(audio, model_path="./resources/ckpts/btc_model_large_voca.pt", use_loaded_model=True)
+    chord_result = analyse_chord_transformer(audio, model_path=chord_model_path, use_loaded_model=True)
 
     cr = chord_result.group()
     error = verify_chord_result(cr, length, video_url)
     if error is not None:
         return error
+
+    if additional_chords_verification is not None:
+        error = additional_chords_verification(cr)
+        if error is not None:
+            return error
 
     if verbose:
         print("Separating audio...")
@@ -159,12 +175,22 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
     if error is not None:
         return error
 
+    if additional_parts_verification is not None:
+        error = additional_parts_verification(parts)
+        if error is not None:
+            return error
+
     if verbose:
         print(f"Analysing beats...")
-    beat_result = analyse_beat_transformer(parts=parts, model_path="./resources/ckpts/beat_transformer.pt", use_loaded_model=True)
-    error = verify_beats_result(beat_result, length, video_url)
+    beat_result = analyse_beat_transformer(parts=parts, model_path=beat_model_path, use_loaded_model=True)
+    error = verify_beats_result(beat_result, length, video_url, reject_weird_meter=reject_weird_meter)
     if error is not None:
         return error
+
+    if additional_beats_verification is not None:
+        error = additional_beats_verification(beat_result)
+        if error is not None:
+            return error
 
     if verbose:
         print("Postprocessing...")
@@ -179,6 +205,8 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
 
     try:
         views = get_url(video_url).get_views()
+        if views is None:
+            views = 42069
     except Exception as e:
         views = 42069 # Deprecated in v3: No views - so subsitute with a filler if not fetched
 
@@ -191,4 +219,4 @@ def process_audio_(audio: Audio, video_url: YouTubeURL, genre: SongGenre, *, ver
         genre = genre,
         url = video_url,
         views = views
-    )
+    ), parts

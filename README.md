@@ -59,22 +59,6 @@ python -m scripts.make_fast_db
 ```
 depending on your system, this will take a few minutes to complete, and will save you about 3x-5x the time when loading the dataset.
 
-2. Dataset collection is done by running the following script
-```bash
-python -m scripts.calculate
-```
-In the file `scripts/playlist_queue.txt` you can add the YouTube playlist URLs you want to download. The script will download the songs and process them to extract the chords and beats.
-
-The dataset will be saved in a folder in `resources/dataset/` in a `.dat3` file. Run the script
-```bash
-python -m scripts.pack_dataset
-```
-to pack the dataset into a `.db` file. This can be followed by running the script
-```bash
-python -m scripts.make_fast_db
-```
-to create a faster loading version of the dataset.
-
 ## Inner Workings
 We have collected about 19000 songs from YouTube and processed them to extract the chords and beats. We estimate the chords of the song using [BTC-ISMIR19](https://github.com/jayg996/BTC-ISMIR19) (Park and Choi, 2019) and beats using a slightly modified version of [Beat-Transformer](https://github.com/zhaojw1998/Beat-Transformer) (Zhao, Xia, and Wang, 2022). We also used [Demucs](https://github.com/facebookresearch/demucs) (Defossez, 2020) to separate the tracks of a song.
 

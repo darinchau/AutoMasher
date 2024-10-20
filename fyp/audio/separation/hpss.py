@@ -19,7 +19,7 @@ class HPSSAudioSeparator:
         if not self._return_harmonic and not self._return_percussive:
             return HPSSCollection(None, None)
 
-        audio_data = audio.get_data()
+        audio_data = audio.data
         stft = torch.stft(audio_data, n_fft=2048, return_complex=True).detach().numpy()
         stft_harm, stft_perc = librosa.decompose.hpss(stft)
 
