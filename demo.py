@@ -54,6 +54,7 @@ def mashup(
     filter_uneven_bars_max_threshold_input: float,
     filter_short_song_bar_threshold_input: int,
     search_radius_input: int,
+    left_pan: float,
     save_original: bool
 ):
     cache_handler_factory = lambda url: LocalCache(CACHE_DIR, url)
@@ -76,6 +77,7 @@ def mashup(
         filter_uneven_bars_min_threshold=filter_uneven_bars_min_threshold_input,
         filter_uneven_bars_max_threshold=filter_uneven_bars_max_threshold_input,
         filter_short_song_bar_threshold=filter_short_song_bar_threshold_input,
+        left_pan=left_pan,
         _verbose=True,
         save_original=save_original
     )
@@ -222,12 +224,21 @@ def app():
                                 interactive=True,
                                 info="If you have a mashup ID, you can enter it here to recreate the mashup. In this case the song link and starting point will be ignored"
                             )
-                            save_original = gr.Checkbox(
-                                label="Save Original",
-                                interactive=True,
-                                value=False,
-                                info="Save the original song to the cache"
-                            )
+                            with gr.Row():
+                                save_original = gr.Checkbox(
+                                    label="Save Original",
+                                    interactive=True,
+                                    value=False,
+                                    info="Save the original song in the output as well"
+                                )
+                                left_pan = gr.Number(
+                                    label="Left Pan",
+                                    interactive=True,
+                                    value=0.15,
+                                    minimum=-0.5,
+                                    maximum=0.5,
+                                    info="The left pan of the vocals in the output mashup. Other parts will be panned accordingly"
+                                )
                         with gr.Column():
                             with gr.Row():
                                 max_distance_input = gr.Number(
@@ -312,6 +323,7 @@ def app():
                             filter_uneven_bars_max_threshold_input,
                             filter_short_song_bar_threshold_input,
                             search_radius_input,
+                            left_pan,
                             save_original
                         ],
                         [output_msg, output_audio],
