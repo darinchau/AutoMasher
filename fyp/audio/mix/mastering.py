@@ -7,6 +7,7 @@ import matchering as mg
 import torch
 from ..base import Audio, DemucsCollection
 from ..manipulation import HighpassFilter
+import torch.nn.functional as F
 
 def mastering(audio: Audio, reference: Audio) -> Audio:
     """Master the audio using the reference audio"""
@@ -28,7 +29,14 @@ def mastering(audio: Audio, reference: Audio) -> Audio:
     return result
 
 
-def create_mashup_from_parts(submitted_audio_a: Audio, submitted_audio_b: Audio, submitted_parts_a: DemucsCollection, submitted_parts_b: DemucsCollection, mix: int, left_pan: float = 0.15):
+def create_mashup_from_parts(
+        submitted_audio_a: Audio,
+        submitted_audio_b: Audio,
+        submitted_parts_a: DemucsCollection,
+        submitted_parts_b: DemucsCollection,
+        mix: int,
+        left_pan: float = 0.15
+    ) -> Audio:
     """Mix is a bitmask of the parts to mix. 0b1000 is drums, 0b0100 is bass, 0b0010 is other, 0b0001 is vocals
     upper 4 bits are for parts_a, lower 4 bits are for parts_b"""
     assert 0 <= mix < 256
@@ -60,24 +68,23 @@ def create_mashup_from_parts(submitted_audio_a: Audio, submitted_audio_b: Audio,
 
     assert len(audios) > 0, "No parts selected for mixing"
 
-    backing_track_tensor = torch.stack([x._data[..., 0] for x in audios], dim = 0).sum(dim = 0)
+    backing_track_tensor = torch.stack([x.data[..., 0] for x in audios], dim = 0).sum(dim = 0)
     backing_track_volume = backing_track_tensor.square().mean().sqrt().item()
     backing_track_tensor = (backing_track_tensor * 0.1 / backing_track_volume).clamp(-1, 1)
 
     vocals = None
     if vocals_a is not None and vocals_b is not None:
-        vocals = torch.stack([vocals_a._data[..., 0], vocals_b._data[..., 0]], dim = 0).sum(dim = 0)
+        vocals = torch.stack([vocals_a.data[..., 0], vocals_b.data[..., 0]], dim = 0).sum(dim = 0)
     elif vocals_a is not None:
-        vocals = vocals_a._data[..., 0]
+        vocals = vocals_a.data[..., 0]
     elif vocals_b is not None:
-        vocals = vocals_b._data[..., 0]
+        vocals = vocals_b.data[..., 0]
     else:
-        vocals = torch.empty_like(submitted_audio_a._data[..., 0])
+        vocals = torch.empty_like(submitted_audio_a.data[..., 0])
 
     vocals_volume = vocals.square().mean().sqrt().item()
     vocals = (vocals * 0.1 / vocals_volume).clamp(-1, 1)
 
     mixed = Audio((vocals + backing_track_tensor).clamp(-1, 1), sample_rate = submitted_audio_a.sample_rate)
-    if vocals_b is not None:
-        return mastering(mixed, submitted_audio_b)
-    return mastering(mixed, submitted_audio_a)
+    mixed = mastering(mixed, submitted_audio_b) if vocals_b is not None else mastering(mixed, submitted_audio_a)
+    return mixed
