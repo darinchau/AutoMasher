@@ -7,7 +7,7 @@ from typing import Callable
 from ..audio import Audio, DemucsCollection
 from ..audio.analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
 from ..audio.dataset import SongDataset, DatasetEntry, SongGenre
-from ..audio.search import create_mashup, MashabilityResult, calculate_mashability, MashupMode
+from ..audio.mix import create_mashup, MashabilityResult, calculate_mashability, MashupMode
 from ..audio.cache import CacheHandler, MemoryCache
 from ..audio.separation import DemucsAudioSeparator
 from ..util import YouTubeURL, get_url

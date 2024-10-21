@@ -5,7 +5,7 @@ import unittest
 import torch
 import numpy as np
 from fyp import Audio
-from fyp.audio.search.align import get_valid_starting_points
+from fyp.audio.mix.align import get_valid_starting_points
 from fyp.app.core import extrapolate_downbeat
 from fyp.util.url import get_url
 import numpy as np

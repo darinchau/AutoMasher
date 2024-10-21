@@ -3,4 +3,4 @@ from .audio.base import Audio
 from .audio.dataset import SongDataset, DatasetEntry, SongGenre
 from .util import YouTubeURL, get_url
 from .app import MashupConfig, mashup_song, InvalidMashup
-from .audio.search.mashup import MashupMode
+from .audio.mix.mashup import MashupMode

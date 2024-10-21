@@ -6,7 +6,7 @@ from ..base import Audio, DemucsCollection
 from ...util import get_url
 from ..analysis import BeatAnalysisResult
 from ..manipulation import PitchShift
-from ..search.align import calculate_boundaries
+from ..mix.align import calculate_boundaries
 from .mastering import create_mashup_from_parts
 from dataclasses import dataclass
 from enum import Enum
