@@ -17,7 +17,7 @@ class DemucsModelStructure(Enum):
         return {member.value for member in DemucsModelStructure}
 
 class DemucsAudioSeparator:
-    def __init__(self, model_name: DemucsModelStructure = DemucsModelStructure.HTDEMUCS, repo: Path | None = None, segment: float | None = None, compile: bool = True):
+    def __init__(self, model_name: DemucsModelStructure = DemucsModelStructure.HTDEMUCS, repo: Path | None = None, segment: float | None = None, compile: bool = False):
         """ Preloads the model
 
         segment (float): duration of the chunks of audio to ideally evaluate the model on.
@@ -43,6 +43,7 @@ class DemucsAudioSeparator:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
         model.eval()
+        # Not explicitly tested - this worked slower than default on my WSL machine.
         if compile:
             if isinstance(model, BagOfModels):
                 for sub in model.models:
