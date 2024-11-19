@@ -17,11 +17,13 @@ class DemucsModelStructure(Enum):
         return {member.value for member in DemucsModelStructure}
 
 class DemucsAudioSeparator:
-    def __init__(self, model_name: DemucsModelStructure = DemucsModelStructure.HTDEMUCS, repo: Path | None = None, segment: float | None = None):
+    def __init__(self, model_name: DemucsModelStructure = DemucsModelStructure.HTDEMUCS, repo: Path | None = None, segment: float | None = None, compile: bool = True):
         """ Preloads the model
 
         segment (float): duration of the chunks of audio to ideally evaluate the model on.
-            This is used by `demucs.apply.apply_model`."""
+            This is used by `demucs.apply.apply_model`.
+
+        compile (bool): whether to compile the model. If set to False, the model will be loaded in eval mode."""
         try:
             model = get_model(model_name.value, repo)
         except ModelLoadingError as error:
@@ -38,8 +40,15 @@ class DemucsAudioSeparator:
             if segment is not None:
                 model.segment = segment
 
-        model.cpu()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
         model.eval()
+        if compile:
+            if isinstance(model, BagOfModels):
+                for sub in model.models:
+                    sub.compile()
+            else:
+                model.compile()
         self.model = model
 
     @property
