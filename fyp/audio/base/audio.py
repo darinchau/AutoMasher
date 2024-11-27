@@ -52,7 +52,7 @@ class Audio:
 
     def __init__(self, data: Tensor, sample_rate: int):
         """An audio is a special type of audio features - each feature vector has 1 dimensions"""
-        assert len(data.shape) == 2, "Audio data must have 2 dimensions"
+        assert len(data.shape) == 2, f"Audio data must have 2 dimensions, but found {data.shape}"
         assert data.dtype == self.dtype(), f"Audio data must have dtype {self.dtype()} but found {data.dtype}"
         assert sample_rate > 0, "Sample rate must be greater than 0"
 
