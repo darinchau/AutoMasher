@@ -60,19 +60,19 @@ def create_mashup_from_parts(submitted_audio_a: Audio, submitted_audio_b: Audio,
 
     assert len(audios) > 0, "No parts selected for mixing"
 
-    backing_track_tensor = torch.stack([x._data[..., 0] for x in audios], dim = 0).sum(dim = 0)
+    backing_track_tensor = torch.stack([x.data for x in audios], dim = 0).sum(dim = 0)
     backing_track_volume = backing_track_tensor.square().mean().sqrt().item()
     backing_track_tensor = (backing_track_tensor * 0.1 / backing_track_volume).clamp(-1, 1)
 
     vocals = None
     if vocals_a is not None and vocals_b is not None:
-        vocals = torch.stack([vocals_a._data[..., 0], vocals_b._data[..., 0]], dim = 0).sum(dim = 0)
+        vocals = torch.stack([vocals_a.data, vocals_b.data], dim = 0).sum(dim = 0)
     elif vocals_a is not None:
-        vocals = vocals_a._data[..., 0]
+        vocals = vocals_a.data
     elif vocals_b is not None:
-        vocals = vocals_b._data[..., 0]
+        vocals = vocals_b.data
     else:
-        vocals = torch.empty_like(submitted_audio_a._data[..., 0])
+        vocals = torch.empty_like(submitted_audio_a.data)
 
     vocals_volume = vocals.square().mean().sqrt().item()
     vocals = (vocals * 0.1 / vocals_volume).clamp(-1, 1)
