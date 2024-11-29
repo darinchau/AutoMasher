@@ -225,10 +225,13 @@ def analyse_chord_transformer(audio: Audio, *, model_path: str = "./resources/ck
 
 def analyse_chord_features(audio: Audio, *, model_path: str = "./resources/ckpts/btc_model_large_voca.pt", use_loaded_model: bool = True) -> ContinuousLatentFeatures:
     _, features = inference(audio, model_path=model_path, use_loaded_model=use_loaded_model)
-    latent = torch.cat(features, dim = 0).cpu().numpy()
+    latent = torch.cat(features, dim = 1)[0].cpu().numpy()
     latent = np.array(latent, dtype=np.float32)
+
+    time_idx = int(audio.duration * 10.8)
+    latent = latent[:time_idx]
     return ChordFeatures(
         duration=audio.duration,
         features=latent,
-        times=np.arange(latent.shape[0]) / 10.8
+        times=np.arange(time_idx) / 10.8
     )
