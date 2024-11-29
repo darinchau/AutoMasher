@@ -1,11 +1,11 @@
 from __future__ import annotations
 from torch import Tensor
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar, Generic
 from dataclasses import dataclass
 from functools import lru_cache
 import numpy as np
 import librosa
-from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map
+from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map, get_chord_notes, get_chord_note_inv
 from ...audio import Audio
 import torch
 from numpy.typing import NDArray
@@ -13,7 +13,13 @@ import numpy as np
 import numba
 import json
 from ..dataset import DatasetEntry
-import re
+from abc import ABC, abstractmethod
+
+# The penalty score per bar for not having a chord
+NO_CHORD_PENALTY = 3
+
+# The penalty score per bar for having an unknown chord
+UNKNOWN_CHORD_PENALTY = 3
 
 @dataclass(frozen=True)
 class BeatAnalysisResult:
@@ -110,87 +116,116 @@ class BeatAnalysisResult:
             data = json.load(f)
         return cls.from_data(data["duration"], data["beats"], data["downbeats"])
 
-@dataclass(frozen=True)
-class KeyAnalysisResult:
-    """Has the following properties:
 
-    key_correlation: list[float] - The correlation of each key."""
-    key_correlation: tuple[float, ...]
-    chromagram: NDArray[np.float32]
+T = TypeVar("T")
+@dataclass(frozen=True)
+class DiscreteLatentFeatures(ABC, Generic[T]):
+    """A class that represents the latent features of a song"""
+    duration: float
+    features: NDArray[np.uint32]
+    times: NDArray[np.float64]
 
     def __post_init__(self):
-        assert len(self.key_correlation) == len(get_keys())
-        assert self.chromagram.shape[0] == 12
-        self.chromagram.flags.writeable = False
+        assert self.duration > 0
+        assert len(self.features.shape) == 2
+        assert self.features.shape[0] > 0
+        assert self.features.shape[1] == self.latent_dims()
+        assert np.all(self.features < self.latent_size())
+        assert self.features.dtype == np.uint32
+        assert isinstance(self.features, np.ndarray)
 
-    @property
-    def key(self):
-        return np.argmax(np.array(self.key_correlation)).item()
+        assert len(self.times.shape) == 1
+        assert self.times.shape[0] > 0
+        assert self.duration >= self.times[-1]
+        assert self.times[0] == 0
+        assert np.all(self.times[1:] >= self.times[:-1]), "Times must be sorted"
 
-    @property
-    def key_name(self):
-        return get_keys()[self.key]
+        assert self.features.shape[0] == self.times.shape[0]
 
-    def get_correlation(self, key: str):
-        assert key in get_keys()
-        return self.key_correlation[get_keys().index(key)]
+        self.features.flags.writeable = False
+        self.times.flags.writeable = False
 
-    def show_correlations(self):
-        for key, corr in zip(get_keys(), self.key_correlation):
-            print(f"{key}: {corr}")
+    @staticmethod
+    @abstractmethod
+    def latent_dims():
+        """The number of latent dimensions"""
+        raise NotImplementedError
 
-    def plot_chromagram(self):
-        import matplotlib.pyplot as plt
-        plt.imshow(self.chromagram, aspect='auto', origin='lower')
-        plt.show()
+    @staticmethod
+    @abstractmethod
+    def latent_size():
+        """The number of features of the latent space. Since it is discrete it should be finite"""
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def distance(a: int, b: int) -> float:
+        """The distance between two latent features"""
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def map_feature_index(x: int) -> T:
+        """Map the feature index to the latent space"""
+        raise NotImplementedError
+
+    def group(self):
+        """Group the latent features, and deletes duplicates."""
+        features = np.zeros_like(self.features)
+        times = np.zeros_like(self.times)
+        idx = 0
+        for i in range(self.features.shape[0]):
+            if idx == 0 or not np.all(self.features[i] == self.features[i-1]):
+                features[idx] = self.features[i]
+                times[idx] = self.times[i]
+                idx += 1
+        return self.__class__(self.duration, features[:idx], times[:idx])
+
+    def slice_seconds(self, start: float, end: float):
+        """Slice the chord analysis result by seconds and shifts the times to start from 0 includes start and excludes end"""
+        assert start >= 0
+        if abs(end - self.duration) < 1e-6 or end == -1:
+            end = self.duration
+        assert end > start and end <= self.duration
+        new_times, new_labels = _slice_features(self.times, self.features, start, end)
+        return self.__class__(end - start, new_labels, new_times)
+
+
 
 @dataclass(frozen=True)
-class ChordAnalysisResult:
+class ChordAnalysisResult(DiscreteLatentFeatures[str]):
     """A class with the following attributes:
 
     labels: list[int] - The chord labels for each frame
     chords: list[str] - The chord names. `chords[labels[i]]` is the chord name for the ith frame
     times: list[float] - The times of each frame"""
-    duration: float
-    labels: NDArray[np.uint8]
-    times: NDArray[np.float64]
+    @property
+    def labels(self):
+        return np.array(self.features[:, 0], dtype=np.uint8)
 
-    def __post_init__(self):
-        assert self.times[0] == 0, "First chord must appear at 0"
+    @staticmethod
+    def latent_dims():
+        return 1
 
-        chords = get_idx2voca_chord()
-        assert self.labels.shape[0] == self.times.shape[0]
-        assert np.all(self.labels < len(chords))
-        assert self.times.shape[0] > 0
-        assert self.duration >= self.times[-1]
+    @staticmethod
+    def latent_size():
+        return len(get_idx2voca_chord())
 
-        assert isinstance(self.labels, np.ndarray)
-        assert isinstance(self.times, np.ndarray)
-        assert self.labels.dtype == np.uint8
-        assert self.times.dtype == np.float64
+    @staticmethod
+    def distance(x: int, y: int):
+        x_idx = ChordAnalysisResult.map_feature_index(x)
+        y_idx = ChordAnalysisResult.map_feature_index(y)
+        dist, _ = _calculate_distance_of_two_chords(x_idx, y_idx)
+        return dist
 
-        # Check that the times are sorted
-        assert np.all(self.times[1:] >= self.times[:-1]), "Times must be sorted"
-
-        self.labels.flags.writeable = False
-        self.times.flags.writeable = False
+    @staticmethod
+    def map_feature_index(x: int) -> str:
+        return get_idx2voca_chord()[x]
 
     @classmethod
     def from_data(cls, duration: float, labels: list[int], times: list[float]):
         """Construct a ChordAnalysisResult from native python types. Should function identically as the old constructor."""
-        return cls(duration, np.array(labels, dtype=np.uint8), np.array(times, dtype=np.float64))
-
-    def group(self) -> ChordAnalysisResult:
-        """Group the chord analysis result by chord, and deletes the duplicate chords."""
-        labels = np.zeros_like(self.labels)
-        times = np.zeros_like(self.times)
-        idx = 0
-        for i in range(self.labels.shape[0]):
-            if idx == 0 or self.labels[i] != labels[idx - 1]:
-                labels[idx] = self.labels[i]
-                times[idx] = self.times[i]
-                idx += 1
-        return ChordAnalysisResult(self.duration, labels[:idx], times[:idx])
+        return cls(duration, np.array(labels, dtype=np.uint32)[:, None], np.array(times, dtype=np.float64))
 
     def grouped_end_times_labels(self):
         """Returns a tuple of grouped end times and grouped labels. This is mostly useful for dataset search"""
@@ -217,28 +252,6 @@ class ChordAnalysisResult:
         """A utility for getting the chord info for real-time display"""
         return list(zip(self.chords, self.times.tolist()))
 
-    def slice_seconds(self, start: float, end: float) -> ChordAnalysisResult:
-        """Slice the chord analysis result by seconds and shifts the times to start from 0
-        includes start and excludes end"""
-        assert start >= 0
-        if abs(end - self.duration) < 1e-6 or end == -1:
-            end = self.duration
-        assert end > start and end <= self.duration
-        new_times, new_labels = _slice_chord_result(self.times, self.labels, start, end)
-        return ChordAnalysisResult(end - start, new_labels, new_times)
-
-    def join(self, other: ChordAnalysisResult) -> ChordAnalysisResult:
-        """Join two chord analysis results. shift_amount is the amount to shift the times of the second chord analysis result by."""
-        shift_amount = self.duration
-        labels = np.concatenate([self.labels, other.labels])
-        times = np.concatenate([self.times, other.times + shift_amount])
-        return ChordAnalysisResult(self.duration + other.duration, labels, times)
-
-    def change_speed(self, speed: float) -> ChordAnalysisResult:
-        """Change the speed of the chord analysis result"""
-        times = self.times / speed
-        return ChordAnalysisResult(self.duration / speed, self.labels, times)
-
     def get_duration(self):
         return self.duration
 
@@ -255,7 +268,7 @@ class ChordAnalysisResult:
         voca = get_idx2voca_chord()
         inv_map = get_inv_voca_map()
         labels = [inv_map[transpose_chord(voca[label], semitones)] for label in self.labels]
-        np_labels = np.array(labels, dtype=np.uint8)
+        np_labels = np.array(labels, dtype=np.uint32)[:, None]
         return ChordAnalysisResult(self.duration, np_labels, self.times)
 
     @classmethod
@@ -279,12 +292,92 @@ class ChordAnalysisResult:
         return cls.from_data(data["duration"], data["labels"], data["times"])
 
 @numba.jit(nopython=True)
-def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], start: float, end: float):
-    """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
+def _slice_features(times: NDArray[np.float64], features: NDArray, start: float, end: float):
     start_idx = np.searchsorted(times, start, side='right') - 1
     end_idx = np.searchsorted(times, end, side='right')
     new_times = times[start_idx:end_idx] - start
     # Set the start to 0 if the first chord is before the start
     new_times[0] = 0.
-    new_labels = labels[start_idx:end_idx]
-    return new_times, new_labels
+    new_features = features[start_idx:end_idx]
+    return new_times, new_features
+
+# Gets the distance of two chords and the closest approximating chord
+def _calculate_distance_of_two_chords(chord1: str, chord2: str) -> tuple[int, str]:
+    """Gives an empirical score of the similarity of two chords. The lower the score, the more similar the chords are. The second value is the closest approximating chord."""
+    chord_notes_map = get_chord_notes()
+
+    assert chord1 in chord_notes_map, f"{chord1} not a recognised chord"
+    assert chord2 in chord_notes_map, f"{chord2} not a recognised chord"
+
+    match (chord1, chord2):
+        case ("No chord", "No chord"):
+            score, result = 0, "No chord"
+
+        case ("No chord", "Unknown"):
+            score, result = NO_CHORD_PENALTY, "Unknown"
+
+        case ("Unknown", "No chord"):
+            score, result = NO_CHORD_PENALTY, "Unknown"
+
+        case ("Unknown", "Unknown"):
+            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
+
+        case (_, "No chord"):
+            score, result = NO_CHORD_PENALTY, chord1
+
+        case (_, "Unknown"):
+            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
+
+        case ("No chord", _):
+            score, result = NO_CHORD_PENALTY, chord2
+
+        case ("Unknown", _):
+            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
+
+        case (_, _):
+            score, result = _distance_of_two_nonempty_chord(chord1, chord2)
+
+    assert result in chord_notes_map, f"{result} not a recognised chord"
+    return score, result
+
+# Gets the distance of two chords and the closest approximating chord
+def _distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
+    """Gives the distance between two non-empty chords and the closest approximating chord."""
+    chord_notes_map = get_chord_notes()
+    chord_notes_inv = get_chord_note_inv()
+
+    # Rule 0. If the chords are the same, distance is 0
+    if chord1 == chord2:
+        return 0, chord1
+
+    notes1 = chord_notes_map[chord1]
+    notes2 = chord_notes_map[chord2]
+
+    # Rule 1. If one chord is a subset of the other, distance is 0
+    if notes1 <= notes2:
+        return 1, chord2
+
+    if notes2 <= notes1:
+        return 1, chord1
+
+    # Rule 2. If the union of two chords is the same as the notes of one chord, distance is 1
+    notes_union = notes1 | notes2
+    if notes_union in chord_notes_inv:
+        return 1, chord_notes_inv[notes_union]
+
+    # Rule 3. If the union of two chords is the same as the notes of one chord, distance is the number of notes in the symmetric difference
+    diff = set(notes1) ^ set(notes2)
+    return len(diff), "Unknown"
+
+@lru_cache(maxsize=1)
+def _get_distance_array():
+    """Calculates the distance array for all chords. The distance array is a 2D array where the (i, j)th element is the distance between the ith and jth chords.
+    This will be cached and used for all future calculations."""
+    chord_mapping = get_idx2voca_chord()
+    n = len(chord_mapping)
+    distance_array = [[0] * n for _ in range(n)]
+
+    for i in range(n):
+        for j in range(n):
+            distance_array[i][j], _ = _calculate_distance_of_two_chords(chord_mapping[i], chord_mapping[j])
+    return np.array(distance_array, dtype = np.int32)

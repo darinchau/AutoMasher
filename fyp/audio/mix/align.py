@@ -6,6 +6,7 @@ from ..base.audio import Audio
 from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map, get_chord_note_inv
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
+from ..analysis.base import _get_distance_array
 from tqdm.auto import tqdm
 from threading import Thread
 from queue import Queue, Empty
@@ -19,12 +20,6 @@ import typing
 from ..dataset import SongDataset, DatasetEntry, SongGenre
 from ..dataset.create import get_normalized_chord_result
 from math import exp
-
-# The penalty score per bar for not having a chord
-NO_CHORD_PENALTY = 3
-
-# The penalty score per bar for having an unknown chord
-UNKNOWN_CHORD_PENALTY = 3
 
 @dataclass(frozen=True)
 class MashabilityResult:
@@ -85,87 +80,6 @@ class MashabilityList:
 def curve_score(score: float) -> float:
     """Returns the curve score"""
     return round(100 * exp(-.05 * score), 2)
-
-# Gets the distance of two chords and the closest approximating chord
-def _calculate_distance_of_two_chords(chord1: str, chord2: str) -> tuple[int, str]:
-    """Gives an empirical score of the similarity of two chords. The lower the score, the more similar the chords are. The second value is the closest approximating chord."""
-    chord_notes_map = get_chord_notes()
-
-    assert chord1 in chord_notes_map, f"{chord1} not a recognised chord"
-    assert chord2 in chord_notes_map, f"{chord2} not a recognised chord"
-
-    match (chord1, chord2):
-        case ("No chord", "No chord"):
-            score, result = 0, "No chord"
-
-        case ("No chord", "Unknown"):
-            score, result = NO_CHORD_PENALTY, "Unknown"
-
-        case ("Unknown", "No chord"):
-            score, result = NO_CHORD_PENALTY, "Unknown"
-
-        case ("Unknown", "Unknown"):
-            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
-
-        case (_, "No chord"):
-            score, result = NO_CHORD_PENALTY, chord1
-
-        case (_, "Unknown"):
-            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
-
-        case ("No chord", _):
-            score, result = NO_CHORD_PENALTY, chord2
-
-        case ("Unknown", _):
-            score, result = UNKNOWN_CHORD_PENALTY, "Unknown"
-
-        case (_, _):
-            score, result = _distance_of_two_nonempty_chord(chord1, chord2)
-
-    assert result in chord_notes_map, f"{result} not a recognised chord"
-    return score, result
-
-# Gets the distance of two chords and the closest approximating chord
-def _distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
-    """Gives the distance between two non-empty chords and the closest approximating chord."""
-    chord_notes_map = get_chord_notes()
-    chord_notes_inv = get_chord_note_inv()
-
-    # Rule 0. If the chords are the same, distance is 0
-    if chord1 == chord2:
-        return 0, chord1
-
-    notes1 = chord_notes_map[chord1]
-    notes2 = chord_notes_map[chord2]
-
-    # Rule 1. If one chord is a subset of the other, distance is 0
-    if notes1 <= notes2:
-        return 1, chord2
-
-    if notes2 <= notes1:
-        return 1, chord1
-
-    # Rule 2. If the union of two chords is the same as the notes of one chord, distance is 1
-    notes_union = notes1 | notes2
-    if notes_union in chord_notes_inv:
-        return 1, chord_notes_inv[notes_union]
-
-    # Rule 3. If the union of two chords is the same as the notes of one chord, distance is the number of notes in the symmetric difference
-    diff = set(notes1) ^ set(notes2)
-    return len(diff), "Unknown"
-
-@lru_cache(maxsize=1)
-def _get_distance_array():
-    """Calculates the distance array for all chords. The distance array is a 2D array where the (i, j)th element is the distance between the ith and jth chords.
-    This will be cached and used for all future calculations."""
-    chord_mapping = get_idx2voca_chord()
-    n = len(chord_mapping)
-    distance_array = [[0] * n for _ in range(n)]
-
-    for i in range(n):
-        for j in range(n):
-            distance_array[i][j], _ = _calculate_distance_of_two_chords(chord_mapping[i], chord_mapping[j])
-    return np.array(distance_array, dtype = np.int32)
 
 # Calculates the distance of chord results except we only put everything as np arrays for numba jit
 @numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.uint8[:], numba.uint8[:], numba.int32[:, :]), locals={

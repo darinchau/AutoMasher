@@ -38,7 +38,7 @@ def get_normalized_chord_result(cr: ChordAnalysisResult, br: BeatAnalysisResult)
             next_downbeat = downbeats[curr_downbeat_idx + 1]
         normalized_time = curr_downbeat_idx + (chord_times - curr_downbeat) / (next_downbeat - curr_downbeat)
         new_chord_times.append(normalized_time)
-    return ChordAnalysisResult(len(br.downbeats), cr.labels, np.array(new_chord_times, dtype=np.float64))
+    return ChordAnalysisResult(len(br.downbeats), cr.features, np.array(new_chord_times, dtype=np.float64))
 
 # Create a dataset entry from the given data
 def create_entry(length: float, beats: list[float], downbeats: list[float], chords: list[int], chord_times: list[float],
