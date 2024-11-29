@@ -22,32 +22,84 @@ NO_CHORD_PENALTY = 3
 UNKNOWN_CHORD_PENALTY = 3
 
 @dataclass(frozen=True)
-class BeatAnalysisResult:
-    """A class that represents the result of a beat analysis."""
+class OnsetFeatures:
+    """A class of features that represents segmentations over the song"""
     duration: float
-    beats: NDArray[np.float32]
-    downbeats: NDArray[np.float32]
+    onsets: NDArray[np.float32]
 
     def __post_init__(self):
-        assert len(self.beats) == 0 or self.duration >= self.beats[-1]
-        assert len(self.downbeats) == 0 or self.duration >= self.downbeats[-1]
-        assert isinstance(self.beats, np.ndarray)
-        assert isinstance(self.downbeats, np.ndarray)
-        assert self.beats.dtype == np.float32
-        assert self.downbeats.dtype == np.float32
+        assert len(self.onsets) == 0 or self.duration >= self.onsets[-1]
+        assert isinstance(self.onsets, np.ndarray)
+        assert self.onsets.dtype == np.float32
 
-        self.beats.flags.writeable = False
-        self.downbeats.flags.writeable = False
+        # Assert onsets are sorted by time
+        assert np.all(self.onsets[1:] >= self.onsets[:-1]), "Onsets must be sorted"
+
+        self.onsets.flags.writeable = False
 
     @property
     def tempo(self):
-        bpm = float(np.average(1 / (self.beats[1:] - self.beats[:-1]) * 60))
-        return bpm
+        """Returns the average onset per minute of the song"""
+        return float(np.average(1 / (self.onsets[1:] - self.onsets[:-1]) * 60))
+
+    @property
+    def nsegments(self):
+        """Returns the number of segments in the song"""
+        return self.onsets.shape[0]
+
+    def slice_seconds(self, start: float, end: float) -> OnsetFeatures:
+        """Slice the beat analysis result by seconds. includes start and excludes end"""
+        assert start >= 0.
+        if abs(end - self.duration) < 1e-6 or end == -1:
+            end = self.duration
+        assert end > start and end <= self.duration
+
+        beat_mask = (self.onsets >= start) & (self.onsets < end)
+        beats = self.onsets[beat_mask] - start
+
+        return OnsetFeatures(end - start, beats)
+
+    def change_speed(self, speed: float) -> OnsetFeatures:
+        """Change the speed of the beat analysis result"""
+        beats = self.onsets / speed
+        return OnsetFeatures(self.duration / speed, beats)
+
+    def make_click_track(self, audio: Audio, frequency: int = 1000) -> Audio:
+        click_track = librosa.clicks(times=self.onsets, sr=audio.sample_rate, length=audio.nframes, click_freq=frequency)
+
+        click_track = audio.numpy() * 0.5 + click_track
+        click_track = torch.tensor([click_track])
+        return Audio(click_track, audio.sample_rate)
+
+@dataclass(frozen=True)
+class BeatAnalysisResult:
+    """A class that represents the result of a beat analysis."""
+    _beats: OnsetFeatures
+    _downbeats: OnsetFeatures
+
+    @property
+    def duration(self):
+        return self._beats.duration
+
+    @property
+    def beats(self):
+        return self._beats.onsets
+
+    @property
+    def downbeats(self):
+        return self._downbeats.onsets
+
+    def __post_init__(self):
+        assert self._beats.onsets == self._downbeats.onsets
+
+    @property
+    def tempo(self):
+        return self._beats.tempo
 
     @property
     def nbars(self):
         """Returns the number of bars in the song"""
-        return self.downbeats.shape[0]
+        return self._downbeats.nsegments
 
     @classmethod
     def from_data_entry(cls, data_entry: DatasetEntry):
@@ -55,50 +107,23 @@ class BeatAnalysisResult:
 
     @classmethod
     def from_data(cls, duration: float, beats: list[float], downbeats: list[float]):
-        return cls(
-            duration,
-            np.array(beats, dtype=np.float32),
-            np.array(downbeats, dtype=np.float32)
-        )
+        _beats = OnsetFeatures(duration, np.array(beats, dtype=np.float32))
+        _downbeats = OnsetFeatures(duration, np.array(downbeats, dtype=np.float32))
+        return cls(_beats, _downbeats)
 
     def slice_seconds(self, start: float, end: float) -> BeatAnalysisResult:
         """Slice the beat analysis result by seconds. includes start and excludes end"""
-        assert start >= 0.
-        if abs(end - self.duration) < 1e-6 or end == -1:
-            end = self.duration
-        assert end > start and end <= self.duration
-
-        beat_mask = (self.beats >= start) & (self.beats < end)
-        beats = self.beats[beat_mask] - start
-
-        downbeat_mask = (self.downbeats >= start) & (self.downbeats < end)
-        downbeats = self.downbeats[downbeat_mask] - start
-
-        return BeatAnalysisResult(end - start, beats, downbeats)
+        return BeatAnalysisResult(
+            self._beats.slice_seconds(start, end),
+            self._downbeats.slice_seconds(start, end)
+        )
 
     def change_speed(self, speed: float) -> BeatAnalysisResult:
         """Change the speed of the beat analysis result"""
-        beats = self.beats / speed
-        downbeats = self.downbeats / speed
-        return BeatAnalysisResult(self.duration / speed, beats, downbeats)
-
-    def join(self, other: BeatAnalysisResult) -> BeatAnalysisResult:
-        """Join two beat analysis results. shift_amount is the amount to shift the times of the second beat analysis result by."""
-        shift_amount = self.duration
-        beats = np.concatenate([self.beats, other.beats + shift_amount])
-        downbeats = np.concatenate([self.downbeats, other.downbeats + shift_amount])
-        return BeatAnalysisResult(self.duration + other.duration, beats, downbeats)
-
-    def get_duration(self):
-        return self.duration
-
-    def make_click_track(self, audio: Audio):
-        click_track = librosa.clicks(times=self.beats, sr=audio.sample_rate, length=audio.nframes)
-        down_click_track = librosa.clicks(times=self.downbeats, sr=audio.sample_rate, length=audio.nframes, click_freq=1500)
-
-        click_track = audio.numpy() * 0.5 + click_track + down_click_track
-        click_track = torch.tensor([click_track])
-        return Audio(click_track, audio.sample_rate)
+        return BeatAnalysisResult(
+            self._beats.change_speed(speed),
+            self._downbeats.change_speed(speed)
+        )
 
     def save(self, path: str):
         json_dict = {
@@ -190,7 +215,53 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
         new_times, new_labels = _slice_features(self.times, self.features, start, end)
         return self.__class__(end - start, new_labels, new_times)
 
+@dataclass(frozen=True)
+class ContinuousLatentFeatures(ABC):
+    """A class that represents the continuous latent features of a song"""
+    duration: float
+    features: NDArray[np.float32]
+    times: NDArray[np.float64]
 
+    def __post_init__(self):
+        assert self.duration > 0
+        assert len(self.features.shape) == 2
+        assert self.features.shape[0] > 0
+        assert self.features.shape[1] == self.latent_dims()
+        assert self.features.dtype == np.float32
+        assert isinstance(self.features, np.ndarray)
+
+        assert len(self.times.shape) == 1
+        assert self.times.shape[0] > 0
+        assert self.duration >= self.times[-1]
+        assert self.times[0] == 0
+        assert np.all(self.times[1:] >= self.times[:-1]), "Times must be sorted"
+
+        assert self.features.shape[0] == self.times.shape[0]
+
+        self.features.flags.writeable = False
+        self.times.flags.writeable = False
+
+    @staticmethod
+    @abstractmethod
+    def latent_dims():
+        """The number of latent dimensions"""
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def distance(a: NDArray, b: NDArray) -> float:
+        """The distance between two latent features. Inputs should be two 1D latent feature vectors"""
+        raise NotImplementedError
+
+    def slice_seconds(self, start: float, end: float):
+        """Slice the chord analysis result by seconds and shifts the times to start from 0 includes start and excludes end"""
+        assert start >= 0
+        if abs(end - self.duration) < 1e-6 or end == -1:
+            end = self.duration
+        assert end > start and end <= self.duration
+        new_times, new_features = _slice_features(self.times, self.features, start, end)
+
+        return self.__class__(end - start, new_features, new_times)
 
 @dataclass(frozen=True)
 class ChordAnalysisResult(DiscreteLatentFeatures[str]):

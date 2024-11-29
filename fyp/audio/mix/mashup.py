@@ -84,7 +84,8 @@ def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_subm
     """Creates the song B components that ought to be used for mashup. This includes transposing the parts and aligning song B with song A
 
     Returns the song B parts that should be ready for mashup"""
-    assert isclose(song_b_submitted_parts.get_duration(), song_b_submitted_bt.get_duration(), abs_tol=1/44100), f"Song B parts duration {song_b_submitted_parts.get_duration()} does not match the beat analysis duration {song_b_submitted_bt.get_duration()}"
+    assert isclose(song_b_submitted_parts.get_duration(), song_b_submitted_bt.duration, abs_tol=1/44100), \
+        f"Song B parts duration {song_b_submitted_parts.get_duration()} does not match the beat analysis duration {song_b_submitted_bt.duration}"
 
     factors, boundaries = calculate_boundaries(song_a_submitted_bt, song_b_submitted_bt)
 
