@@ -6,7 +6,7 @@ from ..base.audio import Audio
 from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map, get_chord_note_inv
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
-from ..analysis.base import _get_distance_array
+from ..analysis.chord import _get_distance_array
 from tqdm.auto import tqdm
 from threading import Thread
 from queue import Queue, Empty

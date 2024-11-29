@@ -70,7 +70,7 @@ def get_model(model_path: str, device: torch.device, use_loaded_model: bool) -> 
     _BTC_MODEL = (model, config, mean, std)
     return _BTC_MODEL
 
-def inference(audio: Audio, model_path: str, *, use_loaded_model: bool = True) -> list[tuple[float, int]]:
+def inference(audio: Audio, model_path: str, *, use_loaded_model: bool = True) -> tuple[list[tuple[float, int]], list[torch.Tensor]]:
     """Main entry point. We will give you back list of triplets: (start, chord)"""
     # Handle audio and resample to the requied sr
     original_wav: np.ndarray = audio.resample(22050).numpy()
@@ -115,12 +115,14 @@ def inference(audio: Audio, model_path: str, *, use_loaded_model: bool = True) -
     # Inference
     start_time = 0.0
     lines: list[tuple[float, int]] = []
+    features = []
     with torch.no_grad():
         model.eval()
         feature = torch.tensor(feature, dtype=torch.float32).unsqueeze(0).to(device)
         prev_chord: int = -1
         for t in range(num_instance):
             self_attn_output, _ = model.self_attn_layers(feature[:, n_timestep * t:n_timestep * (t + 1), :])
+            features.append(self_attn_output)
             prediction, _ = model.output_layer(self_attn_output)
             prediction = prediction.squeeze()
             for i in range(n_timestep):
@@ -135,4 +137,4 @@ def inference(audio: Audio, model_path: str, *, use_loaded_model: bool = True) -
                     if start_time != time_unit * (n_timestep * t + i):
                         lines.append((start_time, prev_chord))
                     break
-    return lines
+    return lines, features
