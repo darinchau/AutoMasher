@@ -77,7 +77,10 @@ def get_url(link_or_video_id: str) -> YouTubeURL:
     This essentially normalizes the input to a YouTube URL."""
     if isinstance(link_or_video_id, YouTubeURL):
         return link_or_video_id
-    url_id = to_youtube(link_or_video_id).video_id
+    try:
+        url_id = to_youtube(link_or_video_id).video_id
+    except Exception as e:
+        raise ValueError(f"Invalid YouTube URL or video id: {link_or_video_id}") from e
     assert url_id is not None and len(url_id) == 11
     url = f"{YouTubeURL.URL_PREPEND}{url_id}"
     return YouTubeURL(url)
