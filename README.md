@@ -10,6 +10,9 @@
 # What is Auto Masher?
 Auto Masher is a research project that aims to create pop song mashups with AI-assisted music information retrieval and analysis. In this project, we have compiled a dataset of pop songs and their corresponding chords and beats. The user will submit a song from YouTube, and the pipeline will automatically find the best song to mashup with the user's song.
 
+Our technical paper "Retrieval-based automatic mashup generation with deep learning-guided features" has been accepted by the 25th International Congress on Acoustics/188th Meeting of the Acoustical
+Society of America (ICA2025 New Orleans)
+
 Auto Masher has been awarded the second-runner up in Best Final Year Project Award in the Department of Computer Science, HKUST in the year 2023-2024.
 
 # Installation
