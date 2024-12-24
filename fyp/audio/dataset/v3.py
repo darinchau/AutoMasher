@@ -342,13 +342,14 @@ class SongDatasetEncoder(BitsEncoder[SongDataset]):
         return dataset
 
 class FastSongDatasetEncoder(BitsEncoder[SongDataset]):
-    def __init__(self):
+    def __init__(self, compression_level: int = 9):
         self.checksum_encoder = Int32Encoder()
+        self.compression_level = compression_level
 
     def encode(self, data: SongDataset) -> Iterator[int]:
         import pickle
         b = pickle.dumps(data)
-        data_compressed = zlib.compress(b, level=9)
+        data_compressed = zlib.compress(b, level=self.compression_level)
         checksum = zlib.adler32(data_compressed)
         yield from self.checksum_encoder.encode(checksum)
         yield from data_compressed
