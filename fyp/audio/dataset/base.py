@@ -214,6 +214,3 @@ class SongDataset:
 
     def __repr__(self):
         return f"SongDataset({len(self)} entries)"
-
-    def keys(self) -> list[str]:
-        return sorted(self._data.keys())
