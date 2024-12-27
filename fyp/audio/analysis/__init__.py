@@ -14,6 +14,8 @@ from .chroma import (
     ChromaFunction
 )
 
+from .base import OnsetFeatures, DiscreteLatentFeatures, ContinuousLatentFeatures
+
 from .beat import BeatAnalysisResult
 from .chord import ChordAnalysisResult
 

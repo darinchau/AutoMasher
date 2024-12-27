@@ -13,6 +13,15 @@ _URL = re.compile(r"^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9-_]{11}$")
 class YouTubeURL(str):
     URL_PREPEND = "https://www.youtube.com/watch?v="
 
+    @staticmethod
+    def get_placeholder():
+        """Gets a placeholder YouTube URL for when you don't have/need a real one."""
+        return YouTubeURL("https://www.youtube.com/watch?v=placeholder")
+
+    @property
+    def is_placeholder(self):
+        return self == self.get_placeholder()
+
     def __new__(cls, value: str):
         if isinstance(value, cls):
             return value

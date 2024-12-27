@@ -1,17 +1,10 @@
 # The module that implements the mashability score
-from ...util.note import get_chord_notes
+import os
 from dataclasses import dataclass
 from typing import Any
-from ..base.audio import Audio
-from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map, get_chord_note_inv
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
-from ..analysis.chord import _get_distance_array
 from tqdm.auto import tqdm
-from threading import Thread
-from queue import Queue, Empty
-from typing import Callable
-from functools import lru_cache
 import numpy as np
 from numpy.typing import NDArray
 import numba
@@ -20,6 +13,16 @@ import typing
 from ..dataset import SongDataset, DatasetEntry, SongGenre
 from ..dataset.create import get_normalized_chord_result
 from math import exp
+from ..analysis.base import (
+    OnsetFeatures,
+    DiscreteLatentFeatures,
+    ContinuousLatentFeatures,
+    dist_discrete_latent_features,
+    _dist_discrete_latent,
+    dist_continuous_latent_features,
+)
+from ..analysis.chord import ChordAnalysisResult
+from functools import reduce
 
 @dataclass(frozen=True)
 class MashabilityResult:
@@ -43,7 +46,7 @@ class MashabilityResult:
     def __repr__(self):
         return f"MashabilityResult({self.url}/{self.start_bar}/{self.transpose})"
 
-MashabilityResultType = tuple[int, int, Any, DatasetEntry] # (start_bar, transpose, starting_downbeat, entry)
+MashabilityResultType = tuple[int, int, float, DatasetEntry] # (start_bar, transpose, starting_downbeat, entry)
 
 class MashabilityList:
     def __init__(self):
@@ -77,62 +80,16 @@ class MashabilityList:
                     break
         return results
 
-def curve_score(score: float) -> float:
-    """Returns the curve score"""
-    return round(100 * exp(-.05 * score), 2)
+def calculate_onset_boundaries(submitted_onset_result: OnsetFeatures, sample_onset_result: OnsetFeatures) -> tuple[list[float], list[float]]:
+    """Aligns sample_onset_result to submitted_onset_result, and returns the boundaries and factors"""
+    assert submitted_onset_result.onsets.shape[0] > 1, "There are not enough downbeat information about submitted song"
+    assert sample_onset_result.onsets.shape[0] > 1, "There are not enough downbeat information about sample song"
+    assert submitted_onset_result.onsets.shape[0] == sample_onset_result.onsets.shape[0], "The number of downbeats in submitted song and sample song are different"
+    assert submitted_onset_result.onsets[0] < 1e-5, "The first downbeat of submitted song is not at t=0"
+    assert sample_onset_result.onsets[0] < 1e-5, "The first downbeat of sample song is not at t=0"
 
-# Calculates the distance of chord results except we only put everything as np arrays for numba jit
-@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.uint8[:], numba.uint8[:], numba.int32[:, :]), locals={
-    "score": numba.float64,
-    "cumulative_duration": numba.float64,
-    "idx1": numba.int32,
-    "idx2": numba.int32,
-    "len_t1": numba.int32,
-    "len_t2": numba.int32,
-    "min_time": numba.float64,
-    "new_score": numba.float64
-},nopython=True)
-def _dist_chord_results(times1, times2, chords1, chords2, distances):
-    """A jitted version of the chord result distance calculation, which is defined to be the sum of distances times time
-    between the two chord results. The distance between two chords is defined to be the distance between the two chords.
-    Refer to our report for more detalis."""
-    score = 0
-    cumulative_duration = 0.
-
-    idx1 = 0
-    idx2 = 0
-    len_t1 = len(times1)
-    len_t2 = len(times2)
-
-    while idx1 < len_t1 and idx2 < len_t2:
-        # Find the duration of the next segment to calculate
-        min_time = min(times1[idx1], times2[idx2])
-
-        # Score = sum of (distance * duration)
-        # new_score = distances[label1[idx1]][label2[idx2]]
-        new_score = distances[chords1[idx1]][chords2[idx2]]
-        score += new_score * (min_time - cumulative_duration)
-        cumulative_duration = min_time
-
-        if times1[idx1] <= min_time:
-            idx1 += 1
-        if times2[idx2] <= min_time:
-            idx2 += 1
-    return score
-
-def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: BeatAnalysisResult) -> tuple[list[float], list[float]]:
-    """Calculates the boundaries and factors to align the beats of sample song to submitted song
-    Requires that t=0 are downbeats for both beat results
-    Assume submitted song has the same number of bars as sample song
-    the speed of the trailing segment of sample song will follow submitted song"""
-    assert beat_result.downbeats.shape[0] > 1, "There are not enough downbeat information about submitted song"
-    assert sample_beat_result.downbeats.shape[0] > 1, "There are not enough downbeat information about sample song"
-    assert beat_result.downbeats.shape[0] == sample_beat_result.downbeats.shape[0], "The number of downbeats in submitted song and sample song are different"
-    assert beat_result.downbeats[0] < 1e-5, "The first downbeat of submitted song is not at t=0"
-    assert sample_beat_result.downbeats[0] < 1e-5, "The first downbeat of sample song is not at t=0"
-
-    submitted_beat_times = np.append(beat_result.downbeats, beat_result.duration)
-    sample_beat_times = np.append(sample_beat_result.downbeats, sample_beat_result.duration)
+    submitted_beat_times = np.append(submitted_onset_result.onsets, submitted_onset_result.duration)
+    sample_beat_times = np.append(sample_onset_result.onsets, sample_onset_result.duration)
 
     orig_lengths = submitted_beat_times[1:] - submitted_beat_times[:-1]
     new_lengths = sample_beat_times[1:] - sample_beat_times[:-1]
@@ -141,11 +98,20 @@ def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: Be
 
     return factors.tolist(), boundaries.tolist()
 
-def get_valid_starting_points(music_duration: list[float],
-                              sample_downbeats: NDArray[np.float64],
-                              sample_beats: NDArray[np.float64],
+def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: BeatAnalysisResult) -> tuple[list[float], list[float]]:
+    """Calculates the boundaries and factors to align the beats of sample song to submitted song
+    Requires that t=0 are downbeats for both beat results
+    Assume submitted song has the same number of bars as sample song
+    the speed of the trailing segment of sample song will follow submitted song"""
+    return calculate_onset_boundaries(beat_result._downbeats, sample_beat_result._downbeats)
+
+@numba.njit
+def get_valid_starting_points(music_duration: NDArray[np.float64],
+                              sample_downbeats: NDArray[np.float32],
+                              sample_beats: NDArray[np.float32],
                               nbars: int,
-                              min_music_percentage: float) -> list[int]:
+                              min_music_percentage: float) -> NDArray[np.int64]:
+    """Get the valid starting points for the sample song to align with the submitted song"""
     cumulative_music_durations = np.cumsum(music_duration)
     cumulative_music_durations[nbars:] = cumulative_music_durations[nbars:] - cumulative_music_durations[:-nbars]
     cumulative_music_durations = cumulative_music_durations[nbars-1:-1]
@@ -162,65 +128,135 @@ def get_valid_starting_points(music_duration: list[float],
     # Find the indices where the sum of the music duration is greater than the minimum music duration
     # and satisfy the beat alignment
     valid_indices = np.where(good_music_duration & good_alignment)[0]
-    return valid_indices.tolist()
+    return valid_indices
 
-def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult,
-                            dataset: SongDataset,
-                            max_transpose: typing.Union[int, tuple[int, int]] = 3,
-                            min_music_percentage: float = 0.5,
-                            max_delta_bpm: float = 1.1,
-                            min_delta_bpm: float = 0.9,
-                            max_distance: float = float("inf"),
-                            keep_first_k: int = 10,
-                            filter_top_scores: bool = True,
-                            should_curve_score: bool = True,
-                            verbose: bool = True,
-        ) -> list[tuple[float, MashabilityResult]]:
+def calculate_mashability(
+        submitted_entry: DatasetEntry,
+        dataset: SongDataset,
+        submitted_features: list[DiscreteLatentFeatures | ContinuousLatentFeatures] | None = None,
+        features_fn: list[typing.Callable[[SongDataset, YouTubeURL, int], DiscreteLatentFeatures | ContinuousLatentFeatures]] | None = None,
+        weights: list[float] | None = None,
+        max_transpose: typing.Union[int, tuple[int, int]] = 3,
+        min_music_percentage: float = 0.5,
+        delta_bpm: tuple[float, float] = (0.9, 1.1),
+        max_distance: float = float("inf"),
+        keep_first_k: int = 10,
+        filter_top_scores: bool = True,
+        verbose: bool = True,
+    ) -> list[tuple[float, MashabilityResult]]:
     """Calculate the mashability of the submitted song with the dataset.
-    Assuming the chord result is always short enough
-    Assume t=0 is always a downbeat
-    Returns the best score and the best entry in the dataset."""
-    assert submitted_beat_result.downbeats is not None
-    assert submitted_beat_result.downbeats[0] == 0.
-    assert submitted_chord_result.duration == submitted_beat_result.duration
 
-    submitted_normalized_cr = get_normalized_chord_result(submitted_chord_result, submitted_beat_result)
+    Args:
+        submitted_entry: The downbeats of the submitted song
+        dataset: The dataset to compare the submitted song to
+        submitted_features: The latent features of the submitted song. If None, then we will calculate the latent features using the features_fn.
+            If the submitted_entry has the placeholder URL, this has to be provided
+        features_fn: A list of functions that takes in a SongDataset, a YouTubeURL, and a transposition and returns the latent features of the song
+            We will try to calculate everything in parallel - so please make sure that the functions are as efficient as possible and support
+            parallel computation
+        weights: The weights of the latent features. This weight should be relative to the chord result weight. If None, then all the weights are equal
+        max_transpose: The maximum number of semitones to transpose the sample song to match the submitted song
+        min_music_percentage: The minimum percentage of music that the sample song must have to be considered
+        delta_bpm: The minimum and maximum delta bpm between the sample song and the submitted song
+        max_distance: The maximum distance between the sample song and the submitted song. This allows early exit if the distance is too large
+            and may significantly speed up the calculation
+        keep_first_k: The number of top scores to keep in the returned results. This will in turn allow us to use a heap to keep track of the top scores
+        filter_top_scores: Whether to filter the top scores to only keep the top scores that are unique
+        verbose: Whether to print the progress bar
 
-    # Transpose the submitted chord result in the opposite direction to speed up calculation
-    transposed_crs: list[tuple[int, NDArray[np.float64], NDArray[np.uint8]]] = []
+    Returns:
+        A list of tuples containing the score and the MashabilityResult"""
+    # 0. Sanity check
+    nbars = len(submitted_entry.downbeats)
+
+    assert submitted_entry.downbeats.onsets[0] == 0.
+    assert submitted_entry.beats.onsets[0] == 0.
+    assert submitted_entry.downbeats.duration == submitted_entry.beats.duration
+
+    if features_fn is not None:
+        if weights is None:
+            weights = [1.] * len(features_fn)
+        assert len(weights) == len(features_fn), f"Length of weights and submitted_features must be the same. Got {len(weights)} and {len(features_fn)}"
+
+        if submitted_features is None:
+            if submitted_entry.url is None:
+                raise ValueError("If the submitted entry has a placeholder URL, then the submitted_features must be provided")
+            submitted_features = [fn(dataset, submitted_entry.url, 0) for fn in features_fn]
+    else:
+        features_fn = []
+        weights = []
+        submitted_features = []
+
+    # 1. Pretranspose the chord results
+    transposed_crs: list[tuple[int, NDArray[np.float64], NDArray[np.uint32]]] = []
     if isinstance(max_transpose, int):
         max_transpose = (-max_transpose, max_transpose)
     else:
         max_transpose = max_transpose
     for transpose_semitone in range(max_transpose[0], max_transpose[1] + 1):
-        new_chord_result = submitted_normalized_cr.transpose(-transpose_semitone)
-        times1, chords1 = new_chord_result.grouped_end_times_labels()
-        transposed_crs.append((transpose_semitone, times1, chords1))
+        new_chord_result = submitted_entry.chords.transpose(-transpose_semitone)
+        _, chords1 = new_chord_result.grouped_end_times_labels()
+        transposed_crs.append((transpose_semitone, submitted_entry.normalized_times, chords1))
 
-    # Precalculate chord distances as a numpy array to take advantage of jit
-    distances = _get_distance_array()
     scores = MashabilityList()
-    nbars = len(submitted_beat_result.downbeats)
 
-    # Initiate progress bar
+    # 2. Precalculate distance arrays
+    dist_arrays = [x.get_dist_array() if isinstance(x, DiscreteLatentFeatures) and x.latent_size() < 3000 else None for x in submitted_features]
+
+    # 2. Calculate the distance between the submitted song and the sample song for each song
+    #TODO - Implement the parallel version of this
+    chord_distances_array = ChordAnalysisResult.get_dist_array()
     for entry in tqdm(dataset, desc="Searching database", disable=not verbose):
-        sample_downbeats = np.array(entry.downbeats, dtype=np.float64)
-        sample_normalized_chords = np.array(entry.chords, dtype = np.uint8)
-        sample_normalized_chord_times = np.array(entry.normalized_chord_times, dtype = np.float64)
-        submitted_beat_times = np.append(submitted_beat_result.downbeats, submitted_beat_result.duration)
+        valid_start_points = get_valid_starting_points(
+            music_duration=np.array(entry.music_duration, dtype=np.float64),
+            sample_downbeats=entry.downbeats.onsets,
+            sample_beats=entry.beats.onsets,
+            nbars=nbars,
+            min_music_percentage=min_music_percentage
+        )
+
+        submitted_beat_times = np.append(submitted_entry.downbeats.onsets, submitted_entry.duration)
         submitted_beat_times_diff = submitted_beat_times[1:] - submitted_beat_times[:-1]
 
-        for i in get_valid_starting_points(entry.music_duration, sample_downbeats, np.array(entry.beats, dtype=np.float64), nbars, min_music_percentage):
-            is_bpm_within_tolerance = _calculate_tolerance(submitted_beat_times_diff, sample_downbeats, max_delta_bpm, min_delta_bpm, nbars, i)
+        for i in valid_start_points:
+            is_bpm_within_tolerance = _calculate_tolerance(
+                submitted_beat_times_diff,
+                entry.downbeats.onsets,
+                delta_bpm[1],
+                delta_bpm[0],
+                nbars,
+                i
+            )
             if not is_bpm_within_tolerance:
                 continue
 
-            times2, chords2 = _slice_chord_result(sample_normalized_chord_times, sample_normalized_chords, i, i+nbars)
-            starting_downbeat: float = sample_downbeats[i].item()
+            times2, chords2 = _slice_chord_result(entry.normalized_times, entry.chords.features, i, i+nbars)
+            starting_downbeat_time: float = entry.downbeats.onsets[i].item()
+            best_distance_for_current_song = max_distance
             for transpose_semitone, times1, chords1 in transposed_crs:
-                new_distance = _dist_chord_results(times1, times2, chords1, chords2, distances)
-                if new_distance > max_distance:
+                new_distance = _dist_discrete_latent(times1, times2, chords1, chords2, chord_distances_array)
+                if new_distance > best_distance_for_current_song:
                     continue
+
+                # Calculate the distance between the latent features
+                should_break = False
+                for i, (fn, feat, da, w) in enumerate(zip(features_fn, submitted_features, dist_arrays, weights)):
+                    feature = fn(dataset, entry.url, transpose_semitone)
+                    assert isinstance(feat, type(feature)) and isinstance(feature, type(feat)), f"Expected {type(feature)} for the {i}-th submitted feature, got {type(feat)}"
+                    if isinstance(feat, DiscreteLatentFeatures) and isinstance(feature, DiscreteLatentFeatures):
+                        new_distance += w * dist_discrete_latent_features(feat, feature, da)
+                    elif isinstance(feat, ContinuousLatentFeatures) and isinstance(feature, ContinuousLatentFeatures):
+                        new_distance += w * dist_continuous_latent_features(feat, feature)
+
+                    if new_distance > best_distance_for_current_song:
+                        should_break = True
+                        break
+                if should_break:
+                    continue
+
+                if filter_top_scores:
+                    best_distance_for_current_song = new_distance
+
                 # Use a tuple instead of a dataclass for now, will change it back to a dataclass in scores.get
                 # This is because using tuple literal syntax skips the step to find the dataclass constructor name
                 # in global scope. We profiled the code line by line and found this to save around 30% of runtime
@@ -228,19 +264,17 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
                 new_id = (
                     i,
                     transpose_semitone,
-                    starting_downbeat,
+                    starting_downbeat_time,
                     entry
                 )
                 scores.insert(new_distance, new_id)
     scores_list = scores.get(keep_first_k, filter_top_scores)
-
-    if should_curve_score:
-        scores_list = [(curve_score(x[0]), x[1]) for x in scores_list]
     return scores_list
 
 @numba.njit
-def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray, max_delta_bpm: float, min_delta_bpm: float, nbars: int, i: int):
-    """An optimized version of the calculate_tolerance function that, given the downbeats, finds if the sample downbeats are within the tolerance of the submitted downbeats.
+def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray, max_delta_bpm: float, min_delta_bpm: float, nbars: int, i: int) -> bool:
+    """An optimized version of the calculate_tolerance function that, given the submitted downbeats, finds if the
+    sample downbeats from bar i to bar i+nbar are within the BPM tolerance of the submitted downbeats.
     This does the slicing and everything in numpy, which is much faster than the original implementation."""
     downbeat_mask = (sample_downbeats >= sample_downbeats[i]) & (sample_downbeats < sample_downbeats[i+nbars])
     downbeats_ = sample_downbeats[downbeat_mask] - sample_downbeats[i]
@@ -250,7 +284,7 @@ def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray,
     return factors.max() <= max_delta_bpm and factors.min() >= min_delta_bpm
 
 @numba.jit(nopython=True)
-def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], start: float, end: float) -> tuple[NDArray[np.float64], NDArray[np.uint8]]:
+def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint32], start: float, end: float) -> tuple[NDArray[np.float64], NDArray[np.uint32]]:
     """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
     start_idx = np.searchsorted(times, start, side='right') - 1
     end_idx = np.searchsorted(times, end, side='right')
@@ -262,12 +296,3 @@ def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], s
     new_times[-1] = end - start
     new_labels = labels[start_idx:end_idx]
     return new_times, new_labels
-
-# Also export function for distance of chord results
-def distance_of_chord_results(submitted_chord_result: ChordAnalysisResult, sample_chord_result: ChordAnalysisResult) -> float:
-    """Calculate the distance between two chord results."""
-    assert submitted_chord_result.duration == sample_chord_result.duration
-    times1, chords1 = submitted_chord_result.grouped_end_times_labels()
-    times2, chords2 = sample_chord_result.grouped_end_times_labels()
-    distances = _get_distance_array()
-    return _dist_chord_results(times1, times2, chords1, chords2, distances)

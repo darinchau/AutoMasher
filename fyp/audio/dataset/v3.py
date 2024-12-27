@@ -6,7 +6,7 @@ import struct
 from abc import ABC, abstractmethod
 from typing import Iterator, TypeVar, Generic
 from .base import DatasetEntry, SongDataset, SongGenre
-from ...util import get_url
+from ...util import get_url, YouTubeURL
 from collections import Counter
 import numpy as np
 from math import ceil, exp
@@ -278,14 +278,14 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         self.int64_encoder = Int64Encoder()
 
     def encode(self, data: DatasetEntry) -> Iterator[int]:
-        yield from self.chord_labels_encoder.encode(data.chords)
-        yield from self.chord_time_encoder.encode(data.chord_times)
-        yield from self.beat_time_encoder.encode(data.downbeats)
-        yield from self.beat_time_encoder.encode(data.beats)
+        yield from self.chord_labels_encoder.encode(data.chords.features.tolist())
+        yield from self.chord_time_encoder.encode(data.chords.times.tolist())
+        yield from self.beat_time_encoder.encode(data.downbeats.onsets.tolist())
+        yield from self.beat_time_encoder.encode(data.beats.onsets.tolist())
         yield from self.string_encoder.encode(data.url.video_id)
         yield from self.genre_encoder.encode(data.genre)
         yield from self.int64_encoder.encode(data.views)
-        yield from self.float32_encoder.encode(data.length)
+        yield from self.float32_encoder.encode(data.duration)
 
     def decode(self, data: Iterator[int]) -> DatasetEntry:
         chords = self.chord_labels_encoder.decode(data)
@@ -310,7 +310,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
 
         return entry
 
-class SongDatasetEncoder(BitsEncoder[SongDataset]):
+class SongDatasetEncoder(BitsEncoder[dict[YouTubeURL, DatasetEntry]]):
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
         self.entry_encoder: BitsEncoder[DatasetEntry] = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
         self.int64_encoder = Int64Encoder()
@@ -327,39 +327,16 @@ class SongDatasetEncoder(BitsEncoder[SongDataset]):
         yield from self.checksum_encoder.encode(checksum)
         yield from data_compressed
 
-    def decode(self, data: Iterator[int]) -> SongDataset:
+    def decode(self, data: Iterator[int]) -> dict[YouTubeURL, DatasetEntry]:
         checksum = self.checksum_encoder.decode(data)
         data_compressed = bytes(data)
         if checksum != zlib.adler32(data_compressed):
             raise ValueError("Checksum mismatch")
         data_binary = zlib.decompress(data_compressed)
         data_binary = iter(data_binary)
-        dataset = SongDataset()
+        dataset: dict[YouTubeURL, DatasetEntry] = {}
         length = self.int64_encoder.decode(data_binary)
         for _ in range(length):
             entry = self.entry_encoder.decode(data_binary)
-            dataset.add_entry(entry)
+            dataset[entry.url] = entry
         return dataset
-
-class FastSongDatasetEncoder(BitsEncoder[SongDataset]):
-    def __init__(self, compression_level: int = 9):
-        self.checksum_encoder = Int32Encoder()
-        self.compression_level = compression_level
-
-    def encode(self, data: SongDataset) -> Iterator[int]:
-        import pickle
-        b = pickle.dumps(data)
-        data_compressed = zlib.compress(b, level=self.compression_level)
-        checksum = zlib.adler32(data_compressed)
-        yield from self.checksum_encoder.encode(checksum)
-        yield from data_compressed
-
-
-    def decode(self, data: Iterator[int]) -> SongDataset:
-        checksum = self.checksum_encoder.decode(data)
-        data_compressed = bytes(data)
-        if checksum != zlib.adler32(data_compressed):
-            raise ValueError("Checksum mismatch")
-        data_binary = zlib.decompress(data_compressed)
-        import pickle
-        return pickle.loads(data_binary)

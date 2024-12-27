@@ -6,7 +6,6 @@ from ...audio import Audio
 from .base import OnsetFeatures
 from dataclasses import dataclass
 import json
-from ..dataset import DatasetEntry
 from typing import Callable
 import numpy as np
 from .. import DemucsCollection
@@ -32,9 +31,6 @@ class BeatAnalysisResult:
     def downbeats(self):
         return self._downbeats.onsets
 
-    def __post_init__(self):
-        assert self._beats.onsets == self._downbeats.onsets
-
     @property
     def tempo(self):
         return self._beats.tempo
@@ -43,10 +39,6 @@ class BeatAnalysisResult:
     def nbars(self):
         """Returns the number of bars in the song"""
         return self._downbeats.nsegments
-
-    @classmethod
-    def from_data_entry(cls, data_entry: DatasetEntry):
-        return cls.from_data(data_entry.length, data_entry.beats, data_entry.downbeats)
 
     @classmethod
     def from_data(cls, duration: float, beats: list[float], downbeats: list[float]):

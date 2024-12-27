@@ -14,7 +14,7 @@ def get_music_duration(chord_result: ChordAnalysisResult):
     """Get the duration of actual music in the chord result. This is calculated by summing the duration of all chords that are not "No chord"."""
     music_duration = 0.
     times = chord_result.group().times + [chord_result.duration]
-    no_chord_idx = get_inv_voca_map()["No chord"]
+    no_chord_idx = ChordAnalysisResult.map_feature_name("No chord")
     for chord, start, end in zip(chord_result.labels, times[:-1], times[1:]):
         if chord != no_chord_idx:
             music_duration += end - start
@@ -58,6 +58,9 @@ def create_entry(length: float, beats: list[float], downbeats: list[float], chor
         chords = chord_result.labels.tolist()
         chord_times = chord_result.times.tolist()
 
+    #TODO
+    raise NotImplementedError("This is not implemented yet")
+
     return DatasetEntry(
         chords=chords,
         chord_times=chord_times,
@@ -66,7 +69,7 @@ def create_entry(length: float, beats: list[float], downbeats: list[float], chor
         genre=genre,
         url=url,
         views=views,
-        length=length,
+        duration=length,
         normalized_chord_times=normalized_cr.times.tolist(),
         music_duration=music_duration
     )

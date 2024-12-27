@@ -12,7 +12,6 @@ import json
 import numba
 from numpy.typing import NDArray
 from dataclasses import dataclass
-from ...audio.dataset import DatasetEntry
 
 # The penalty score per bar for not having a chord
 NO_CHORD_PENALTY = 3
@@ -29,26 +28,26 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
     times: list[float] - The times of each frame"""
     @property
     def labels(self):
-        return np.array(self.features[:, 0], dtype=np.uint8)
+        return np.array(self.features[:, 0], dtype=np.uint32)
 
-    @staticmethod
-    def latent_dims():
-        return 1
-
-    @staticmethod
-    def latent_size():
+    @classmethod
+    def latent_size(cls):
         return len(get_idx2voca_chord())
 
-    @staticmethod
-    def distance(x: int, y: int):
-        x_idx = ChordAnalysisResult.map_feature_index(x)
-        y_idx = ChordAnalysisResult.map_feature_index(y)
+    @classmethod
+    def distance(cls, x: int, y: int):
+        x_idx = cls.map_feature_index(x)
+        y_idx = cls.map_feature_index(y)
         dist, _ = _calculate_distance_of_two_chords(x_idx, y_idx)
         return dist
 
-    @staticmethod
-    def map_feature_index(x: int) -> str:
+    @classmethod
+    def map_feature_index(cls, x: int) -> str:
         return get_idx2voca_chord()[x]
+
+    @classmethod
+    def map_feature_name(cls, x: str) -> int:
+        return get_inv_voca_map()[x]
 
     @classmethod
     def from_data(cls, duration: float, labels: list[int], times: list[float]):
@@ -60,12 +59,14 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
         ct = self.group()
         end_times = ct.times
 
-        # Unlock the arrays is safe now because ct is a copy of self and is not shared with other objects
         ct.labels.flags.writeable = True
         ct.times.flags.writeable = True
 
         end_times[:-1] = end_times[1:]
         end_times[-1] = self.duration
+
+        ct.labels.flags.writeable = False
+        end_times.flags.writeable = False
         return end_times, ct.labels
 
     @property
@@ -98,10 +99,6 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
         labels = [inv_map[transpose_chord(voca[label], semitones)] for label in self.labels]
         np_labels = np.array(labels, dtype=np.uint32)[:, None]
         return ChordAnalysisResult(self.duration, np_labels, self.times)
-
-    @classmethod
-    def from_data_entry(cls, entry: DatasetEntry):
-        return cls.from_data(entry.length, entry.chords, entry.chord_times)
 
     def save(self, path: str):
         json_dict = {
@@ -195,19 +192,6 @@ def _distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]
     # Rule 3. If the union of two chords is the same as the notes of one chord, distance is the number of notes in the symmetric difference
     diff = set(notes1) ^ set(notes2)
     return len(diff), "Unknown"
-
-@lru_cache(maxsize=1)
-def _get_distance_array():
-    """Calculates the distance array for all chords. The distance array is a 2D array where the (i, j)th element is the distance between the ith and jth chords.
-    This will be cached and used for all future calculations."""
-    chord_mapping = get_idx2voca_chord()
-    n = len(chord_mapping)
-    distance_array = [[0] * n for _ in range(n)]
-
-    for i in range(n):
-        for j in range(n):
-            distance_array[i][j], _ = _calculate_distance_of_two_chords(chord_mapping[i], chord_mapping[j])
-    return np.array(distance_array, dtype = np.int32)
 
 def analyse_chord_transformer(audio: Audio, *, model_path: str = "./resources/ckpts/btc_model_large_voca.pt", use_loaded_model: bool = True) -> ChordAnalysisResult:
     results, _ = inference(audio, model_path=model_path, use_loaded_model=use_loaded_model)

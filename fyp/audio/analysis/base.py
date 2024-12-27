@@ -12,12 +12,12 @@ from numpy.typing import NDArray
 import numpy as np
 import numba
 import json
-from ..dataset import DatasetEntry
 from abc import ABC, abstractmethod
+import typing
 
 @dataclass(frozen=True)
 class OnsetFeatures:
-    """A class of features that represents segmentations over the song"""
+    """A class of features that represents segmentations over the song. The onsets are in seconds and marks the start of each segment"""
     duration: float
     onsets: NDArray[np.float32]
 
@@ -30,6 +30,9 @@ class OnsetFeatures:
         assert np.all(self.onsets[1:] >= self.onsets[:-1]), "Onsets must be sorted"
 
         self.onsets.flags.writeable = False
+
+    def __len__(self):
+        return self.onsets.shape[0]
 
     @property
     def tempo(self):
@@ -75,12 +78,12 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
 
     def __post_init__(self):
         assert self.duration > 0
-        assert len(self.features.shape) == 2
+        assert len(self.features.shape) == 1
         assert self.features.shape[0] > 0
-        assert self.features.shape[1] == self.latent_dims()
         assert np.all(self.features < self.latent_size())
         assert self.features.dtype == np.uint32
         assert isinstance(self.features, np.ndarray)
+        assert self.latent_size() > 0
 
         assert len(self.times.shape) == 1
         assert self.times.shape[0] > 0
@@ -93,29 +96,31 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
         self.features.flags.writeable = False
         self.times.flags.writeable = False
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def latent_dims():
-        """The number of latent dimensions"""
-        raise NotImplementedError
-
-    @staticmethod
-    @abstractmethod
-    def latent_size():
+    def latent_size(cls) -> int:
         """The number of features of the latent space. Since it is discrete it should be finite"""
         raise NotImplementedError
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def distance(a: int, b: int) -> float:
-        """The distance between two latent features"""
+    def distance(cls, a: int, b: int) -> float:
+        """The distance between two latent features. The inputs should be two latent feature indices"""
         raise NotImplementedError
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def map_feature_index(x: int) -> T:
+    def map_feature_index(cls, x: int) -> T:
         """Map the feature index to the latent space"""
         raise NotImplementedError
+
+    @classmethod
+    def map_feature_name(cls, x: T) -> int:
+        """Map the feature name to the latent space"""
+        for i in range(cls.latent_size()):
+            if cls.map_feature_index(i) == x:
+                return i
+        raise ValueError(f"Feature {x} not found in latent space")
 
     def group(self):
         """Group the latent features, and deletes duplicates."""
@@ -137,6 +142,17 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
         assert end > start and end <= self.duration
         new_times, new_labels = _slice_features(self.times, self.features, start, end)
         return self.__class__(end - start, new_labels, new_times)
+
+    @lru_cache(maxsize=1)
+    def get_dist_array(self):
+        """Get the distance array between all latent features"""
+        dist_array = np.zeros((self.latent_size(), self.latent_size()))
+        for i in range(self.latent_size()):
+            for j in range(self.latent_size()):
+                dist = self.distance(i, j)
+                assert dist >= 0, f"Distance between {i} and {j} is negative"
+                dist_array[i, j] = dist
+        return dist_array
 
 @dataclass(frozen=True)
 class ContinuousLatentFeatures(ABC):
@@ -195,3 +211,114 @@ def _slice_features(times: NDArray[np.float64], features: NDArray, start: float,
     new_times[0] = 0.
     new_features = features[start_idx:end_idx]
     return new_times, new_features
+
+@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.uint32[:], numba.uint32[:], numba.float64[:, :]), locals={
+    "score": numba.float64,
+    "cumulative_duration": numba.float64,
+    "idx1": numba.int32,
+    "idx2": numba.int32,
+    "len_t1": numba.int32,
+    "len_t2": numba.int32,
+    "min_time": numba.float64,
+    "new_score": numba.float64
+},nopython=True)
+def _dist_discrete_latent(times1: NDArray[np.float64], times2: NDArray[np.float64], chords1: NDArray[np.uint32], chords2: NDArray[np.uint32], distances: NDArray[np.float64]) -> float:
+    """A jitted version of the latent result distance calculation, which is defined to be the sum of distances times time
+    between the two latent feature. Refer to our report for more detalis."""
+    score = 0
+    cumulative_duration = 0.
+
+    idx1 = 0
+    idx2 = 0
+    len_t1 = len(times1)
+    len_t2 = len(times2)
+
+    while idx1 < len_t1 and idx2 < len_t2:
+        # Find the duration of the next segment to calculate
+        min_time = min(times1[idx1], times2[idx2])
+
+        # Score = sum of (distance * duration)
+        # new_score = distances[label1[idx1]][label2[idx2]]
+        new_score = distances[chords1[idx1]][chords2[idx2]]
+        score += new_score * (min_time - cumulative_duration)
+        cumulative_duration = min_time
+
+        if times1[idx1] <= min_time:
+            idx1 += 1
+        if times2[idx2] <= min_time:
+            idx2 += 1
+    return score
+
+F = typing.TypeVar('F', bound=DiscreteLatentFeatures)
+def dist_discrete_latent_features(a: F, b: F, dist_array: NDArray[np.float64] | None = None) -> float:
+    """Calculate the distance between two discrete latent features"""
+    if dist_array is not None:
+        # Use the jitted version to speed up the calculation
+        return _dist_discrete_latent(a.times, b.times, a.features, b.features, dist_array)
+
+    cumulative_duration = 0.
+
+    times1 = a.times
+    times2 = b.times
+
+    idx1 = 0
+    idx2 = 0
+    len_t1 = len(times1)
+    len_t2 = len(times2)
+
+    score_pair_weights = {}
+
+    while idx1 < len_t1 and idx2 < len_t2:
+        # Find the duration of the next segment to calculate
+        min_time: float = min(times1[idx1], times2[idx2])
+
+        # Score = sum of (distance * duration)
+        # Assuming symmetric zero distance - we can aggregate the calculations first
+        label1 = a.features[idx1].item()
+        label2 = b.features[idx2].item()
+        if label1 != label2:
+            if {label1, label2} not in score_pair_weights:
+                score_pair_weights[label1, label2] = 0
+            score_pair_weights[label1, label2] += min_time - cumulative_duration
+        cumulative_duration = min_time
+
+        if times1[idx1] <= min_time:
+            idx1 += 1
+        if times2[idx2] <= min_time:
+            idx2 += 1
+
+    score = 0.
+    for (label1, label2), weight in score_pair_weights.items():
+        score += a.distance(label1, label2) * weight
+    return score
+
+G = typing.TypeVar('G', bound=ContinuousLatentFeatures)
+def dist_continuous_latent_features(a: G, b: G) -> float:
+    """Calculate the distance between two discrete latent features"""
+    score = 0.
+    cumulative_duration = 0.
+
+    times1 = a.times
+    times2 = b.times
+
+    idx1 = 0
+    idx2 = 0
+    len_t1 = len(times1)
+    len_t2 = len(times2)
+
+    while idx1 < len_t1 and idx2 < len_t2:
+        # Find the duration of the next segment to calculate
+        min_time: float = min(times1[idx1], times2[idx2])
+
+        # Score = sum of (distance * duration)
+        # Assuming symmetric zero distance - we can aggregate the calculations first
+        label1 = a.features[idx1]
+        label2 = b.features[idx2]
+        score += a.distance(label1, label2) * (min_time - cumulative_duration)
+        cumulative_duration = min_time
+
+        if times1[idx1] <= min_time:
+            idx1 += 1
+        if times2[idx2] <= min_time:
+            idx2 += 1
+    return score

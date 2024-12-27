@@ -44,7 +44,6 @@ def get_inv_voca_map() -> dict[str, int]:
     inv_voca_map = {v: i for i, v in enumerate(idx2voca_chord)}
     return inv_voca_map
 
-@lru_cache(maxsize=1)
 def notes_to_idx(note: str):
     """Return the index given the note name. The index is the number of semitones from C."""
     mapping = {
@@ -68,7 +67,6 @@ def notes_to_idx(note: str):
     }
     return mapping[note]
 
-@lru_cache(maxsize=None)
 def idx_to_notes(idx: int):
     """Return the note name given the index. The index is the number of semitones from C."""
     mapping = {
@@ -87,36 +85,14 @@ def idx_to_notes(idx: int):
     }
     return mapping[idx % 12]
 
-@lru_cache(maxsize=128)
 def move_semitone(note: str, semitone: int):
     """Move a note by a number of semitones. Returns the new note. If the note is a black key, then the note is always sharp instead of flat."""
     return idx_to_notes(notes_to_idx(note) + semitone)
 
-def fix_enharmonic_equivs(mapping: dict[str, Any]):
-    """Add equivalent key names for enharmonics in the correlation dict and delete what doesnt make sense in music theory"""
-    # Major keys
-    mapping['Db major'] = mapping['C# major']
-    mapping['Eb major'] = mapping['D# major']
-    mapping['Gb major'] = mapping['F# major']
-    mapping['Ab major'] = mapping['G# major']
-    mapping['Bb major'] = mapping['A# major']
-    del mapping['D# major']
-    del mapping['G# major']
-    del mapping['A# major']
-
-    # Minor keys
-    mapping['Eb minor'] = mapping['D# minor']
-    mapping['Ab minor'] = mapping['G# minor']
-    mapping['Bb minor'] = mapping['A# minor']
-
-    return mapping
-
-@lru_cache(maxsize=1)
 def get_pitch_names():
     """All the pitch names in a 12-tone equal temperament system."""
     return ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
 
-@lru_cache(maxsize=1)
 def get_keys():
     """All 24 majors and minors"""
     return [
@@ -191,7 +167,7 @@ def get_chord_note_inv() -> dict[frozenset[str], str]:
     chord_notes_inv = {v: k for k, v in chord_notes_map.items()}
     return chord_notes_inv
 
-@lru_cache
+@lru_cache(maxsize=None)
 def get_chord_quality(chord: str) -> tuple[str, str]:
     """Get the quality of a chord. Returns (note, quality) string tuple"""
     assert chord in get_chord_notes(), f"{chord} not a recognised chord"
