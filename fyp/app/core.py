@@ -80,7 +80,6 @@ class MashupConfig:
     filter_uneven_bars_min_threshold: float = 0.9
     filter_uneven_bars_max_threshold: float = 1.1
     filter_short_song_bar_threshold: int = 12
-    filter_uncached: bool = False
 
     mashup_mode: MashupMode = MashupMode.NATURAL
     natural_drum_activity_threshold: float = 1
@@ -96,7 +95,7 @@ class MashupConfig:
     assert_audio_exists: bool = False # If true, assert that the audio exists in the dataset
 
     # The path of stuff should not be exposed to the user
-    _dataset_path: str = "resources/dataset"
+    dataset_path: str = "resources/dataset"
     _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
     _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
 
@@ -225,27 +224,20 @@ def validate_config(config: MashupConfig):
 def load_dataset(config: MashupConfig) -> SongDataset:
     """Load the dataset and apply the filters speciied by config."""
     dataset = SongDataset(
-        config._dataset_path,
+        config.dataset_path,
         load_on_the_fly=config.load_on_the_fly,
         assert_audio_exists=config.assert_audio_exists
     )
-    filters: list[Callable[[DatasetEntry], bool]] = []
 
     if config.filter_short_song_bar_threshold > 0:
-        filters.append(lambda x: len(x.downbeats) >= config.filter_short_song_bar_threshold)
+        dataset = dataset.filter(lambda x: len(x.downbeats) >= config.filter_short_song_bar_threshold)
 
     if config.filter_uneven_bars:
         def filter_func(x: DatasetEntry):
-            db = np.array(x.downbeats)
-            db_diff = np.diff(db)
+            db_diff = np.diff(x.downbeats.onsets)
             mean_diff = db_diff / np.mean(db_diff)
             return np.all((config.filter_uneven_bars_min_threshold < mean_diff) & (mean_diff < config.filter_uneven_bars_max_threshold)).item()
-        filters.append(filter_func)
-
-    if config.filter_uncached:
-        filters.append(lambda x: os.path.exists(dataset.get_audio_path(x.url)))
-
-    dataset = dataset.filter(lambda x: all(f(x) for f in filters))
+        dataset = dataset.filter(filter_func)
     return dataset
 
 def determine_slice_results(downbeats: OnsetFeatures, config: MashupConfig) -> tuple[OnsetFeatures, float, float]:
@@ -453,6 +445,8 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         dataset = dataset.filter(lambda x: x.url != link)
 
     assert isinstance(dataset, SongDataset)
+    if len(dataset) == 0:
+        raise InvalidMashup("No songs in the dataset.")
 
     write(f"Loaded dataset with {len(dataset)} songs.")
     write(f"Loading audio for song A from {link}...")

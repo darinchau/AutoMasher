@@ -56,6 +56,7 @@ def mashup(
     left_pan: float,
     save_original: bool,
     append_song_to_dataset: bool,
+    dataset_path: str
 ):
     mashup_mode_ = MashupMode.NATURAL if not mashup_mode.strip() else {
         v: k for k, v in get_mashup_mode_desc_map().items()
@@ -82,6 +83,7 @@ def mashup(
         append_song_to_dataset=append_song_to_dataset,
         load_on_the_fly=False,
         assert_audio_exists=False,
+        dataset_path=dataset_path,
     )
 
     if mashup_id and mashup_id != "Enter Mashup ID":
@@ -104,14 +106,15 @@ def mashup(
         print(traceback.format_exc())
         return gr.Textbox(f"Error: {e}"), None
 
-def get_audio_from_link(input_yt_link: str, starting_point: float):
+def get_audio_from_link(input_yt_link: str, starting_point: float, dataset_path: str):
     try:
         link = get_url(input_yt_link)
     except Exception as e:
         return gr.Textbox(f"Error: Invalid YouTube link ({e})"), None
 
     title = link.title
-    dataset = load_dataset(MashupConfig(1))
+    # Set load_on_the_fly to True to avoid loading the entire dataset into memory
+    dataset = load_dataset(MashupConfig(1, dataset_path = dataset_path, load_on_the_fly=True))
 
     try:
         audio = dataset.get_audio(link)
@@ -139,6 +142,7 @@ def app():
                 with gr.Column():
                     input_yt_link = gr.Textbox(
                         label="Input YouTube Link",
+                        value="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                         placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                         interactive=True,
                         info="Paste a YouTube link here to get started",
@@ -150,20 +154,26 @@ def app():
                         minimum=0,
                         info="Pick a complete verse, ideally at the start of the chorus, to get the best results",
                     )
+                    dataset_path = gr.Textbox(
+                        label="Dataset Path",
+                        interactive=True,
+                        value="D:/Repository/project-remucs/audio-infos-v3",
+                        info="The path to the dataset."
+                    )
+                with gr.Column():
                     title = gr.Textbox(
                         label="Video Title",
                         placeholder="Rick Astley - Never Gonna Give You Up",
                         interactive=False,
                         info="The title of the video will be displayed here",
                     )
-                with gr.Column():
                     input_audio = gr.Audio(label="Input Audio")
                     refresh_button = gr.Button(
                         "Refresh input audio", variant="primary",
                     )
                     refresh_button.click(
                         get_audio_from_link,
-                        [input_yt_link, starting_point],
+                        [input_yt_link, starting_point, dataset_path],
                         [title, input_audio],
                     )
             with gr.Accordion("Advanced Settings"):
@@ -335,6 +345,7 @@ def app():
                             left_pan,
                             save_original,
                             append_song_to_dataset,
+                            dataset_path
                         ],
                         [output_msg, output_audio],
                     )

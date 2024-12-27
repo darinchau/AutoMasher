@@ -316,10 +316,10 @@ class SongDatasetEncoder(BitsEncoder[dict[YouTubeURL, DatasetEntry]]):
         self.int64_encoder = Int64Encoder()
         self.checksum_encoder = Int32Encoder()
 
-    def encode(self, data: SongDataset) -> Iterator[int]:
+    def encode(self, data: dict[YouTubeURL, DatasetEntry]) -> Iterator[int]:
         def inner():
             yield from self.int64_encoder.encode(len(data))
-            for entry in data:
+            for entry in data.values():
                 yield from self.entry_encoder.encode(entry)
         data_binary = bytes(inner())
         data_compressed = zlib.compress(data_binary, level=9)

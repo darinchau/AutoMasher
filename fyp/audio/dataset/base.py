@@ -120,6 +120,7 @@ class SongDataset:
         if not os.path.exists(root):
             raise FileNotFoundError(f"Directory {root} does not exist")
 
+        print(f"Initializing dataset at {root}")
         self.root = root
         self.load_on_the_fly = load_on_the_fly
         self.assert_audio_exists = assert_audio_exists
@@ -130,15 +131,16 @@ class SongDataset:
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
 
-        self._encoder = DatasetEntryEncoder()
         self._data: dict[YouTubeURL, DatasetEntry] = {}
 
         # There may be extra data in the dataset in places other than the packed db - but that shouldnt matter
-        if os.path.exists(self.pack_path):
-            self._data = SongDatasetEncoder().read_from_path(os.path.join(self.root, "pack.db"))
-            self.load_on_the_fly = False
-        elif not load_on_the_fly:
-            self.load_from_directory()
+        if not self.load_on_the_fly:
+            if os.path.exists(self.pack_path):
+                self._data = SongDatasetEncoder().read_from_path(os.path.join(self.root, "pack.db"))
+            else:
+                self.load_from_directory()
+
+        print(f"Dataset initialized at {root}")
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
@@ -151,6 +153,9 @@ class SongDataset:
         if not os.path.exists(self.error_logs_path):
             with open(self.error_logs_path, "w") as f:
                 f.write("")
+
+        if not os.path.exists(self.parts_path):
+            os.makedirs(self.parts_path)
 
         if not os.path.exists(self.info_path):
             with open(self.info_path, "w") as f:
@@ -192,6 +197,9 @@ class SongDataset:
             if entry is None:
                 continue
             self._data[entry.url] = entry
+
+        if not os.path.isfile(self.pack_path):
+            self.pack()
 
     def write_error(self, error: str, e: Exception | None = None):
         print(f"Error: {error}")
@@ -235,6 +243,13 @@ class SongDataset:
     def parts_path(self):
         return os.path.join(self.root, "parts")
 
+    @property
+    def encoder(self):
+        if not hasattr(self, "_encoder"):
+            from .v3 import DatasetEntryEncoder
+            self._encoder = DatasetEntryEncoder()
+        return self._encoder
+
     def get_data_path(self, url: YouTubeURL):
         """Return the path to the datafile of the given url"""
         if url.is_placeholder:
@@ -254,47 +269,35 @@ class SongDataset:
         return os.path.join(self.parts_path, f"{url.video_id}.demucs")
 
     def get_by_url(self, url: YouTubeURL) -> DatasetEntry | None:
+        """Try to get the entry by url. If it does not exist, return None"""
         if url.is_placeholder:
             return None
         if url in self._data and all(f(self._data[url]) for f in self.filters):
             return self._data[url]
-        if self.load_on_the_fly:
-            file = self.get_data_path(url)
-            if not file.endswith(".dat3"):
+        file = self.get_data_path(url)
+        file_url = get_url(file[-16:-5])
+        if self.assert_audio_exists:
+            audio_path = self.get_audio_path(file_url)
+            if not os.path.isfile(audio_path):
                 return None
-            file_url = get_url(file[:-5])
-            if self.assert_audio_exists:
-                audio_path = self.get_audio_path(file_url)
-                if not os.path.isfile(audio_path):
-                    return None
-            try:
-                entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
-                if not all(f(entry) for f in self.filters):
-                    return None
-                return entry
-            except Exception as e:
-                self.write_error(f"Error reading {file}", e)
+        try:
+            entry = self.encoder.read_from_path(file)
+            if not all(f(entry) for f in self.filters):
                 return None
-        return None
+            return entry
+        except Exception as e:
+            self.write_error(f"Error reading {file}", e)
+            return None
 
     def __len__(self):
         return len(os.listdir(self.datafile_path)) if self.load_on_the_fly else len(self._data)
 
     def __iter__(self):
-        if self.load_on_the_fly:
-            for file in os.listdir(self.datafile_path):
-                try:
-                    entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
-                    if not all(f(entry) for f in self.filters):
-                        continue
-                    yield entry
-                except Exception as e:
-                    self.write_error(f"Error reading {file}", e)
-                    continue
-        else:
-            for entry in self._data.values():
-                if all(f(entry) for f in self.filters):
-                    yield entry
+        urls = [get_url(file[:-5]) for file in os.listdir(self.datafile_path)] if self.load_on_the_fly else self._data.keys()
+        for url in urls:
+            entry = self.get_by_url(url)
+            if entry is not None and all(f(entry) for f in self.filters):
+                yield entry
 
     def __contains__(self, url: YouTubeURL):
         return self.get_by_url(url) is not None
@@ -308,7 +311,7 @@ class SongDataset:
             self._data[entry.url] = entry
         path = os.path.join(self.datafile_path, f"{entry.url.video_id}.dat3")
         if not os.path.isfile(path):
-            self._encoder.write_to_path(entry, path)
+            self.encoder.write_to_path(entry, path)
 
     def filter(self, filter_func: Callable[[DatasetEntry], bool] | None):
         """Returns self with the filter applied lazily"""
@@ -387,6 +390,17 @@ class SongDataset:
             audio = self.get_audio(url)
             entry = create_entry(url, dataset=self, audio=audio)
         return entry
+
+    def pack(self):
+        """Packs the dataset into a single file"""
+        from .v3 import SongDatasetEncoder
+        data: dict[YouTubeURL, DatasetEntry] = {}
+        if self.load_on_the_fly:
+            for entry in self:
+                data[entry.url] = entry
+        else:
+            data = self._data
+        SongDatasetEncoder().write_to_path(data, self.pack_path)
 
 def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatures) -> NDArray[np.float64]:
     """Normalize the chord result with the beat result. This is done by retime the chord result as the number of downbeats."""
@@ -516,7 +530,7 @@ def create_entry(url: YouTubeURL, *,
     if duration is None:
         if audio is not None:
             duration = audio.duration
-        if chords is not None:
+        elif chords is not None:
             duration = chords.duration
         elif beats is not None:
             duration = beats.duration
@@ -528,7 +542,7 @@ def create_entry(url: YouTubeURL, *,
         else:
             raise ValueError("If duration is not provided, then either audio, chords, beats or downbeats must be provided to calculate the duration")
 
-    if chords is None and (chord_times is not None or chord_labels is not None):
+    if chords is None and (chord_times is None or chord_labels is None):
         assert audio is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
         if chord_model_path is not None:
             chords = analyse_chord_transformer(audio, model_path=chord_model_path)

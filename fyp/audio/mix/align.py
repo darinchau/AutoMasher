@@ -104,7 +104,6 @@ def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: Be
     the speed of the trailing segment of sample song will follow submitted song"""
     return calculate_onset_boundaries(beat_result._downbeats, sample_beat_result._downbeats)
 
-@numba.njit
 def get_valid_starting_points(music_duration: NDArray[np.float64],
                               sample_downbeats: NDArray[np.float64],
                               sample_beats: NDArray[np.float64],

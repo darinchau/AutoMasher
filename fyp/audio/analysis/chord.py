@@ -48,7 +48,7 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
     @classmethod
     def from_data(cls, duration: float, labels: list[int], times: list[float]):
         """Construct a ChordAnalysisResult from native python types. Should function identically as the old constructor."""
-        return cls(duration, np.array(labels, dtype=np.uint32)[:, None], np.array(times, dtype=np.float64))
+        return cls(duration, np.array(labels, dtype=np.uint32), np.array(times, dtype=np.float64))
 
     def grouped_end_times_labels(self):
         """Returns a tuple of grouped end times and grouped labels. This is mostly useful for dataset search"""
@@ -93,7 +93,7 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
         voca = get_idx2voca_chord()
         inv_map = get_inv_voca_map()
         labels = [inv_map[transpose_chord(voca[label], semitones)] for label in self.features]
-        np_labels = np.array(labels, dtype=np.uint32)[:, None]
+        np_labels = np.array(labels, dtype=np.uint32)
         return ChordAnalysisResult(self.duration, np_labels, self.times)
 
     def save(self, path: str):

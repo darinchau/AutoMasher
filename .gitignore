@@ -77,10 +77,9 @@ nohup.out
 !resources/report.pdf
 !resources/dataset/
 !resources/ckpts
-!resources/dataset/*
+resources/dataset/*
 resources/dataset/*/
-resources/dataset/audio-infos-v2.1.db
-resources/dataset/*.fast.db
+!resources/dataset/dataset-v3.db
 
 *.ipynb
 !demo.ipynb

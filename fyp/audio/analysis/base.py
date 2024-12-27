@@ -143,13 +143,14 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
         new_times, new_labels = _slice_features(self.times, self.features, start, end)
         return self.__class__(end - start, new_labels, new_times)
 
+    @classmethod
     @lru_cache(maxsize=1)
-    def get_dist_array(self):
+    def get_dist_array(cls):
         """Get the distance array between all latent features"""
-        dist_array = np.zeros((self.latent_size(), self.latent_size()))
-        for i in range(self.latent_size()):
-            for j in range(self.latent_size()):
-                dist = self.distance(i, j)
+        dist_array = np.zeros((cls.latent_size(), cls.latent_size()))
+        for i in range(cls.latent_size()):
+            for j in range(cls.latent_size()):
+                dist = cls.distance(i, j)
                 assert dist >= 0, f"Distance between {i} and {j} is negative"
                 dist_array[i, j] = dist
         return dist_array
@@ -212,17 +213,8 @@ def _slice_features(times: NDArray[np.float64], features: NDArray, start: float,
     new_features = features[start_idx:end_idx]
     return new_times, new_features
 
-@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.uint32[:], numba.uint32[:], numba.float64[:, :]), locals={
-    "score": numba.float64,
-    "cumulative_duration": numba.float64,
-    "idx1": numba.int32,
-    "idx2": numba.int32,
-    "len_t1": numba.int32,
-    "len_t2": numba.int32,
-    "min_time": numba.float64,
-    "new_score": numba.float64
-},nopython=True)
-def _dist_discrete_latent(times1: NDArray[np.float64], times2: NDArray[np.float64], chords1: NDArray[np.uint32], chords2: NDArray[np.uint32], distances: NDArray[np.float64]) -> float:
+@numba.njit
+def _dist_discrete_latent(times1, times2, chords1, chords2, distances) -> float:
     """A jitted version of the latent result distance calculation, which is defined to be the sum of distances times time
     between the two latent feature. Refer to our report for more detalis."""
     score = 0
