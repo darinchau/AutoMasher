@@ -77,7 +77,10 @@ def mashup(
         filter_short_song_bar_threshold=filter_short_song_bar_threshold_input,
         left_pan=left_pan,
         _verbose=True,
-        save_original=save_original
+        save_original=save_original,
+        append_song_to_dataset=True,
+        load_on_the_fly=False,
+        assert_audio_exists=False,
     )
 
     if mashup_id and mashup_id != "Enter Mashup ID":

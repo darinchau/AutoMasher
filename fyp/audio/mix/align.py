@@ -149,7 +149,7 @@ def calculate_mashability(
         submitted_entry: The downbeats of the submitted song
         dataset: The dataset to compare the submitted song to
         submitted_features: The latent features of the submitted song. If None, then we will calculate the latent features using the features_fn.
-            If the submitted_entry has the placeholder URL, this has to be provided
+            If the submitted_entry has the placeholder URL and features_fn is not None, this has to be provided
         features_fn: A list of functions that takes in a SongDataset, a YouTubeURL, and a transposition and returns the latent features of the song
             We will try to calculate everything in parallel - so please make sure that the functions are as efficient as possible and support
             parallel computation
@@ -178,7 +178,7 @@ def calculate_mashability(
         assert len(weights) == len(features_fn), f"Length of weights and submitted_features must be the same. Got {len(weights)} and {len(features_fn)}"
 
         if submitted_features is None:
-            if submitted_entry.url is None:
+            if submitted_entry.url.is_placeholder:
                 raise ValueError("If the submitted entry has a placeholder URL, then the submitted_features must be provided")
             submitted_features = [fn(dataset, submitted_entry.url, 0) for fn in features_fn]
     else:

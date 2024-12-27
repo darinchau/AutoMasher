@@ -88,7 +88,6 @@ class DatasetEntry:
         return f"DatasetEntry([{self.url.video_id}])"
 
 # Provides a unified directory structure and API that defines a AutoMasher v3 dataset
-#TODO avoid saving the placeholder URL
 class SongDataset:
     """New in v3
 
@@ -124,6 +123,7 @@ class SongDataset:
         self.root = root
         self.load_on_the_fly = load_on_the_fly
         self.assert_audio_exists = assert_audio_exists
+        self.filters: list[Callable[[DatasetEntry], bool]] = []
 
         self.init_directory_structure()
         directory_invalid_reason = self._check_directory_structure()
@@ -136,9 +136,9 @@ class SongDataset:
         # There may be extra data in the dataset in places other than the packed db - but that shouldnt matter
         if os.path.exists(self.pack_path):
             self._data = SongDatasetEncoder().read_from_path(os.path.join(self.root, "pack.db"))
-
-        if not load_on_the_fly:
-            self._load_from_directory()
+            self.load_on_the_fly = False
+        elif not load_on_the_fly:
+            self.load_from_directory()
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
@@ -184,8 +184,9 @@ class SongDataset:
             if not file.endswith(".demucs"):
                 return f"Invalid parts: {file}"
 
-    def _load_from_directory(self):
-        for file in os.listdir(self.datafile_path):
+    def load_from_directory(self, verbose: bool = True):
+        """Reloads the dataset from the directory into memory"""
+        for file in tqdm(os.listdir(self.datafile_path), desc="Loading dataset", disable=not verbose):
             url = get_url(file[:-5])
             entry = self.get_by_url(url)
             if entry is None:
@@ -236,18 +237,26 @@ class SongDataset:
 
     def get_data_path(self, url: YouTubeURL):
         """Return the path to the datafile of the given url"""
+        if url.is_placeholder:
+            raise ValueError("Cannot get data path for placeholder url")
         return os.path.join(self.datafile_path, f"{url.video_id}.dat3")
 
     def get_audio_path(self, url: YouTubeURL):
         """Return the path to the audio file of the given url"""
+        if url.is_placeholder:
+            raise ValueError("Cannot get audio path for placeholder url")
         return os.path.join(self.audio_path, f"{url.video_id}.mp3")
 
     def get_parts_path(self, url: YouTubeURL):
         """Return the path to the parts file of the given url"""
+        if url.is_placeholder:
+            raise ValueError("Cannot get parts path for placeholder url")
         return os.path.join(self.parts_path, f"{url.video_id}.demucs")
 
     def get_by_url(self, url: YouTubeURL) -> DatasetEntry | None:
-        if url in self._data:
+        if url.is_placeholder:
+            return None
+        if url in self._data and all(f(self._data[url]) for f in self.filters):
             return self._data[url]
         if self.load_on_the_fly:
             file = self.get_data_path(url)
@@ -260,6 +269,8 @@ class SongDataset:
                     return None
             try:
                 entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
+                if not all(f(entry) for f in self.filters):
+                    return None
                 return entry
             except Exception as e:
                 self.write_error(f"Error reading {file}", e)
@@ -274,17 +285,21 @@ class SongDataset:
             for file in os.listdir(self.datafile_path):
                 try:
                     entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
+                    if not all(f(entry) for f in self.filters):
+                        continue
                     yield entry
                 except Exception as e:
                     self.write_error(f"Error reading {file}", e)
                     continue
         else:
-            yield from self._data.values()
+            for entry in self._data.values():
+                if all(f(entry) for f in self.filters):
+                    yield entry
 
     def __contains__(self, url: YouTubeURL):
         return self.get_by_url(url) is not None
 
-    def add_entry(self, entry: DatasetEntry):
+    def save_entry(self, entry: DatasetEntry):
         """This adds an entry to the dataset and checks for the presence of audio"""
         audio_path = self.get_audio_path(entry.url)
         if self.assert_audio_exists and not os.path.isfile(audio_path):
@@ -296,14 +311,11 @@ class SongDataset:
             self._encoder.write_to_path(entry, path)
 
     def filter(self, filter_func: Callable[[DatasetEntry], bool] | None):
-        """Returns a new dataset with the entries that satisfy the filter function. If filter_func is None, return yourself"""
-        raise NotImplementedError   # TODO
-
-    @property
-    def urls(self):
-        if self.load_on_the_fly:
-            return [get_url(file[:-5]) for file in os.listdir(self.datafile_path)]
-        return list(self._data.keys())
+        """Returns self with the filter applied lazily"""
+        if filter_func is None:
+            return self
+        self.filters.append(filter_func)
+        return self
 
     def __repr__(self):
         return f"LocalSongDataset(at: {self.root}, {len(self)} entries)"
@@ -346,6 +358,8 @@ class SongDataset:
         return set(infos)
 
     def get_audio(self, url: YouTubeURL) -> Audio:
+        if url.is_placeholder:
+            raise ValueError("Cannot get audio for placeholder url")
         if os.path.isfile(self.get_audio_path(url)):
             return Audio.load(self.get_audio_path(url))
         # Save and reload to ensure consistency
@@ -355,6 +369,8 @@ class SongDataset:
         return audio
 
     def get_parts(self, url: YouTubeURL) -> DemucsCollection:
+        if url.is_placeholder:
+            raise ValueError("Cannot get parts for placeholder url")
         if os.path.isfile(self.get_parts_path(url)):
             return DemucsCollection.load(self.get_parts_path(url))
         # Save and reload to ensure consistency
@@ -364,11 +380,12 @@ class SongDataset:
         return parts
 
     def get_or_create_entry(self, url: YouTubeURL) -> DatasetEntry:
+        if url.is_placeholder:
+            raise ValueError("Cannot get or create entry for placeholder url")
         entry = self.get_by_url(url)
         if entry is None:
             audio = self.get_audio(url)
             entry = create_entry(url, dataset=self, audio=audio)
-            self.add_entry(entry)
         return entry
 
 def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatures) -> NDArray[np.float64]:

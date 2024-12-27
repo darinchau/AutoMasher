@@ -92,6 +92,8 @@ class MashupConfig:
     save_original: bool = False # If true, save the original audio in resources/mashups/<mashup_id>
 
     append_song_to_dataset: bool = False # If true, append the song to the dataset after the search
+    load_on_the_fly: bool = False # If true, load the entries on the fly instead of loading everything at once
+    assert_audio_exists: bool = False # If true, assert that the audio exists in the dataset
 
     # The path of stuff should not be exposed to the user
     _dataset_path: str = "resources/dataset"
@@ -101,6 +103,8 @@ class MashupConfig:
     _verbose: bool = False
     _skip_mashup: bool = False
     _max_show_results: int = 5 # Maximum number of results to show in the demo message box
+
+_MASHUP_ID_CUSTOM_AUDIO_PREPEND = "custom_aud+"
 
 @dataclass(frozen=True)
 class MashupID:
@@ -114,16 +118,23 @@ class MashupID:
         song_a_start_time_str = str(int(self.song_a_start_time * 1000)).rjust(6, "0")
         song_b_start_bar_str = str(self.song_b_start_bar).rjust(3, "0")
         transpose_str = str(self.transpose + 6).rjust(2, "0")
-        id = f"{self.song_a.video_id}{song_a_start_time_str}{self.song_b.video_id}{song_b_start_bar_str}{transpose_str}"
+        if self.song_a.is_placeholder:
+            id = _MASHUP_ID_CUSTOM_AUDIO_PREPEND
+        else:
+            id = f"{self.song_a.video_id}"
+        id += f"{song_a_start_time_str}{self.song_b.video_id}{song_b_start_bar_str}{transpose_str}"
         assert len(id) == 33
         return id
 
     @classmethod
     def from_string(cls, st: str):
-        assert len(st) == 33
-        song_a = YouTubeURL(get_url(st[:11]))
+        assert len(st) == 33, "Invalid mashup ID length."
+        if st.startswith(_MASHUP_ID_CUSTOM_AUDIO_PREPEND):
+            raise ValueError("Mashup ID is not valid for custom audio.")
+
+        song_a = get_url(st[:11])
         song_a_start_time = int(st[11:17]) / 1000
-        song_b = YouTubeURL(get_url(st[17:28]))
+        song_b = get_url(st[17:28])
         song_b_start_bar = int(st[28:31])
         transpose = int(st[31:33]) - 6
         return cls(song_a, song_a_start_time, song_b, song_b_start_bar, transpose)
@@ -213,7 +224,11 @@ def validate_config(config: MashupConfig):
 
 def load_dataset(config: MashupConfig) -> SongDataset:
     """Load the dataset and apply the filters speciied by config."""
-    dataset = SongDataset(config._dataset_path)
+    dataset = SongDataset(
+        config._dataset_path,
+        load_on_the_fly=config.load_on_the_fly,
+        assert_audio_exists=config.assert_audio_exists
+    )
     filters: list[Callable[[DatasetEntry], bool]] = []
 
     if config.filter_short_song_bar_threshold > 0:
@@ -415,6 +430,10 @@ def mashup_from_id(mashup_id_str: str, config: MashupConfig | None = None, datas
     )
 
     save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
+
+    if config.append_song_to_dataset:
+        write("Appending song to dataset...")
+        dataset.save_entry(submitted_entry_a)
     return mashup
 
 def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | None = None) -> tuple[Audio, list[tuple[float, MashabilityResult]], str]:
@@ -514,4 +533,90 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
     )
 
     save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
+    if config.append_song_to_dataset:
+        write("Appending song to dataset...")
+        dataset.save_entry(song_a_entry)
+    return mashup, scores, system_messages
+
+def mashup_from_audio(audio: Audio, config: MashupConfig):
+    """Performs a mashup from an audio file."""
+    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
+    write(f"Creating mashup from audio")
+
+    write("Analyzing audio...")
+    song_a_entry = create_entry(
+        url=YouTubeURL.get_placeholder(),
+        audio = audio,
+        chord_model_path=config._chord_model_path,
+        beat_model_path=config._beat_model_path,
+    )
+
+    write("Determining slice results...")
+    song_a_downbeats, slice_start_a, slice_end_a = determine_slice_results(song_a_entry.downbeats, config)
+    assert slice_start_a >= 0, "Starting point must be >= 0"
+    write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
+
+    # Prepare the entry to calculate the mashability
+    submitted_entry = create_entry(
+        url=YouTubeURL.get_placeholder(),
+        beats = song_a_entry.beats.slice_seconds(slice_start_a, slice_end_a),
+        downbeats = song_a_downbeats,
+        chords = song_a_entry.chords.slice_seconds(slice_start_a, slice_end_a),
+    )
+
+    dataset = load_dataset(config)
+
+    # Create the mashup
+    write("Performing search...")
+    write(str(config))
+    scores = calculate_mashability(
+        submitted_entry,
+        dataset,
+        max_transpose=config.max_transpose,
+        min_music_percentage=config.min_music_percentage,
+        delta_bpm=(config.min_delta_bpm, config.max_delta_bpm),
+        max_distance=config.max_distance,
+        keep_first_k=config.keep_first_k_results,
+        filter_top_scores=config.filter_first,
+        verbose=config._verbose,
+    )
+
+    if len(scores) == 0:
+        raise InvalidMashup("No suitable songs found in the dataset.")
+    write(f"Got {len(scores)} results.")
+
+    best_result_idx = 0
+    best_result = scores[best_result_idx][1]
+
+    a_audio = audio.slice_seconds(slice_start_a, slice_end_a)
+
+    if config._skip_mashup:
+        return a_audio, scores, "Skipped mashup"
+
+    # Create mashup
+    submitted_audio_a, submitted_audio_b, mashup = create_mash(
+        dataset,
+        a_audio,
+        song_a_entry,
+        DemucsAudioSeparator().separate(a_audio),
+        best_result.url,
+        best_result.start_bar,
+        best_result.transpose,
+        config,
+    )
+
+    mashup_id = MashupID(
+        song_a=YouTubeURL.get_placeholder(),
+        song_a_start_time=config.starting_point,
+        song_b=best_result.url,
+        song_b_start_bar=best_result.start_bar,
+        transpose=best_result.transpose,
+    )
+
+    system_messages = get_search_result_log(YouTubeURL.get_placeholder(), config, slice_start_a, scores, best_result_idx, best_result, verbose = config._verbose)
+
+    save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
+    if config.append_song_to_dataset:
+        write("Appending song to dataset...")
+        dataset.save_entry(song_a_entry)
     return mashup, scores, system_messages
