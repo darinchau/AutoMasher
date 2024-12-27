@@ -294,6 +294,20 @@ class LocalSongDataset(SongDataset):
             with open(self.info_path, "w") as f:
                 json.dump({}, f)
 
+    def clean_directory(self) -> list[str]:
+        """Ensures the all audios have corresponding datafiles and vice versa. Returns a list of paths to remove"""
+        audio_files = {file[:-4] for file in os.listdir(self.audio_path)}
+        data_files = {file[:-5] for file in os.listdir(self.datafile_path)}
+
+        paths_to_remove = []
+
+        for file in audio_files - data_files:
+            paths_to_remove.append(os.path.join(self.audio_path, file + ".mp3"))
+        for file in data_files - audio_files:
+            paths_to_remove.append(os.path.join(self.datafile_path, file + ".dat3"))
+
+        return paths_to_remove
+
     def _check_directory_structure(self) -> str | None:
         """Checks if the files in the respective directories are correct"""
         for file in os.listdir(self.datafile_path):
