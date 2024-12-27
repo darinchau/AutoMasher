@@ -137,6 +137,12 @@ def verify_beats_result(br: BeatAnalysisResult, length: float, video_url: YouTub
     if len(br.downbeats) == 0 or br.downbeats[-1] >= length:
         return f"Downbeats error: {video_url}"
 
+    if not all([b1 < b2 for b1, b2 in zip(br.beats, br.beats[1:])]):
+        return f"Beats not sorted monotonically: {video_url}"
+
+    if not all([d1 < d2 for d1, d2 in zip(br.downbeats, br.downbeats[1:])]):
+        return f"Downbeats not sorted monotonically: {video_url}"
+
     return None
 
 def process_audio(audio: Audio,

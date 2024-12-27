@@ -4,6 +4,7 @@ from .audio import Audio
 from typing import Callable
 import zipfile
 import tempfile
+import torch
 
 class DemucsCollection:
     def __init__(self, bass: Audio, drums: Audio, other: Audio, vocals: Audio):
@@ -131,6 +132,11 @@ class DemucsCollection:
             segments.append(segment)
         result = self.join_all(segments)
         return result
+
+    @property
+    def data(self):
+        """Gets the underlying data of the collection in (4, channels, nframes) format, in VDIB format."""
+        return torch.stack([self.vocals.data, self.drums.data, self.other.data, self.bass.data])
 
 class HPSSCollection:
     def __init__(self, harmonic: Audio | None, percussive: Audio | None):
