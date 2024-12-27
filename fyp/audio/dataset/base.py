@@ -9,6 +9,9 @@ from ..base import Audio
 from ...util import get_url
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, OnsetFeatures
+from ..separation import DemucsAudioSeparator, DemucsCollection
+from ..analysis import BeatAnalysisResult, ChordAnalysisResult, analyse_beat_transformer, analyse_chord_transformer
+from ...util import get_inv_voca_map
 from enum import Enum
 import json
 import traceback
@@ -64,7 +67,7 @@ class DatasetEntry:
     url: YouTubeURL
     views: int
     normalized_times: NDArray[np.float64]
-    music_duration: list[float]
+    music_duration: NDArray[np.float64]
 
     @property
     def duration(self):
@@ -97,6 +100,8 @@ class SongDataset:
             - <youtube_id>.mp3
         - datafiles/
             - <youtube_id>.dat3
+        - parts/
+            - <youtube_id>.demucs
         - error_logs.txt
         - log.json
         - pack.db
@@ -105,6 +110,7 @@ class SongDataset:
     - <youtube_id> is the youtube video id
     - <youtube_id>.mp3 is the audio file
     - <youtube_id>.dat3 is the datafile containing the song information
+    - <youtube_id>.demucs is the parts file containing the separated parts of the audio
     - error_logs.txt is a file containing error logs
     - log.json is a file containing information about calculations done on the dataset
     - pack.db is a file containing the dataset in a compressed format
@@ -174,6 +180,9 @@ class SongDataset:
             if not file.endswith(".mp3"):
                 return f"Invalid audio: {file}"
 
+        for file in os.listdir(self.parts_path):
+            if not file.endswith(".demucs"):
+                return f"Invalid parts: {file}"
 
     def _load_from_directory(self):
         for file in os.listdir(self.datafile_path):
@@ -221,6 +230,10 @@ class SongDataset:
     def pack_path(self):
         return os.path.join(self.root, "pack.db")
 
+    @property
+    def parts_path(self):
+        return os.path.join(self.root, "parts")
+
     def get_data_path(self, url: YouTubeURL):
         """Return the path to the datafile of the given url"""
         return os.path.join(self.datafile_path, f"{url.video_id}.dat3")
@@ -228,6 +241,10 @@ class SongDataset:
     def get_audio_path(self, url: YouTubeURL):
         """Return the path to the audio file of the given url"""
         return os.path.join(self.audio_path, f"{url.video_id}.mp3")
+
+    def get_parts_path(self, url: YouTubeURL):
+        """Return the path to the parts file of the given url"""
+        return os.path.join(self.parts_path, f"{url.video_id}.demucs")
 
     def get_by_url(self, url: YouTubeURL) -> DatasetEntry | None:
         if url in self._data:
@@ -249,23 +266,6 @@ class SongDataset:
                 return None
         return None
 
-    def __getitem__(self, url: str | YouTubeURL | int) -> DatasetEntry:
-        if isinstance(url, YouTubeURL):
-            entry = self.get_by_url(url)
-            if entry is None:
-                raise KeyError(f"URL {url} not found")
-            return entry
-        if isinstance(url, str):
-            entry = self.get_by_url(get_url(url))
-            if entry is None:
-                raise KeyError(f"URL {url} not found")
-            return entry
-        if isinstance(url, int):
-            file = os.listdir(self.datafile_path)[url]
-            entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
-            return entry
-        raise TypeError(f"Invalid type for url: {type(url)}")
-
     def __len__(self):
         return len(os.listdir(self.datafile_path)) if self.load_on_the_fly else len(self._data)
 
@@ -281,10 +281,13 @@ class SongDataset:
         else:
             yield from self._data.values()
 
+    def __contains__(self, url: YouTubeURL):
+        return self.get_by_url(url) is not None
+
     def add_entry(self, entry: DatasetEntry):
         """This adds an entry to the dataset and checks for the presence of audio"""
         audio_path = self.get_audio_path(entry.url)
-        if not os.path.isfile(audio_path):
+        if self.assert_audio_exists and not os.path.isfile(audio_path):
             raise FileNotFoundError(f"Audio file {audio_path} not found")
         if not self.load_on_the_fly:
             self._data[entry.url] = entry
@@ -342,6 +345,32 @@ class SongDataset:
             return set(infos.keys())
         return set(infos)
 
+    def get_audio(self, url: YouTubeURL) -> Audio:
+        if os.path.isfile(self.get_audio_path(url)):
+            return Audio.load(self.get_audio_path(url))
+        # Save and reload to ensure consistency
+        audio = Audio.load(url)
+        audio.save(self.get_audio_path(url))
+        audio = Audio.load(self.get_audio_path(url))
+        return audio
+
+    def get_parts(self, url: YouTubeURL) -> DemucsCollection:
+        if os.path.isfile(self.get_parts_path(url)):
+            return DemucsCollection.load(self.get_parts_path(url))
+        # Save and reload to ensure consistency
+        parts = get_demucs().separate(self.get_audio(url))
+        parts.save(self.get_parts_path(url))
+        parts = DemucsCollection.load(self.get_parts_path(url))
+        return parts
+
+    def get_or_create_entry(self, url: YouTubeURL) -> DatasetEntry:
+        entry = self.get_by_url(url)
+        if entry is None:
+            audio = self.get_audio(url)
+            entry = create_entry(url, dataset=self, audio=audio)
+            self.add_entry(entry)
+        return entry
+
 def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatures) -> NDArray[np.float64]:
     """Normalize the chord result with the beat result. This is done by retime the chord result as the number of downbeats."""
     # For every time stamp in the chord result, retime it as the number of downbeats.
@@ -359,3 +388,183 @@ def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatu
         normalized_time = curr_downbeat_idx + (chord_times - curr_downbeat) / (next_downbeat - curr_downbeat)
         new_chord_times.append(normalized_time)
     return np.array(new_chord_times, dtype=np.float64)
+
+# This is now not needed during the search step because we have precalculated it
+def get_music_duration(chord_result: ChordAnalysisResult):
+    """Get the duration of actual music in the chord result. This is calculated by summing the duration of all chords that are not "No chord"."""
+    music_duration = 0.
+    times = chord_result.group().times + [chord_result.duration]
+    no_chord_idx = ChordAnalysisResult.map_feature_name("No chord")
+    for chord, start, end in zip(chord_result.features, times[:-1], times[1:]):
+        if chord != no_chord_idx:
+            music_duration += end - start
+    return music_duration
+
+_DEMUCS = None
+def get_demucs():
+    global _DEMUCS
+    if not _DEMUCS:
+        _DEMUCS = DemucsAudioSeparator()
+    return _DEMUCS
+
+# Returns None if the chord result is valid, otherwise returns an error message
+def verify_chord_result(cr: ChordAnalysisResult, audio_duration: float, video_url: YouTubeURL | None = None) -> str | None:
+    labels = cr.features
+    chord_times = cr.times
+
+    if len(labels) != len(chord_times):
+        return f"Length mismatch: labels({len(labels)}) != chord_times({len(chord_times)})"
+
+    # Check if the chord times are sorted monotonically
+    if len(chord_times) == 0 or chord_times[-1] > audio_duration:
+        return f"Chord times error: {video_url}"
+
+    # Check if the chord times are sorted monotonically
+    if not all([t1 < t2 for t1, t2 in zip(chord_times, chord_times[1:])]):
+        return f"Chord times not sorted monotonically: {video_url}"
+
+    # New in v3: Check if there are enough chords
+    no_chord_duration = 0.
+    for t1, t2, c in zip(chord_times, chord_times[1:], labels):
+        if c == get_inv_voca_map()["No chord"]:
+            no_chord_duration += t2 - t1
+    if no_chord_duration > 0.5 * audio_duration:
+        return f"Too much no chord: {video_url} ({no_chord_duration}) (Proportion: {no_chord_duration / audio_duration}) - probably this is not a song"
+
+    return None
+
+def verify_parts_result(parts: DemucsCollection, mean_vocal_threshold: float, video_url: YouTubeURL | None = None) -> str | None:
+    # New in v3: Check if there are enough vocals
+    mean_vocal_volume = parts.vocals.volume
+    if mean_vocal_volume < mean_vocal_threshold:
+        return f"Too few vocals: {video_url} ({mean_vocal_volume})"
+    return None
+
+def verify_beats_result(br: BeatAnalysisResult, audio_duration: float, video_url: YouTubeURL | None = None, reject_weird_meter: bool = True, bad_alignment_threshold: float = 0.1) -> str | None:
+    """Verify the beat result. If strict is True, then it will reject songs with weird meters."""
+    # New in v3: Reject if there are too few downbeats
+    if len(br.downbeats) < 12:
+        return f"Too few downbeats: {video_url} ({len(br.downbeats)})"
+
+    # New in v3: Reject songs with weird meters
+    # Remove all songs with 3/4 meter as well because 96% of the songs are 4/4
+    # This is rejecting way too many songs. Making this optional
+    beat_align_idx = np.abs(br.beats[:, None] - br.downbeats[None, :]).argmin(axis = 0)
+    nbeat_in_bar = beat_align_idx[1:] - beat_align_idx[:-1]
+    if reject_weird_meter and not np.all(nbeat_in_bar == 4):
+        return f"Weird meter: {video_url} ({nbeat_in_bar})"
+
+    # New in v3: Reject songs with a bad alignment
+    beat_alignment = np.abs(br.beats[:, None] - br.downbeats[None, :]).min(axis = 0)
+    if np.max(beat_alignment) > bad_alignment_threshold:
+        return f"Bad alignment: {video_url} ({np.max(beat_alignment)})"
+
+    # Check if beats and downbeats make sense
+    if len(br.beats) == 0 or br.beats[-1] >= audio_duration:
+        return f"Beats error: {video_url}"
+
+    if len(br.downbeats) == 0 or br.downbeats[-1] >= audio_duration:
+        return f"Downbeats error: {video_url}"
+
+    if not all([b1 < b2 for b1, b2 in zip(br.beats, br.beats[1:])]):
+        return f"Beats not sorted monotonically: {video_url}"
+
+    if not all([d1 < d2 for d1, d2 in zip(br.downbeats, br.downbeats[1:])]):
+        return f"Downbeats not sorted monotonically: {video_url}"
+
+    return None
+
+# Create a dataset entry from the given data
+def create_entry(url: YouTubeURL, *,
+                 dataset: SongDataset | None = None,
+                 audio: Audio | None = None,
+                 chords: ChordAnalysisResult | None = None,
+                 chord_times: list[float] | None = None,
+                 chord_labels: list[int] | None = None,
+                 beats: OnsetFeatures | None = None,
+                 downbeats: OnsetFeatures | None = None,
+                 beats_list: list[float] | None = None,
+                 downbeats_list: list[float] | None = None,
+                 duration: float | None = None,
+                 genre: SongGenre = SongGenre.UNKNOWN,
+                 views: int | None = None,
+                 chord_model_path: str | None = None,
+                 beat_model_path: str | None = None) -> DatasetEntry:
+    """Creates the dataset entry from the data - performs normalization and music duration postprocessing"""
+    if dataset is not None:
+        entry = dataset.get_by_url(url)
+        if entry is not None:
+            return entry
+
+    if duration is None:
+        if audio is not None:
+            duration = audio.duration
+        if chords is not None:
+            duration = chords.duration
+        elif beats is not None:
+            duration = beats.duration
+        elif downbeats is not None:
+            duration = downbeats.duration
+        elif dataset is not None:
+            audio = dataset.get_audio(url)
+            duration = audio.duration
+        else:
+            raise ValueError("If duration is not provided, then either audio, chords, beats or downbeats must be provided to calculate the duration")
+
+    if chords is None and (chord_times is not None or chord_labels is not None):
+        assert audio is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
+        if chord_model_path is not None:
+            chords = analyse_chord_transformer(audio, model_path=chord_model_path)
+        else:
+            chords = analyse_chord_transformer(audio)
+        chord_fail_reason = verify_chord_result(chords, duration, url)
+        if chord_fail_reason is not None:
+            raise ValueError(f"Chord verification failed: {chord_fail_reason}")
+    elif chords is None:
+        assert chord_times is not None and chord_labels is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
+        chords = ChordAnalysisResult.from_data(duration, chord_labels, chord_times)
+
+    if (beats is None and beats_list is None) or (downbeats is None and downbeats_list is None):
+        assert audio is not None, "Either beats or downbeats or audio must be provided"
+        parts = dataset.get_parts(url) if dataset is not None else get_demucs().separate(audio)
+        if beat_model_path is not None:
+            bt = analyse_beat_transformer(audio, parts, model_path=beat_model_path)
+        else:
+            bt = analyse_beat_transformer(audio, parts)
+        beat_fail_reason = verify_beats_result(bt, duration, url)
+        if beat_fail_reason is not None:
+            raise ValueError(f"Beat verification failed: {beat_fail_reason}")
+        beats = bt._beats
+        downbeats = bt._downbeats
+
+    if beats is None:
+        assert beats_list is not None, "Either beats or beats_list must be provided"
+        beats = OnsetFeatures(duration, np.array(beats_list, dtype=np.float64))
+
+    if downbeats is None:
+        assert downbeats_list is not None, "Either downbeats or downbeats_list must be provided"
+        downbeats = OnsetFeatures(duration, np.array(downbeats_list, dtype=np.float64))
+
+    normalized_times = get_normalized_times(chords.times, downbeats)
+    normalized_cr = ChordAnalysisResult(
+        duration=duration,
+        features=chords.features,
+        times=normalized_times
+    )
+
+    # For each bar, calculate its music duration
+    music_duration: list[float] = []
+    for i in range(len(downbeats)):
+        bar_cr = normalized_cr.slice_seconds(i, i + 1)
+        music_duration.append(get_music_duration(bar_cr))
+
+    return DatasetEntry(
+        chords=chords,
+        downbeats=downbeats,
+        beats=beats,
+        genre=genre,
+        url=url,
+        views=views if views is not None else -1,
+        normalized_times=normalized_times,
+        music_duration=np.array(music_duration, dtype=np.float64)
+    )

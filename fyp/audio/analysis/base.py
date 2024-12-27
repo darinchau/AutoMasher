@@ -19,12 +19,12 @@ import typing
 class OnsetFeatures:
     """A class of features that represents segmentations over the song. The onsets are in seconds and marks the start of each segment"""
     duration: float
-    onsets: NDArray[np.float32]
+    onsets: NDArray[np.float64]
 
     def __post_init__(self):
         assert len(self.onsets) == 0 or self.duration >= self.onsets[-1]
         assert isinstance(self.onsets, np.ndarray)
-        assert self.onsets.dtype == np.float32
+        assert self.onsets.dtype == np.float64
 
         # Assert onsets are sorted by time
         assert np.all(self.onsets[1:] >= self.onsets[:-1]), "Onsets must be sorted"

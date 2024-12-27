@@ -42,8 +42,8 @@ class BeatAnalysisResult:
 
     @classmethod
     def from_data(cls, duration: float, beats: list[float], downbeats: list[float]):
-        _beats = OnsetFeatures(duration, np.array(beats, dtype=np.float32))
-        _downbeats = OnsetFeatures(duration, np.array(downbeats, dtype=np.float32))
+        _beats = OnsetFeatures(duration, np.array(beats, dtype=np.float64))
+        _downbeats = OnsetFeatures(duration, np.array(downbeats, dtype=np.float64))
         return cls(_beats, _downbeats)
 
     def slice_seconds(self, start: float, end: float) -> BeatAnalysisResult:

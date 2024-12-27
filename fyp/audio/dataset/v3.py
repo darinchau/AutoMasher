@@ -12,7 +12,7 @@ import numpy as np
 from math import ceil, exp
 from typing import Iterator
 import struct
-from .create import create_entry
+from .base import create_entry
 import zlib
 
 T = TypeVar('T')
@@ -298,10 +298,10 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         length = self.float32_encoder.decode(data)
 
         entry = create_entry(
-            length=length,
-            beats=beats,
-            downbeats=downbeats,
-            chords=chords,
+            duration=length,
+            beats_list=beats,
+            downbeats_list=downbeats,
+            chord_labels=chords,
             chord_times=chord_times,
             genre=genre,
             views=views,

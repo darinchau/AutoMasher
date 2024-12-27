@@ -26,10 +26,6 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
     labels: list[int] - The chord labels for each frame
     chords: list[str] - The chord names. `chords[labels[i]]` is the chord name for the ith frame
     times: list[float] - The times of each frame"""
-    @property
-    def labels(self):
-        return np.array(self.features[:, 0], dtype=np.uint32)
-
     @classmethod
     def latent_size(cls):
         return len(get_idx2voca_chord())
@@ -59,21 +55,21 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
         ct = self.group()
         end_times = ct.times
 
-        ct.labels.flags.writeable = True
+        ct.features.flags.writeable = True
         ct.times.flags.writeable = True
 
         end_times[:-1] = end_times[1:]
         end_times[-1] = self.duration
 
-        ct.labels.flags.writeable = False
+        ct.features.flags.writeable = False
         end_times.flags.writeable = False
-        return end_times, ct.labels
+        return end_times, ct.features
 
     @property
     def chords(self) -> list[str]:
         """Returns a list of chord labels"""
         chords = get_idx2voca_chord()
-        chord_labels = [chords[label] for label in self.labels]
+        chord_labels = [chords[label] for label in self.features]
         return chord_labels
 
     @property
@@ -96,14 +92,14 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
         """Transpose the chords by semitones"""
         voca = get_idx2voca_chord()
         inv_map = get_inv_voca_map()
-        labels = [inv_map[transpose_chord(voca[label], semitones)] for label in self.labels]
+        labels = [inv_map[transpose_chord(voca[label], semitones)] for label in self.features]
         np_labels = np.array(labels, dtype=np.uint32)[:, None]
         return ChordAnalysisResult(self.duration, np_labels, self.times)
 
     def save(self, path: str):
         json_dict = {
             "duration": self.duration,
-            "labels": self.labels.tolist(),
+            "labels": self.features.tolist(),
             "times": self.times.tolist()
         }
 

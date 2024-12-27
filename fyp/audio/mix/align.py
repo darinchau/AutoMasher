@@ -11,7 +11,6 @@ import numba
 import heapq
 import typing
 from ..dataset import SongDataset, DatasetEntry, SongGenre
-from ..dataset.create import get_normalized_chord_result
 from math import exp
 from ..analysis.base import (
     OnsetFeatures,
@@ -107,8 +106,8 @@ def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: Be
 
 @numba.njit
 def get_valid_starting_points(music_duration: NDArray[np.float64],
-                              sample_downbeats: NDArray[np.float32],
-                              sample_beats: NDArray[np.float32],
+                              sample_downbeats: NDArray[np.float64],
+                              sample_beats: NDArray[np.float64],
                               nbars: int,
                               min_music_percentage: float) -> NDArray[np.int64]:
     """Get the valid starting points for the sample song to align with the submitted song"""
@@ -208,7 +207,7 @@ def calculate_mashability(
     chord_distances_array = ChordAnalysisResult.get_dist_array()
     for entry in tqdm(dataset, desc="Searching database", disable=not verbose):
         valid_start_points = get_valid_starting_points(
-            music_duration=np.array(entry.music_duration, dtype=np.float64),
+            music_duration=entry.music_duration,
             sample_downbeats=entry.downbeats.onsets,
             sample_beats=entry.beats.onsets,
             nbars=nbars,

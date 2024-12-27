@@ -5,10 +5,15 @@ import numpy as np
 from dataclasses import dataclass, asdict
 from typing import Callable
 from ..audio import Audio, DemucsCollection
-from ..audio.analysis import ChordAnalysisResult, BeatAnalysisResult, analyse_beat_transformer, analyse_chord_transformer, analyse_beat_transformer
-from ..audio.dataset import SongDataset, DatasetEntry, SongGenre
+from ..audio.analysis import (
+    BeatAnalysisResult,
+    ChordAnalysisResult,
+    OnsetFeatures,
+    DiscreteLatentFeatures,
+    ContinuousLatentFeatures,
+)
+from ..audio.dataset import SongDataset, DatasetEntry, SongGenre, create_entry
 from ..audio.mix import create_mashup, MashabilityResult, calculate_mashability, MashupMode
-from ..audio.cache import CacheHandler, MemoryCache
 from ..audio.separation import DemucsAudioSeparator
 from ..util import YouTubeURL, get_url
 from numpy.typing import NDArray
@@ -86,6 +91,8 @@ class MashupConfig:
     left_pan: float = 0.15
     save_original: bool = False # If true, save the original audio in "./.cache"
 
+    append_song_to_dataset: bool = False # If true, append the song to the dataset after the search
+
     # The path of stuff should not be exposed to the user
     _dataset_path: str = "resources/dataset/audio-infos-v3.0.fast.db"
     _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
@@ -121,7 +128,7 @@ class MashupID:
         transpose = int(st[31:33]) - 6
         return cls(song_a, song_a_start_time, song_b, song_b_start_bar, transpose)
 
-def is_regular(downbeats: NDArray[np.float32], range_threshold: float = 0.2, std_threshold: float = 0.1) -> bool:
+def is_regular(downbeats: NDArray[np.float64], range_threshold: float = 0.2, std_threshold: float = 0.1) -> bool:
     """Return true if the downbeats are evenly spaced."""
     downbeat_diffs = downbeats[1:] - downbeats[:-1]
     downbeat_diff = np.mean(downbeat_diffs).item()
@@ -129,7 +136,7 @@ def is_regular(downbeats: NDArray[np.float32], range_threshold: float = 0.2, std
     downbeat_diff_range = (np.max(downbeat_diffs) - np.min(downbeat_diffs)) / downbeat_diff
     return (downbeat_diff_range < range_threshold).item() and downbeat_diff_std < std_threshold
 
-def extrapolate_downbeat(downbeats: NDArray[np.float32], t: float, nbars: int):
+def extrapolate_downbeat(downbeats: NDArray[np.float64], t: float, nbars: int):
     """Extrapolate the downbeats to the starting point t. Returns the new downbeats and the new duration.
 
     Starting point is guaranteed >= 0"""
@@ -144,7 +151,7 @@ def extrapolate_downbeat(downbeats: NDArray[np.float32], t: float, nbars: int):
     if abs(start - t) > abs(start + downbeat_diff - t):
         start += downbeat_diff
     new_downbeats = np.arange(nbars) * downbeat_diff + start
-    return new_downbeats.astype(np.float32), downbeat_diff * nbars
+    return new_downbeats.astype(np.float64), downbeat_diff * nbars
 
 def validate_config(config: MashupConfig):
     if config.starting_point < 0:
@@ -206,14 +213,7 @@ def validate_config(config: MashupConfig):
 
 def load_dataset(config: MashupConfig) -> SongDataset:
     """Load the dataset and apply the filters speciied by config."""
-    try:
-        dataset = SongDataset.load(config._dataset_path)
-    except Exception as e:
-        if ".fast.db" in config._dataset_path:
-            new_path = config._dataset_path.replace(".fast.db", ".db")
-            dataset = SongDataset.load(new_path)
-        else:
-            raise ValueError("Failed to load dataset") from e
+    dataset = SongDataset(config._dataset_path)
     filters: list[Callable[[DatasetEntry], bool]] = []
 
     if config.filter_short_song_bar_threshold > 0:
@@ -228,43 +228,39 @@ def load_dataset(config: MashupConfig) -> SongDataset:
         filters.append(filter_func)
 
     if config.filter_uncached:
-        filters.append(lambda x: x.cached)
+        filters.append(lambda x: os.path.exists(dataset.get_audio_path(x.url)))
 
     dataset = dataset.filter(lambda x: all(f(x) for f in filters))
     return dataset
 
-def determine_slice_results(audio: Audio, bt: BeatAnalysisResult, config: MashupConfig) -> tuple[BeatAnalysisResult, float, float]:
+def determine_slice_results(downbeats: OnsetFeatures, config: MashupConfig) -> tuple[OnsetFeatures, float, float]:
     """
     Determine the slice point for the audio. Returns the sliced chord and beat analysis results.
 
-    returns (Beat Analysis Result of Sliced Result, slice start in seconds, slice end in seconds)
+    returns (sliced downbeats, slice start in seconds, slice end in seconds)
     """
     # If the config starting point is within the range of beats, use the closest downbeat to the starting point
-    if bt.downbeats[0] - config.search_radius <= config.starting_point <= bt.downbeats[-1] + config.search_radius:
-        index = np.argmin(np.abs(np.array(bt.downbeats) - config.starting_point))
-        if index >= bt.nbars - config.nbars:
-            index = bt.nbars - config.nbars - 1
-        start = bt.downbeats[index]
-        end = bt.downbeats[index + config.nbars]
-        return bt.slice_seconds(start, end), start, end
+    nbars = len(downbeats)
+    if downbeats.onsets[0] - config.search_radius <= config.starting_point <= downbeats.onsets[-1] + config.search_radius:
+        index = np.argmin(np.abs(downbeats.onsets - config.starting_point))
+        if index >= nbars - config.nbars:
+            index = nbars - config.nbars - 1
+        start = downbeats.onsets[index]
+        end = downbeats.onsets[index + config.nbars]
+        return downbeats.slice_seconds(start, end), start, end
 
     # If the config starting point is not within the range of beats, try to extrapolate using a few heuristics
-    if bt.downbeats[0] > config.starting_point:
+    if downbeats.onsets[0] > config.starting_point:
         new_downbeats = new_duration = None
-        if is_regular(bt.downbeats[:config.nbars]):
-            new_downbeats, new_duration = extrapolate_downbeat(bt.downbeats[:config.nbars], config.starting_point, config.nbars)
+        if is_regular(downbeats.onsets[:config.nbars]):
+            new_downbeats, new_duration = extrapolate_downbeat(downbeats.onsets[:config.nbars], config.starting_point, config.nbars)
 
-        elif bt.nbars > config.nbars and is_regular(bt.downbeats[1:config.nbars + 1]):
-            new_downbeats, new_duration = extrapolate_downbeat(bt.downbeats[1:config.nbars + 1], config.starting_point, config.nbars)
+        elif nbars > config.nbars and is_regular(downbeats.onsets[1:config.nbars + 1]):
+            new_downbeats, new_duration = extrapolate_downbeat(downbeats.onsets[1:config.nbars + 1], config.starting_point, config.nbars)
 
-        if new_downbeats is not None and new_duration is not None and new_downbeats[0] + new_duration < bt.duration:
-            bt = BeatAnalysisResult(
-                duration=new_duration,
-                beats = np.empty_like(new_downbeats),
-                downbeats = new_downbeats,
-            )
-            print(new_downbeats, new_duration)
-            return bt, new_downbeats[0], new_downbeats[0] + new_duration
+        if new_downbeats is not None and new_duration is not None and new_downbeats[0] + new_duration < downbeats.duration:
+            downbeats = OnsetFeatures(downbeats.duration, new_downbeats)
+            return downbeats, new_downbeats[0], new_downbeats[0] + new_duration
 
         # Unable to extrapolate the result. Fall through and handle later
         pass
@@ -277,217 +273,14 @@ def determine_slice_results(audio: Audio, bt: BeatAnalysisResult, config: Mashup
     # TODO in the future if there are ways to detect music phrase boundaries reliably, we can use that to determine the starting point
     raise InvalidMashup("Unable to find a valid starting point.")
 
-# Search stage
-def perform_search(config: MashupConfig, chord_result: ChordAnalysisResult, submitted_beat_result: BeatAnalysisResult, slice_start: float, slice_end: float, dataset: SongDataset):
-    """Perform the search now that everything is properly sliced. Returns the scores."""
-    submitted_chord_result = chord_result.slice_seconds(slice_start, slice_end)
-
-    # Perform the search
-    scores = calculate_mashability(
-        submitted_chord_result=submitted_chord_result,
-        submitted_beat_result=submitted_beat_result,
-        dataset=dataset,
-        max_transpose=(config.min_transpose, config.max_transpose),
-        min_music_percentage=config.min_music_percentage,
-        max_delta_bpm=config.max_delta_bpm,
-        min_delta_bpm=config.min_delta_bpm,
-        max_distance=config.max_distance,
-        keep_first_k=config.keep_first_k_results,
-        filter_top_scores=config.filter_first,
-        should_curve_score=True,
-        verbose=False,
-    )
-    return scores
-
-def create_mash(cache_handler_factory: Callable[[YouTubeURL], CacheHandler], dataset: SongDataset,
-                submitted_audio_a: Audio,
-                submitted_parts_a: DemucsCollection,
-                submitted_beats_a: BeatAnalysisResult,
-                best_result_url: YouTubeURL,
-                best_result_start_bar: int,
-                best_result_transpose: int,
-                nbars: int = 8,
-                natural_drum_activity_threshold: float = 1,
-                natural_drum_proportion_threshold: float = 0.8,
-                natural_vocal_activity_threshold: float = 1,
-                natural_vocal_proportion_threshold: float = 0.8,
-                natural_window_size: int = 10,
-                mashup_mode: MashupMode = MashupMode.NATURAL,
-                left_pan: float = 0.15,
-                save_original: bool = False,
-                mashup_id: MashupID | None = None,
-                verbose: bool = False):
-    """Creates the mashup from the given parameters. Returns the mashup and the original audio for track B."""
+def get_search_result_log(link: YouTubeURL,
+                          config: MashupConfig,
+                          slice_start_a: float,
+                          scores: list[tuple[float, MashabilityResult]],
+                          best_result_idx: int,
+                          best_result: MashabilityResult,
+                          verbose: bool) -> str:
     write = print if verbose else lambda x: None
-
-    write(f"Loading audio for song B from {best_result_url}...")
-    b_cache_handler = cache_handler_factory(best_result_url)
-    b_audio = b_cache_handler.get_audio()
-    write(f"Got audio with duration {b_audio.duration} seconds.")
-
-    write("Analyzing beats for song B...")
-    b_beat = BeatAnalysisResult.from_data_entry(dataset[best_result_url])
-    slice_start_b, slice_end_b = b_beat.downbeats[best_result_start_bar], b_beat.downbeats[best_result_start_bar + nbars]
-    submitted_audio_b = b_audio.slice_seconds(slice_start_b, slice_end_b)
-
-    write("Analyzing parts for song B...")
-    submitted_parts_b = b_cache_handler.get_parts_result().slice_seconds(slice_start_b, slice_end_b)
-
-    write("Creating mashup...")
-    mashup, mode_used = create_mashup(
-        submitted_audio_a=submitted_audio_a,
-        submitted_audio_b=submitted_audio_b,
-        submitted_bt_a=submitted_beats_a,
-        submitted_parts_a=submitted_parts_a,
-        submitted_bt_b=b_beat.slice_seconds(slice_start_b, slice_end_b),
-        submitted_parts_b=submitted_parts_b,
-        transpose=best_result_transpose,
-        mode=mashup_mode,
-        volume_hop=512,
-        natural_drum_activity_threshold=natural_drum_activity_threshold,
-        natural_drum_proportion_threshold=natural_drum_proportion_threshold,
-        natural_vocal_activity_threshold=natural_vocal_activity_threshold,
-        natural_vocal_proportion_threshold=natural_vocal_proportion_threshold,
-        natural_window_size=natural_window_size,
-        left_pan=left_pan,
-        verbose=verbose,
-    )
-    write(f"Got mashup with mode {mode_used}.")
-
-    if save_original:
-        mashup_id_str = mashup_id.to_string() if mashup_id is not None else "mashup"
-        submitted_audio_a.save(f".cache/{mashup_id_str}_a.mp3")
-        submitted_audio_b.save(f".cache/{mashup_id_str}_b.mp3")
-        mashup.save(f".cache/{mashup_id_str}_mashup.mp3")
-    return mashup
-
-def save_mashup(mashup_id: MashupID, config: MashupConfig, a_audio: Audio, b_audio: Audio, mashup: Audio, dataset: SongDataset, slice_start_a: float, slice_end_a: float):
-    a_audio.slice_seconds(slice_start_a, slice_end_a).save(f".cache/{mashup_id.to_string()}_a.mp3")
-    b_beat = BeatAnalysisResult.from_data_entry(dataset[mashup_id.song_b])
-    slice_start_b, slice_end_b = b_beat.downbeats[mashup_id.song_b_start_bar], b_beat.downbeats[mashup_id.song_b_start_bar + config.nbars]
-    b_audio.slice_seconds(slice_start_b, slice_end_b).save(f".cache/{mashup_id.to_string()}_b.mp3")
-    mashup.save(f".cache/{mashup_id.to_string()}_mashup.mp3")
-    print(mashup.nchannels)
-
-def mashup_from_id(mashup_id: MashupID | str,
-                   config: MashupConfig | None = None,
-                   cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None) -> Audio:
-    if isinstance(mashup_id, str):
-        mashup_id = MashupID.from_string(mashup_id)
-
-    if config is not None:
-        # Copy all aspects of the config, except for the starting point
-        # where we set it to song a's starting point
-        # Use a little hack just don't tell anybody else is ok :)
-        config = copy.deepcopy(config)
-        object.__setattr__(config, "starting_point", mashup_id.song_a_start_time)
-    else:
-        config = MashupConfig(starting_point=mashup_id.song_a_start_time)
-
-    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
-    write(f"Creating mashup for ID: {mashup_id.to_string()}")
-
-    dataset = load_dataset(config)
-    write(f"Loaded dataset with {len(dataset)} songs.")
-
-    cache_handler_factory = cache_handler_factory or (lambda x: MemoryCache(x))
-    a_cache_handler = cache_handler_factory(mashup_id.song_a)
-
-    write(f"Loading audio for song A from {mashup_id.song_a}...")
-    a_audio = a_cache_handler.get_audio()
-    write(f"Got audio with duration {a_audio.duration} seconds.")
-
-    write("Analyzing beats for song A...")
-    beat_result = a_cache_handler.get_beat_analysis_result(model_path = config._beat_model_path)
-    if beat_result.nbars < config.nbars:
-        raise InvalidMashup("The audio is too short to mashup with the dataset.")
-    write(f"Got beat analysis result with {beat_result.nbars} bars.")
-
-    write("Determining slice results...")
-    submitted_beats_a, slice_start_a, slice_end_a = determine_slice_results(a_audio, beat_result, config)
-    assert slice_start_a >= 0, "Starting point must be >= 0"
-    write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
-
-    submitted_audio_a = a_audio.slice_seconds(slice_start_a, slice_end_a)
-
-    # Create the mashup
-    mashup = create_mash(
-        cache_handler_factory, dataset,
-        submitted_audio_a=submitted_audio_a,
-        submitted_parts_a=a_cache_handler.get_parts_result().slice_seconds(slice_start_a, slice_end_a),
-        submitted_beats_a=submitted_beats_a,
-        best_result_url=mashup_id.song_b,
-        best_result_start_bar=mashup_id.song_b_start_bar,
-        best_result_transpose=mashup_id.transpose,
-        nbars=config.nbars,
-        natural_drum_activity_threshold=config.natural_drum_activity_threshold,
-        natural_drum_proportion_threshold=config.natural_drum_proportion_threshold,
-        natural_vocal_activity_threshold=config.natural_vocal_activity_threshold,
-        natural_vocal_proportion_threshold=config.natural_vocal_proportion_threshold,
-        natural_window_size=config.natural_window_size,
-        mashup_mode=config.mashup_mode,
-        left_pan=config.left_pan,
-        save_original=config.save_original,
-        mashup_id=mashup_id,
-        verbose=config._verbose
-    )
-    return mashup
-
-def mashup_song(link: YouTubeURL,
-                config: MashupConfig,
-                cache_handler_factory: Callable[[YouTubeURL], CacheHandler] | None = None,
-                dataset: SongDataset | None = None):
-    """
-    Mashup the given audio with the dataset.
-    """
-    validate_config(config)
-    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
-    write(f"Creating mashup for {link}")
-
-    dataset = load_dataset(config)
-
-    if link in dataset._data:
-        dataset._data.pop(link)
-
-    if cache_handler_factory is None:
-        cache_handler_factory = lambda x: MemoryCache(x)
-
-    write(f"Loaded dataset with {len(dataset)} songs.")
-
-    a_cache_handler = cache_handler_factory(link)
-
-    write(f"Loading audio for song A from {link}...")
-    a_audio = a_cache_handler.get_audio()
-    write(f"Got audio with duration {a_audio.duration} seconds.")
-
-    write("Analyzing beats for song A...")
-    beat_result = a_cache_handler.get_beat_analysis_result(model_path = config._beat_model_path)
-    if beat_result.nbars < config.nbars:
-        raise InvalidMashup("The audio is too short to mashup with the dataset.")
-    write(f"Got beat analysis result with {beat_result.nbars} bars.")
-
-    write("Analyzing chords for song A...")
-    a_chord = a_cache_handler.get_chord_analysis_result(model_path = config._chord_model_path)
-    write(f"Got chord analysis result.")
-
-    write("Determining slice results...")
-    a_beat, slice_start_a, slice_end_a = determine_slice_results(a_audio, beat_result, config)
-    assert slice_start_a >= 0, "Starting point must be >= 0"
-    write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
-
-    # Create the mashup
-    write("Performing search...")
-    write(str(config))
-    scores = perform_search(config, a_chord, a_beat, slice_start_a, slice_end_a, dataset)
-    if len(scores) == 0:
-        raise InvalidMashup("No suitable songs found in the dataset.")
-    write(f"Got {len(scores)} results.")
-
-    if config._skip_mashup:
-        return a_audio.slice_seconds(slice_start_a, slice_end_a), scores, "Skipped mashup."
-
-    best_result_idx = 0
-    best_result = scores[best_result_idx][1]
     system_messages: list[str] = ["Here are some other mashups you can consider:"]
 
     # Create some system messages
@@ -504,6 +297,132 @@ def mashup_song(link: YouTubeURL,
             system_messages = [f"Created mashup with {best_result.title} ({best_result.url}) with score {scores[0][0]} (ID: {mashup_id.to_string()})"] + system_messages
         elif i < config._max_show_results:
             system_messages.append(f"> {result.title} {result.url} with score {score}. ID: {mashup_id.to_string()}")
+    system_messages = ["Mashup completed!"] + system_messages
+    return "\n".join(system_messages)
+
+def create_mash(dataset: SongDataset,
+                submitted_audio_a: Audio,
+                submitted_entry_a: DatasetEntry,
+                submitted_parts_a: DemucsCollection,
+                best_result_url: YouTubeURL,
+                best_result_start_bar: int,
+                best_result_transpose: int,
+                config: MashupConfig,
+                verbose: bool = False):
+    """Creates the mashup from the given parameters. Returns the mashup and the original audio for track B."""
+    write = print if verbose else lambda x: None
+
+    write(f"Loading audio for song B from {best_result_url}...")
+    b_audio = dataset.get_audio(best_result_url)
+    write(f"Got audio with duration {b_audio.duration} seconds.")
+
+    entry = dataset.get_by_url(best_result_url)
+    if entry is None:
+        raise ValueError(f"Song B ({best_result_url}) is not in the dataset.")
+    b_downbeats = entry.downbeats.onsets
+    nbars = config.nbars
+    slice_start_b, slice_end_b = b_downbeats[best_result_start_bar], b_downbeats[best_result_start_bar + nbars]
+    submitted_audio_b = b_audio.slice_seconds(slice_start_b, slice_end_b)
+    submitted_downbeats_b = entry.downbeats.slice_seconds(slice_start_b, slice_end_b)
+
+    write("Analyzing parts for song B...")
+    submitted_parts_b = dataset.get_parts(entry.url)
+
+    write("Creating mashup...")
+    mashup, mode_used = create_mashup(
+        submitted_audio_a=submitted_audio_a,
+        submitted_parts_a=submitted_parts_a,
+        submitted_downbeats_a=submitted_entry_a.downbeats,
+        submitted_audio_b=submitted_audio_b,
+        submitted_parts_b=submitted_parts_b,
+        submitted_downbeats_b=submitted_downbeats_b,
+        transpose=best_result_transpose,
+        natural_drum_activity_threshold=config.natural_drum_activity_threshold,
+        natural_drum_proportion_threshold=config.natural_drum_proportion_threshold,
+        natural_vocal_activity_threshold=config.natural_vocal_activity_threshold,
+        natural_vocal_proportion_threshold=config.natural_vocal_proportion_threshold,
+        mode=config.mashup_mode,
+        left_pan=config.left_pan,
+        verbose=verbose,
+    )
+    write(f"Got mashup with mode {mode_used}.")
+    return submitted_audio_a, submitted_audio_b, mashup
+
+def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | None = None) -> tuple[Audio, list[tuple[float, MashabilityResult]], str]:
+    """
+    Mashup the given audio with the dataset.
+    """
+    validate_config(config)
+    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
+    write(f"Creating mashup for {link}")
+
+    if dataset is None:
+        dataset = load_dataset(config)
+
+    song_a_entry = None
+    if link in dataset:
+        song_a_entry = dataset.get_by_url(link)
+        dataset = dataset.filter(lambda x: x.url != link)
+
+    assert isinstance(dataset, SongDataset)
+
+    write(f"Loaded dataset with {len(dataset)} songs.")
+    write(f"Loading audio for song A from {link}...")
+    a_audio = dataset.get_audio(link)
+    write(f"Got audio with duration {a_audio.duration} seconds.")
+
+    write("Preparing entry for song A...")
+    if song_a_entry is None:
+        song_a_entry = create_entry(
+            url = link,
+            audio = a_audio,
+            chord_model_path=config._chord_model_path,
+            beat_model_path=config._beat_model_path,
+        )
+
+    assert isinstance(song_a_entry, DatasetEntry)
+
+    write("Determining slice results...")
+    song_a_downbeats, slice_start_a, slice_end_a = determine_slice_results(song_a_entry.downbeats, config)
+    assert slice_start_a >= 0, "Starting point must be >= 0"
+    write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
+
+    song_a_chords = song_a_entry.chords.slice_seconds(slice_start_a, slice_end_a)
+    song_a_beats = song_a_entry.beats.slice_seconds(slice_start_a, slice_end_a)
+
+    # Prepare the entry to calculate the mashability
+    submitted_entry = create_entry(
+        url = link,
+        beats = song_a_beats,
+        downbeats = song_a_downbeats,
+        chords = song_a_chords,
+    )
+
+    # Create the mashup
+    write("Performing search...")
+    write(str(config))
+    scores = calculate_mashability(
+        submitted_entry,
+        dataset,
+        max_transpose=config.max_transpose,
+        min_music_percentage=config.min_music_percentage,
+        delta_bpm=(config.min_delta_bpm, config.max_delta_bpm),
+        max_distance=config.max_distance,
+        keep_first_k=config.keep_first_k_results,
+        filter_top_scores=config.filter_first,
+        verbose=config._verbose,
+    )
+
+    if len(scores) == 0:
+        raise InvalidMashup("No suitable songs found in the dataset.")
+    write(f"Got {len(scores)} results.")
+
+    best_result_idx = 0
+    best_result = scores[best_result_idx][1]
+    system_messages = get_search_result_log(link, config, slice_start_a, scores, best_result_idx, best_result, verbose = config._verbose)
+
+    if config._skip_mashup:
+        return a_audio.slice_seconds(slice_start_a, slice_end_a), scores, system_messages
 
     # Create mashup
     mashup_id = MashupID(
@@ -514,26 +433,15 @@ def mashup_song(link: YouTubeURL,
         transpose=best_result.transpose,
     )
 
-    mashup = create_mash(
-        cache_handler_factory, dataset,
-        submitted_audio_a=a_audio.slice_seconds(slice_start_a, slice_end_a),
-        submitted_parts_a=a_cache_handler.get_parts_result().slice_seconds(slice_start_a, slice_end_a),
-        submitted_beats_a=a_beat,
-        best_result_url= best_result.url,
-        best_result_start_bar=best_result.start_bar,
-        best_result_transpose=best_result.transpose,
-        nbars=config.nbars,
-        natural_drum_activity_threshold=config.natural_drum_activity_threshold,
-        natural_drum_proportion_threshold=config.natural_drum_proportion_threshold,
-        natural_vocal_activity_threshold=config.natural_vocal_activity_threshold,
-        natural_vocal_proportion_threshold=config.natural_vocal_proportion_threshold,
-        natural_window_size=config.natural_window_size,
-        mashup_mode=config.mashup_mode,
-        left_pan=config.left_pan,
-        save_original=config.save_original,
-        mashup_id=mashup_id,
-        verbose=config._verbose
+    _, _, mashup = create_mash(
+        dataset,
+        a_audio,
+        song_a_entry,
+        dataset.get_parts(link),
+        best_result.url,
+        best_result.start_bar,
+        best_result.transpose,
+        config,
+        verbose=config._verbose,
     )
-
-    system_messages = ["Mashup completed!"] + system_messages
-    return mashup, scores, "\n".join(system_messages)
+    return mashup, scores, system_messages
