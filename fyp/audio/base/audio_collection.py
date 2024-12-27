@@ -80,7 +80,7 @@ class DemucsCollection:
             vocals=func(self._vocals)
         )
 
-    def save(self, path: str, inner_format: str = "wav"):
+    def save(self, path: str, inner_format: str = "mp3"):
         """Save the collection to a zip file."""
         assert inner_format in ["wav", "mp3"], "Invalid inner format"
         with zipfile.ZipFile(path, 'w') as z:

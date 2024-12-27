@@ -332,7 +332,7 @@ def create_mash(dataset: SongDataset,
     submitted_downbeats_b = entry.downbeats.slice_seconds(slice_start_b, slice_end_b)
 
     write("Analyzing parts for song B...")
-    submitted_parts_b = dataset.get_parts(entry.url)
+    submitted_parts_b = dataset.get_parts(entry.url).slice_seconds(slice_start_b, slice_end_b)
 
     write("Creating mashup...")
     mashup, mode_used = create_mashup(
@@ -359,7 +359,7 @@ def save_mashup_result(submitted_audio_a: Audio, submitted_audio_b: Audio, mashu
     if not config.save_original:
         return
 
-    save_dir = os.path.join("resources", "mashups", mashup_id.to_string())
+    save_dir = os.path.join("./", "resources", "mashups", mashup_id.to_string())
     os.makedirs(save_dir, exist_ok=True)
 
     submitted_audio_a.save(os.path.join(save_dir, "song_a.wav"))

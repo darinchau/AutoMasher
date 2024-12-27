@@ -21,6 +21,7 @@ import numpy as np
 from tqdm.auto import tqdm
 from typing import Iterable
 import pickle
+import numba
 
 class SongGenre(Enum):
     POP = "pop"
@@ -435,15 +436,19 @@ def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatu
         new_chord_times.append(normalized_time)
     return np.array(new_chord_times, dtype=np.float64)
 
-# This is now not needed during the search step because we have precalculated it
-def get_music_duration(chord_result: ChordAnalysisResult):
-    """Get the duration of actual music in the chord result. This is calculated by summing the duration of all chords that are not "No chord"."""
+@numba.njit
+def _get_music_duration(times: NDArray[np.float64], features: NDArray[np.uint32], duration: float, no_chord_idx: int, bar_idx: int) -> float:
+    start_idx = np.searchsorted(times, bar_idx, side='right') - 1
+    end_idx = np.searchsorted(times, bar_idx + 1, side='right')
+    new_times = times[start_idx:end_idx] - bar_idx
+    new_times[0] = 0.
     music_duration = 0.
-    times = chord_result.group().times + [chord_result.duration]
-    no_chord_idx = ChordAnalysisResult.map_feature_name("No chord")
-    for chord, start, end in zip(chord_result.features, times[:-1], times[1:]):
-        if chord != no_chord_idx:
-            music_duration += end - start
+    new_features = features[start_idx:end_idx]
+    for i in range(len(new_times) - 1):
+        if new_features[i] != no_chord_idx:
+            music_duration += new_times[i + 1] - new_times[i]
+    if new_features[-1] != no_chord_idx:
+        music_duration += duration - new_times[-1]
     return music_duration
 
 _DEMUCS = None
@@ -600,9 +605,10 @@ def create_entry(url: YouTubeURL, *,
 
     # For each bar, calculate its music duration
     music_duration: list[float] = []
+    no_chord_idx = get_inv_voca_map()["No chord"]
     for i in range(len(downbeats)):
-        bar_cr = normalized_cr.slice_seconds(i, i + 1)
-        music_duration.append(get_music_duration(bar_cr))
+        bar_music_duration = _get_music_duration(normalized_cr.times, normalized_cr.features, normalized_cr.duration, no_chord_idx, i)
+        music_duration.append(bar_music_duration)
 
     return DatasetEntry(
         chords=chords,

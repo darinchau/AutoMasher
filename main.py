@@ -24,7 +24,7 @@ def main():
         # aka the larger this value, the more "worse" results the pipeline will return
         # See our paper for more information on song distance
         # Typically, a value between 3-5 will yield good results
-        max_distance=4.5,
+        max_distance=float("inf"),
 
         # Filter only the best match from each song.
         # Say if song A matches with song B at both bar 8 with a score of 85 and bar 16 with a score of 90
@@ -72,6 +72,9 @@ def main():
         natural_vocal_proportion_threshold=0.8,
         natural_window_size=10,
 
+        save_original=True,
+        _skip_mashup=False,
+        dataset_path="D:/Repository/project-remucs/audio-infos-v3",
         _verbose=True
     )
 

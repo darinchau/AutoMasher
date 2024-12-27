@@ -216,7 +216,9 @@ def _slice_features(times: NDArray[np.float64], features: NDArray, start: float,
 @numba.njit
 def _dist_discrete_latent(times1, times2, chords1, chords2, distances) -> float:
     """A jitted version of the latent result distance calculation, which is defined to be the sum of distances times time
-    between the two latent feature. Refer to our report for more detalis."""
+    between the two latent feature. Refer to our report for more detalis.
+
+    This assumes times1 and times2 comes from a DiscreteLatentFeatures object with the same duration"""
     score = 0
     cumulative_duration = 0.
 
@@ -227,7 +229,9 @@ def _dist_discrete_latent(times1, times2, chords1, chords2, distances) -> float:
 
     while idx1 < len_t1 and idx2 < len_t2:
         # Find the duration of the next segment to calculate
-        min_time = min(times1[idx1], times2[idx2])
+        t1 = times1[idx1]
+        t2 = times2[idx2]
+        min_time = t1 if t1 < t2 else t2
 
         # Score = sum of (distance * duration)
         # new_score = distances[label1[idx1]][label2[idx2]]
@@ -235,9 +239,9 @@ def _dist_discrete_latent(times1, times2, chords1, chords2, distances) -> float:
         score += new_score * (min_time - cumulative_duration)
         cumulative_duration = min_time
 
-        if times1[idx1] <= min_time:
+        if t1 <= min_time: # This ought to be <= but should be the same
             idx1 += 1
-        if times2[idx2] <= min_time:
+        if t2 <= min_time:
             idx2 += 1
     return score
 

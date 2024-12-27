@@ -115,7 +115,6 @@ def calculate_average_volume(audio: Audio, window_size: int, hop: int = 512) -> 
     vol = vol.reshape(-1, window_size)
     return vol.mean(axis = 1)
 
-
 def create_mashup(submitted_audio_a: Audio,
                   submitted_audio_b: Audio,
                   submitted_downbeats_a: OnsetFeatures,
