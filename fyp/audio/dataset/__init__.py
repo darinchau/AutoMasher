@@ -1,1 +1,1 @@
-from .base import DatasetEntry, SongDataset, SongGenre
+from .base import DatasetEntry, SongDataset, SongGenre, LocalSongDataset
