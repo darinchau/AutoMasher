@@ -79,7 +79,7 @@ nohup.out
 !resources/ckpts
 resources/dataset/*
 resources/dataset/*/
-!resources/dataset/dataset-v3.db
+!resources/dataset/pack.db
 
 *.ipynb
 !demo.ipynb

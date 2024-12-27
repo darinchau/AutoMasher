@@ -14,6 +14,9 @@ from typing import Iterator
 import struct
 from .base import create_entry
 import zlib
+from functools import lru_cache
+from tqdm.auto import tqdm
+import pickle
 
 T = TypeVar('T')
 class BitsEncoder(ABC, Generic[T]):
@@ -76,6 +79,7 @@ def make_huffman_tree(counter: dict[int, int]) -> tuple:
     traverse(tree, [])
     return tree, table
 
+@lru_cache(maxsize=1)
 def get_chord_time_label_codebook(resolution: float = 10.8):
     max_time = ceil(600 * resolution) + 1
     # The distribution of chord time diffs roughly follows a power law
@@ -84,6 +88,7 @@ def get_chord_time_label_codebook(resolution: float = 10.8):
     tree, table = make_huffman_tree(counter)
     return tree, table
 
+@lru_cache(maxsize=1)
 def get_beat_time_label_codebook(resolution: float = 44100/1024):
     max_time = int(resolution * 600) + 1
     scores = np.arange(1, max_time + 1)
@@ -311,10 +316,11 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         return entry
 
 class SongDatasetEncoder(BitsEncoder[dict[YouTubeURL, DatasetEntry]]):
-    def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
+    def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024, progress_bar: bool = True):
         self.entry_encoder: BitsEncoder[DatasetEntry] = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
         self.int64_encoder = Int64Encoder()
         self.checksum_encoder = Int32Encoder()
+        self.progress_bar = progress_bar
 
     def encode(self, data: dict[YouTubeURL, DatasetEntry]) -> Iterator[int]:
         def inner():
@@ -333,7 +339,7 @@ class SongDatasetEncoder(BitsEncoder[dict[YouTubeURL, DatasetEntry]]):
         if checksum != zlib.adler32(data_compressed):
             raise ValueError("Checksum mismatch")
         data_binary = zlib.decompress(data_compressed)
-        data_binary = iter(data_binary)
+        data_binary = iter(tqdm(data_binary, desc="Decompressing", unit="B", leave=False, disable = not self.progress_bar))
         dataset: dict[YouTubeURL, DatasetEntry] = {}
         length = self.int64_encoder.decode(data_binary)
         for _ in range(length):

@@ -20,6 +20,7 @@ from numpy.typing import NDArray
 import numpy as np
 from tqdm.auto import tqdm
 from typing import Iterable
+import pickle
 
 class SongGenre(Enum):
     POP = "pop"
@@ -104,6 +105,7 @@ class SongDataset:
         - error_logs.txt
         - log.json
         - pack.db
+        - dataset.pkl
 
     Where:
     - <youtube_id> is the youtube video id
@@ -135,8 +137,12 @@ class SongDataset:
 
         # There may be extra data in the dataset in places other than the packed db - but that shouldnt matter
         if not self.load_on_the_fly:
-            if os.path.exists(self.pack_path):
+            if os.path.exists(self.pickle_path):
+                with open(self.pickle_path, "rb") as f:
+                    self._data = pickle.load(f)
+            elif os.path.exists(self.pack_path):
                 self._data = SongDatasetEncoder().read_from_path(os.path.join(self.root, "pack.db"))
+                self.pickle()
             else:
                 self.load_from_directory()
 
@@ -238,6 +244,10 @@ class SongDataset:
     @property
     def pack_path(self):
         return os.path.join(self.root, "pack.db")
+
+    @property
+    def pickle_path(self):
+        return os.path.join(self.root, "dataset.pkl")
 
     @property
     def parts_path(self):
@@ -401,6 +411,11 @@ class SongDataset:
         else:
             data = self._data
         SongDatasetEncoder().write_to_path(data, self.pack_path)
+
+    def pickle(self):
+        """Pickle the dataset into a single file"""
+        with open(self.pickle_path, "wb") as f:
+            pickle.dump(self._data, f)
 
 def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatures) -> NDArray[np.float64]:
     """Normalize the chord result with the beat result. This is done by retime the chord result as the number of downbeats."""

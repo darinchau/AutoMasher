@@ -127,7 +127,7 @@ class MashupID:
 
     @classmethod
     def from_string(cls, st: str):
-        assert len(st) == 33, "Invalid mashup ID length."
+        assert len(st) == 33, f"Invalid mashup ID length: ({st})"
         if st.startswith(_MASHUP_ID_CUSTOM_AUDIO_PREPEND):
             raise ValueError("Mashup ID is not valid for custom audio.")
 
@@ -399,7 +399,7 @@ def mashup_from_id(mashup_id_str: str, config: MashupConfig | None = None, datas
 
     write("Determining slice results...")
     submitted_downbeats_a, slice_start_a, slice_end_a = determine_slice_results(a_downbeats, config)
-    assert slice_start_a >= 0, "Starting point must be >= 0"
+    assert slice_start_a >= 0, f"Starting point must be >= 0, got {slice_start_a}"
     write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
 
     submitted_audio_a = a_audio.slice_seconds(slice_start_a, slice_end_a)
@@ -444,7 +444,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         song_a_entry = dataset.get_by_url(link)
         dataset = dataset.filter(lambda x: x.url != link)
 
-    assert isinstance(dataset, SongDataset)
+    assert isinstance(dataset, SongDataset), f"Expected SongDataset, got {type(dataset)}"
     if len(dataset) == 0:
         raise InvalidMashup("No songs in the dataset.")
 
@@ -462,11 +462,11 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
             beat_model_path=config._beat_model_path,
         )
 
-    assert isinstance(song_a_entry, DatasetEntry)
+    assert isinstance(song_a_entry, DatasetEntry), f"Expected DatasetEntry, got {type(song_a_entry)}"
 
     write("Determining slice results...")
     song_a_downbeats, slice_start_a, slice_end_a = determine_slice_results(song_a_entry.downbeats, config)
-    assert slice_start_a >= 0, "Starting point must be >= 0"
+    assert slice_start_a >= 0, f"Starting point must be >= 0, got {slice_start_a}"
     write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
 
     song_a_chords = song_a_entry.chords.slice_seconds(slice_start_a, slice_end_a)
@@ -547,7 +547,7 @@ def mashup_from_audio(audio: Audio, config: MashupConfig):
 
     write("Determining slice results...")
     song_a_downbeats, slice_start_a, slice_end_a = determine_slice_results(song_a_entry.downbeats, config)
-    assert slice_start_a >= 0, "Starting point must be >= 0"
+    assert slice_start_a >= 0, f"Starting point must be >= 0, got {slice_start_a}"
     write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
 
     # Prepare the entry to calculate the mashability
