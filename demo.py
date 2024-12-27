@@ -13,8 +13,7 @@ import base64
 import gradio as gr
 import traceback
 from fyp.util import is_ipython, is_colab
-from fyp.app import mashup_from_id
-from fyp.audio.cache import LocalCache
+from fyp.app import mashup_from_id, load_dataset
 from fyp import mashup_song, MashupConfig, MashupMode, get_url, InvalidMashup, Audio
 
 # Set to None to disable caching
@@ -57,7 +56,6 @@ def mashup(
     left_pan: float,
     save_original: bool
 ):
-    cache_handler_factory = lambda url: LocalCache(CACHE_DIR, url)
     mashup_mode_ = MashupMode.NATURAL if not mashup_mode.strip() else {
         v: k for k, v in get_mashup_mode_desc_map().items()
     }[mashup_mode]
@@ -84,7 +82,7 @@ def mashup(
 
     if mashup_id and mashup_id != "Enter Mashup ID":
         try:
-            mashup = mashup_from_id(mashup_id, config, cache_handler_factory)
+            mashup = mashup_from_id(mashup_id, config)
             return gr.Textbox("Mashup complete!"), pack_audio(mashup)
         except InvalidMashup as e:
             print(traceback.format_exc())
@@ -96,7 +94,7 @@ def mashup(
         return gr.Textbox(f"Error: Invalid YouTube link ({e})"), None
 
     try:
-        mashup, _, system_message = mashup_song(link, config, cache_handler_factory)
+        mashup, _, system_message = mashup_song(link, config)
         return gr.Textbox(system_message), pack_audio(mashup)
     except Exception as e:
         print(traceback.format_exc())
@@ -109,10 +107,10 @@ def get_audio_from_link(input_yt_link: str, starting_point: float):
         return gr.Textbox(f"Error: Invalid YouTube link ({e})"), None
 
     title = link.title
-    cache_handler = LocalCache(CACHE_DIR, link)
+    dataset = load_dataset(MashupConfig(1))
 
     try:
-        audio = cache_handler.get_audio()
+        audio = dataset.get_audio(link)
         slice_end = min(audio.duration, starting_point + 10)
         audio = audio.slice_seconds(starting_point, slice_end)
     except Exception as e:

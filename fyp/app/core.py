@@ -89,12 +89,12 @@ class MashupConfig:
     natural_vocal_proportion_threshold: float = 0.8
     natural_window_size: int = 10
     left_pan: float = 0.15
-    save_original: bool = False # If true, save the original audio in "./.cache"
+    save_original: bool = False # If true, save the original audio in resources/mashups/<mashup_id>
 
     append_song_to_dataset: bool = False # If true, append the song to the dataset after the search
 
     # The path of stuff should not be exposed to the user
-    _dataset_path: str = "resources/dataset/audio-infos-v3.0.fast.db"
+    _dataset_path: str = "resources/dataset"
     _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
     _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
 
@@ -307,10 +307,9 @@ def create_mash(dataset: SongDataset,
                 best_result_url: YouTubeURL,
                 best_result_start_bar: int,
                 best_result_transpose: int,
-                config: MashupConfig,
-                verbose: bool = False):
+                config: MashupConfig):
     """Creates the mashup from the given parameters. Returns the mashup and the original audio for track B."""
-    write = print if verbose else lambda x: None
+    write = print if config._verbose else lambda x: None
 
     write(f"Loading audio for song B from {best_result_url}...")
     b_audio = dataset.get_audio(best_result_url)
@@ -343,10 +342,80 @@ def create_mash(dataset: SongDataset,
         natural_vocal_proportion_threshold=config.natural_vocal_proportion_threshold,
         mode=config.mashup_mode,
         left_pan=config.left_pan,
-        verbose=verbose,
+        verbose=config._verbose,
     )
     write(f"Got mashup with mode {mode_used}.")
     return submitted_audio_a, submitted_audio_b, mashup
+
+def save_mashup_result(submitted_audio_a: Audio, submitted_audio_b: Audio, mashup: Audio, mashup_id: MashupID, config: MashupConfig):
+    """Save the mashup result to the disk. If the folder already exists, it will be overwritten."""
+    if not config.save_original:
+        return
+
+    save_dir = os.path.join("resources", "mashups", mashup_id.to_string())
+    os.makedirs(save_dir, exist_ok=True)
+
+    submitted_audio_a.save(os.path.join(save_dir, "song_a.wav"))
+    submitted_audio_b.save(os.path.join(save_dir, "song_b.wav"))
+    mashup.save(os.path.join(save_dir, "mashup.wav"))
+
+def mashup_from_id(mashup_id_str: str, config: MashupConfig | None = None, dataset: SongDataset | None = None) -> Audio:
+    """Performs a mashup from a mashup ID"""
+    mashup_id = MashupID.from_string(mashup_id_str)
+
+    if config is not None:
+        # Copy all aspects of the config, except for the starting point
+        # where we set it to song a's starting point
+        # Use a little hack just don't tell anybody else is ok :)
+        config = copy.deepcopy(config)
+        object.__setattr__(config, "starting_point", mashup_id.song_a_start_time)
+    else:
+        config = MashupConfig(starting_point=mashup_id.song_a_start_time)
+
+    validate_config(config)
+    write = lambda x: print(x, flush=True) if config._verbose else lambda x: None
+    write(f"Creating mashup from ID {mashup_id_str}")
+
+    dataset = load_dataset(config) if dataset is None else dataset
+    write(f"Loaded dataset with {len(dataset)} songs.")
+
+    write(f"Loading audio for song A from {mashup_id.song_a}...")
+    a_audio = dataset.get_audio(mashup_id.song_a)
+    write(f"Got audio with duration {a_audio.duration} seconds.")
+
+    write("Analyzing beats for song A...")
+    a_entry = dataset.get_or_create_entry(mashup_id.song_a)
+    a_downbeats = a_entry.downbeats
+    if len(a_downbeats) < config.nbars:
+        raise InvalidMashup("The audio is too short to mashup with the dataset.")
+    write(f"Got beat analysis result with {len(a_downbeats)} bars.")
+
+    write("Determining slice results...")
+    submitted_downbeats_a, slice_start_a, slice_end_a = determine_slice_results(a_downbeats, config)
+    assert slice_start_a >= 0, "Starting point must be >= 0"
+    write(f"Got slice results with start {slice_start_a} and end {slice_end_a}.")
+
+    submitted_audio_a = a_audio.slice_seconds(slice_start_a, slice_end_a)
+    submitted_entry_a = create_entry(
+        url = mashup_id.song_a,
+        beats = a_entry.beats.slice_seconds(slice_start_a, slice_end_a),
+        downbeats = submitted_downbeats_a,
+        chords = a_entry.chords.slice_seconds(slice_start_a, slice_end_a),
+    )
+
+    submitted_audio_a, submitted_audio_b, mashup = create_mash(
+        dataset=dataset,
+        submitted_audio_a=submitted_audio_a,
+        submitted_entry_a=submitted_entry_a,
+        submitted_parts_a=dataset.get_parts(mashup_id.song_a).slice_seconds(slice_start_a, slice_end_a),
+        best_result_url=mashup_id.song_b,
+        best_result_start_bar=mashup_id.song_b_start_bar,
+        best_result_transpose=mashup_id.transpose,
+        config=config,
+    )
+
+    save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
+    return mashup
 
 def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | None = None) -> tuple[Audio, list[tuple[float, MashabilityResult]], str]:
     """
@@ -433,7 +502,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         transpose=best_result.transpose,
     )
 
-    _, _, mashup = create_mash(
+    submitted_audio_a, submitted_audio_b, mashup = create_mash(
         dataset,
         a_audio,
         song_a_entry,
@@ -442,6 +511,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         best_result.start_bar,
         best_result.transpose,
         config,
-        verbose=config._verbose,
     )
+
+    save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
     return mashup, scores, system_messages

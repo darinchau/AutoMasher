@@ -76,7 +76,8 @@ def main():
     )
 
     # Search the song
-    audio, scores, _ = mashup_song(link, config)
+    audio, scores, msg = mashup_song(link, config)
+    print(msg)
     audio.save("output.wav")
 
 if __name__ == "__main__":
