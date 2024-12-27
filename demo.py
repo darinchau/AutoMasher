@@ -54,7 +54,8 @@ def mashup(
     filter_short_song_bar_threshold_input: int,
     search_radius_input: int,
     left_pan: float,
-    save_original: bool
+    save_original: bool,
+    append_song_to_dataset: bool,
 ):
     mashup_mode_ = MashupMode.NATURAL if not mashup_mode.strip() else {
         v: k for k, v in get_mashup_mode_desc_map().items()
@@ -78,7 +79,7 @@ def mashup(
         left_pan=left_pan,
         _verbose=True,
         save_original=save_original,
-        append_song_to_dataset=True,
+        append_song_to_dataset=append_song_to_dataset,
         load_on_the_fly=False,
         assert_audio_exists=False,
     )
@@ -226,12 +227,19 @@ def app():
                                 info="If you have a mashup ID, you can enter it here to recreate the mashup. In this case the song link and starting point will be ignored"
                             )
                             with gr.Row():
-                                save_original = gr.Checkbox(
-                                    label="Save Original",
-                                    interactive=True,
-                                    value=False,
-                                    info="Save the original song in the output as well"
-                                )
+                                with gr.Column():
+                                    save_original = gr.Checkbox(
+                                        label="Save Original",
+                                        interactive=True,
+                                        value=False,
+                                        info="Save the original song in the output as well"
+                                    )
+                                    append_song_to_dataset = gr.Checkbox(
+                                        label="Append Song to Dataset",
+                                        interactive=True,
+                                        value=True,
+                                        info="Append the song to the dataset for future use"
+                                    )
                                 left_pan = gr.Number(
                                     label="Left Pan",
                                     interactive=True,
@@ -325,7 +333,8 @@ def app():
                             filter_short_song_bar_threshold_input,
                             search_radius_input,
                             left_pan,
-                            save_original
+                            save_original,
+                            append_song_to_dataset,
                         ],
                         [output_msg, output_audio],
                     )
