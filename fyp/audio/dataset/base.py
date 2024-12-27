@@ -218,6 +218,23 @@ class SongDataset:
     def __repr__(self):
         return f"SongDataset({len(self)} entries)"
 
+    def pack(self, path_out: str = "dataset_v3.db"):
+        from .v3 import SongDatasetEncoder
+        dataset_encoder = SongDatasetEncoder()
+        dataset_encoder.write_to_path(self, path_out)
+
+        read_dataset = dataset_encoder.read_from_path(path_out)
+        print(f"Read dataset from {path_out} ({len(read_dataset)} entries)")
+        for url, entry in tqdm(read_dataset._data.items(), total=len(read_dataset)):
+            read_entry = self.get_by_url(url)
+            if read_entry is None:
+                raise ValueError(f"Entry {entry} not found in read dataset")
+            if entry != read_entry:
+                print(f"Entry {entry} mismatch")
+                raise ValueError(f"Entry {entry} mismatch")
+
+        print("Dataset packed successfully")
+
 # Provides a unified directory structure and API that defines a AutoMasher v3 dataset
 class LocalSongDataset(SongDataset):
     """New in v3
@@ -226,8 +243,6 @@ class LocalSongDataset(SongDataset):
 
     Supports reading on-the-fly from a directory structure. The directory structure should be as follows:
     - audio-infos-v3/
-        - spectrograms/
-            - <youtube_id>.spec.zip
         - audio/
             - <youtube_id>.mp3
         - datafiles/
@@ -237,7 +252,6 @@ class LocalSongDataset(SongDataset):
 
     Where:
     - <youtube_id> is the youtube video id
-    - <youtube_id>.spec.zip is a zip file containing the spectrograms for the song
     - <youtube_id>.mp3 is the audio file
     - <youtube_id>.dat3 is the datafile containing the song information
     - error_logs.txt is a file containing error logs
@@ -250,12 +264,6 @@ class LocalSongDataset(SongDataset):
             raise FileNotFoundError(f"Directory {root} does not exist")
 
         self.root = root
-        self.datafile_path = os.path.join(root, "datafiles")
-        self.error_logs_path = os.path.join(root, "error_logs.txt")
-        self.spectrogram_path = os.path.join(root, "spectrograms")
-        self.audio_path = os.path.join(root, "audio")
-        self.info_path = os.path.join(root, "log.json")
-
         self.load_on_the_fly = load_on_the_fly
 
         self.init_directory_structure()
@@ -275,9 +283,6 @@ class LocalSongDataset(SongDataset):
         if not os.path.exists(self.datafile_path):
             os.makedirs(self.datafile_path)
 
-        if not os.path.exists(self.spectrogram_path):
-            os.makedirs(self.spectrogram_path)
-
         if not os.path.exists(self.audio_path):
             os.makedirs(self.audio_path)
 
@@ -295,12 +300,8 @@ class LocalSongDataset(SongDataset):
             if not file.endswith(".dat3"):
                 return f"Invalid datafile: {file}"
 
-        for file in os.listdir(self.spectrogram_path):
-            if not file.endswith(".spec.zip"):
-                return f"Invalid spectrogram: {file}"
-
         for file in os.listdir(self.audio_path):
-            if not file.endswith(".mp3") and not file.endswith(".wav"):
+            if not file.endswith(".mp3"):
                 return f"Invalid audio: {file}"
 
     def _load_from_directory(self):
@@ -327,6 +328,30 @@ class LocalSongDataset(SongDataset):
             print(f"Error writing error: {error}")
             print(f"Error writing error: {e}")
             print(f"Error writing error: {traceback.format_exc()}")
+
+    @property
+    def datafile_path(self):
+        return os.path.join(self.root, "datafiles")
+
+    @property
+    def audio_path(self):
+        return os.path.join(self.root, "audio")
+
+    @property
+    def error_logs_path(self):
+        return os.path.join(self.root, "error_logs.txt")
+
+    @property
+    def info_path(self):
+        return os.path.join(self.root, "log.json")
+
+    def get_data_path(self, url: YouTubeURL):
+        """Return the path to the datafile of the given url"""
+        return os.path.join(self.datafile_path, f"{url.video_id}.dat3")
+
+    def get_audio_path(self, url: YouTubeURL):
+        """Return the path to the audio file of the given url"""
+        return os.path.join(self.audio_path, f"{url.video_id}.mp3")
 
     def get_by_url(self, url: YouTubeURL) -> DatasetEntry | None:
         if url in self._data:
@@ -374,13 +399,17 @@ class LocalSongDataset(SongDataset):
             yield from self._data.values()
 
     def add_entry(self, entry: DatasetEntry):
+        """This adds an entry to the dataset and checks for the presence of audio"""
+        audio_path = self.get_audio_path(entry.url)
+        if not os.path.isfile(audio_path):
+            raise FileNotFoundError(f"Audio file {audio_path} not found")
         if not self.load_on_the_fly:
             self._data[entry.url] = entry
         path = os.path.join(self.datafile_path, f"{entry.url.video_id}.dat3")
         if not os.path.isfile(path):
             self._encoder.write_to_path(entry, path)
 
-    def filter(self, filter_func: Callable[[DatasetEntry], bool] | None):
+    def filter(self, filter_func: Callable[[DatasetEntry], bool] | None) -> SongDataset:
         """Returns a new dataset with the entries that satisfy the filter function. If filter_func is None, return yourself"""
         if filter_func is None:
             return self
@@ -435,21 +464,3 @@ class LocalSongDataset(SongDataset):
         if isinstance(infos, dict):
             return set(infos.keys())
         return set(infos)
-
-    def pack(self):
-        from .v3 import SongDatasetEncoder
-        dataset_encoder = SongDatasetEncoder()
-        path_out = os.path.join(self.root, "dataset_v3.db")
-        dataset_encoder.write_to_path(self, path_out)
-
-        read_dataset = dataset_encoder.read_from_path(path_out)
-        print(f"Read dataset from {path_out} ({len(read_dataset)} entries)")
-        for url, entry in tqdm(read_dataset._data.items(), total=len(read_dataset)):
-            read_entry = self.get_by_url(url)
-            if read_entry is None:
-                raise ValueError(f"Entry {entry} not found in read dataset")
-            if entry != read_entry:
-                print(f"Entry {entry} mismatch")
-                raise ValueError(f"Entry {entry} mismatch")
-
-        print("Dataset packed successfully")
