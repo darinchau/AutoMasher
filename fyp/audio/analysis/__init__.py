@@ -14,18 +14,13 @@ from .chroma import (
     ChromaFunction
 )
 
-from .base import OnsetFeatures, DiscreteLatentFeatures, ContinuousLatentFeatures
+from .base import (
+    OnsetFeatures,
+    DiscreteLatentFeatures,
+    ContinuousLatentFeatures,
+    dist_discrete_latent_features,
+    dist_continuous_latent_features,
+)
 
 from .beat import BeatAnalysisResult
 from .chord import ChordAnalysisResult
-
-__all__ = [
-    "analyse_beat_transformer",
-    "analyse_chord_transformer",
-    "chroma_cens",
-    "chroma_cqt",
-    "chroma_stft",
-    "ChromaFunction",
-    "BeatAnalysisResult",
-    "ChordAnalysisResult",
-]

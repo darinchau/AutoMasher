@@ -61,13 +61,6 @@ class OnsetFeatures:
         beats = self.onsets / speed
         return OnsetFeatures(self.duration / speed, beats)
 
-    def make_click_track(self, audio: Audio, frequency: int = 1000) -> Audio:
-        click_track = librosa.clicks(times=self.onsets, sr=audio.sample_rate, length=audio.nframes, click_freq=frequency)
-
-        click_track = audio.numpy() * 0.5 + click_track
-        click_track = torch.tensor([click_track])
-        return Audio(click_track, audio.sample_rate)
-
 T = TypeVar("T")
 @dataclass(frozen=True)
 class DiscreteLatentFeatures(ABC, Generic[T]):
@@ -121,6 +114,11 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
             if cls.map_feature_index(i) == x:
                 return i
         raise ValueError(f"Feature {x} not found in latent space")
+
+    @classmethod
+    def fdist(cls, a: T, b: T) -> float:
+        """The distance between two latent features. The inputs should be two latent feature indices"""
+        return cls.distance(cls.map_feature_name(a), cls.map_feature_name(b))
 
     def group(self):
         """Group the latent features, and deletes duplicates."""
@@ -213,80 +211,41 @@ def _slice_features(times: NDArray[np.float64], features: NDArray, start: float,
     new_features = features[start_idx:end_idx]
     return new_times, new_features
 
-@numba.njit
-def _dist_discrete_latent(times1, times2, chords1, chords2, distances) -> float:
+def _dist_discrete_latent(times1, times2, chords1, chords2, distances, duration) -> float:
     """A jitted version of the latent result distance calculation, which is defined to be the sum of distances times time
     between the two latent feature. Refer to our report for more detalis.
 
     This assumes times1 and times2 comes from a DiscreteLatentFeatures object with the same duration"""
-    score = 0
+    score = 0.
     cumulative_duration = 0.
 
     idx1 = 0
     idx2 = 0
-    len_t1 = len(times1)
-    len_t2 = len(times2)
+    len_t1 = len(times1) - 1
+    len_t2 = len(times2) - 1
 
-    while idx1 < len_t1 and idx2 < len_t2:
+    while cumulative_duration < duration and (idx1 < len_t1 or idx2 < len_t2):
         # Find the duration of the next segment to calculate
-        t1 = times1[idx1]
-        t2 = times2[idx2]
-        min_time = t1 if t1 < t2 else t2
+        next_x = duration
+        if idx1 < len_t1 and times1[idx1 + 1] < next_x:
+            next_x = times1[idx1 + 1]
+        if idx2 < len_t2 and times2[idx2 + 1] < next_x:
+            next_x = times2[idx2 + 1]
 
-        # Score = sum of (distance * duration)
-        # new_score = distances[label1[idx1]][label2[idx2]]
-        new_score = distances[chords1[idx1]][chords2[idx2]]
-        score += new_score * (min_time - cumulative_duration)
-        cumulative_duration = min_time
+        score += distances[chords1[idx1]][chords2[idx2]] * (next_x - cumulative_duration)
+        cumulative_duration = next_x
 
-        if t1 <= min_time: # This ought to be <= but should be the same
+        if idx1 < len_t1 and next_x == times1[idx1 + 1]:
             idx1 += 1
-        if t2 <= min_time:
+        if idx2 < len_t2 and next_x == times2[idx2 + 1]:
             idx2 += 1
+    score += distances[chords1[idx1]][chords2[idx2]] * (duration - cumulative_duration)
     return score
 
 F = typing.TypeVar('F', bound=DiscreteLatentFeatures)
 def dist_discrete_latent_features(a: F, b: F, dist_array: NDArray[np.float64] | None = None) -> float:
     """Calculate the distance between two discrete latent features"""
-    if dist_array is not None:
-        # Use the jitted version to speed up the calculation
-        return _dist_discrete_latent(a.times, b.times, a.features, b.features, dist_array)
-
-    cumulative_duration = 0.
-
-    times1 = a.times
-    times2 = b.times
-
-    idx1 = 0
-    idx2 = 0
-    len_t1 = len(times1)
-    len_t2 = len(times2)
-
-    score_pair_weights = {}
-
-    while idx1 < len_t1 and idx2 < len_t2:
-        # Find the duration of the next segment to calculate
-        min_time: float = min(times1[idx1], times2[idx2])
-
-        # Score = sum of (distance * duration)
-        # Assuming symmetric zero distance - we can aggregate the calculations first
-        label1 = a.features[idx1].item()
-        label2 = b.features[idx2].item()
-        if label1 != label2:
-            if {label1, label2} not in score_pair_weights:
-                score_pair_weights[label1, label2] = 0
-            score_pair_weights[label1, label2] += min_time - cumulative_duration
-        cumulative_duration = min_time
-
-        if times1[idx1] <= min_time:
-            idx1 += 1
-        if times2[idx2] <= min_time:
-            idx2 += 1
-
-    score = 0.
-    for (label1, label2), weight in score_pair_weights.items():
-        score += a.distance(label1, label2) * weight
-    return score
+    raise NotImplementedError("This function is not implemented yet")
 
 G = typing.TypeVar('G', bound=ContinuousLatentFeatures)
 def dist_continuous_latent_features(a: G, b: G) -> float:

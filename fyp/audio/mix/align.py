@@ -80,7 +80,19 @@ class MashabilityList:
         return results
 
 def calculate_onset_boundaries(submitted_onset_result: OnsetFeatures, sample_onset_result: OnsetFeatures) -> tuple[list[float], list[float]]:
-    """Aligns sample_onset_result to submitted_onset_result, and returns the boundaries and factors"""
+    """Aligns sample_onset_result to submitted_onset_result, and returns the boundaries and factors
+
+    The returned results satisfy and are intended to be used in the following manner:
+    - Slice the sample song at 0 -> boundaries[0], boundaries[0] -> boundaries[1], ...
+    - Stretch each slice by factors[0], factors[1], ... respectively
+    - The result should be aligned with the submitted onset
+
+    This requires:
+    - The first downbeat of the submitted song to be at t=0
+    - The first downbeat of the sample song to be at t=0
+    - The number of downbeats in the submitted song and the sample song to be the same
+    - The number of downbeats in the submitted song and the sample song to be more than 1
+    """
     assert submitted_onset_result.onsets.shape[0] > 1, "There are not enough downbeat information about submitted song"
     assert sample_onset_result.onsets.shape[0] > 1, "There are not enough downbeat information about sample song"
     assert submitted_onset_result.onsets.shape[0] == sample_onset_result.onsets.shape[0], "The number of downbeats in submitted song and sample song are different"
@@ -96,13 +108,6 @@ def calculate_onset_boundaries(submitted_onset_result: OnsetFeatures, sample_ons
     boundaries = sample_beat_times[1:]
 
     return factors.tolist(), boundaries.tolist()
-
-def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: BeatAnalysisResult) -> tuple[list[float], list[float]]:
-    """Calculates the boundaries and factors to align the beats of sample song to submitted song
-    Requires that t=0 are downbeats for both beat results
-    Assume submitted song has the same number of bars as sample song
-    the speed of the trailing segment of sample song will follow submitted song"""
-    return calculate_onset_boundaries(beat_result._downbeats, sample_beat_result._downbeats)
 
 def get_valid_starting_points(music_duration: NDArray[np.float64],
                               sample_downbeats: NDArray[np.float64],
@@ -186,7 +191,7 @@ def calculate_mashability(
         submitted_features = []
 
     # 1. Pretranspose the chord results
-    transposed_crs: list[tuple[int, NDArray[np.float64], NDArray[np.uint32]]] = []
+    transposed_normalized_crs: list[tuple[int, NDArray[np.float64], NDArray[np.uint32]]] = []
     if isinstance(max_transpose, int):
         max_transpose = (-max_transpose, max_transpose)
     else:
@@ -194,7 +199,7 @@ def calculate_mashability(
     for transpose_semitone in range(max_transpose[0], max_transpose[1] + 1):
         new_chord_result = submitted_entry.chords.transpose(-transpose_semitone)
         _, chords1 = new_chord_result.grouped_end_times_labels()
-        transposed_crs.append((transpose_semitone, submitted_entry.normalized_times, chords1))
+        transposed_normalized_crs.append((transpose_semitone, submitted_entry.normalized_times, chords1))
 
     scores = MashabilityList()
 
@@ -228,11 +233,11 @@ def calculate_mashability(
             if not is_bpm_within_tolerance:
                 continue
 
-            times2, chords2 = _slice_chord_result(entry.normalized_times, entry.chords.features, i, i+nbars)
+            times2, chords2 = _slice_and_group_end(entry.normalized_times, entry.chords.features, i, i+nbars)
             starting_downbeat_time: float = entry.downbeats.onsets[i].item()
             best_distance_for_current_song = max_distance
-            for transpose_semitone, times1, chords1 in transposed_crs:
-                new_distance = _dist_discrete_latent(times1, times2, chords1, chords2, chord_distances_array)
+            for transpose_semitone, times1, chords1 in transposed_normalized_crs:
+                new_distance = _dist_discrete_latent(times1, times2, chords1, chords2, chord_distances_array, nbars)
                 if new_distance > best_distance_for_current_song:
                     continue
 
@@ -280,7 +285,7 @@ def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray,
     return factors.max() <= max_delta_bpm and factors.min() >= min_delta_bpm
 
 @numba.jit(nopython=True)
-def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint32], start: float, end: float) -> tuple[NDArray[np.float64], NDArray[np.uint32]]:
+def _slice_and_group_end(times: NDArray[np.float64], labels: NDArray[np.uint32], start: float, end: float) -> tuple[NDArray[np.float64], NDArray[np.uint32]]:
     """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
     start_idx = np.searchsorted(times, start, side='right') - 1
     end_idx = np.searchsorted(times, end, side='right')

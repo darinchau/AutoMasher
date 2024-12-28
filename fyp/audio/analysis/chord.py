@@ -161,6 +161,7 @@ def _calculate_distance_of_two_chords(chord1: str, chord2: str) -> tuple[int, st
     return score, result
 
 # Gets the distance of two chords and the closest approximating chord
+# TODO do something better than this - for example use a lines of fifth approach
 def _distance_of_two_nonempty_chord(chord1: str, chord2: str) -> tuple[int, str]:
     """Gives the distance between two non-empty chords and the closest approximating chord."""
     chord_notes_map = get_chord_notes()
