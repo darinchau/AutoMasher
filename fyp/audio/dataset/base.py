@@ -304,11 +304,14 @@ class SongDataset:
         return len(os.listdir(self.datafile_path)) if self.load_on_the_fly else len(self._data)
 
     def __iter__(self):
-        urls = [get_url(file[:-5]) for file in os.listdir(self.datafile_path)] if self.load_on_the_fly else self._data.keys()
-        for url in urls:
-            entry = self.get_by_url(url)
-            if entry is not None and all(f(entry) for f in self.filters):
-                yield entry
+        if self.load_on_the_fly:
+            urls = [get_url(file[:-5]) for file in os.listdir(self.datafile_path)]
+            for url in urls:
+                entry = self.get_by_url(url)
+                if entry is not None:
+                    yield entry
+        else:
+            yield from self._data.values()
 
     def __contains__(self, url: YouTubeURL):
         return self.get_by_url(url) is not None
@@ -328,7 +331,10 @@ class SongDataset:
         """Returns self with the filter applied lazily"""
         if filter_func is None:
             return self
-        self.filters.append(filter_func)
+        if self.load_on_the_fly:
+            self.filters.append(filter_func)
+        else:
+            self._data = {url: entry for url, entry in self._data.items() if filter_func(entry)}
         return self
 
     def __repr__(self):

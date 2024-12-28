@@ -149,7 +149,7 @@ def app():
                     )
                     starting_point = gr.Number(
                         label="Starting point (seconds)",
-                        value=42.0,
+                        value=43.0,
                         interactive=True,
                         minimum=0,
                         info="Pick a complete verse, ideally at the start of the chorus, to get the best results",

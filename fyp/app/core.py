@@ -334,6 +334,8 @@ def create_mash(dataset: SongDataset,
     write("Analyzing parts for song B...")
     submitted_parts_b = dataset.get_parts(entry.url).slice_seconds(slice_start_b, slice_end_b)
 
+    print(submitted_audio_a.duration, submitted_audio_b.duration)
+
     write("Creating mashup...")
     mashup, mode_used = create_mashup(
         submitted_audio_a=submitted_audio_a,
@@ -516,14 +518,14 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
     )
 
     submitted_audio_a, submitted_audio_b, mashup = create_mash(
-        dataset,
-        a_audio,
-        song_a_entry,
-        dataset.get_parts(link),
-        best_result.url,
-        best_result.start_bar,
-        best_result.transpose,
-        config,
+        dataset=dataset,
+        submitted_audio_a=a_audio.slice_seconds(slice_start_a, slice_end_a),
+        submitted_entry_a=submitted_entry,
+        submitted_parts_a=dataset.get_parts(link).slice_seconds(slice_start_a, slice_end_a),
+        best_result_url=best_result.url,
+        best_result_start_bar=best_result.start_bar,
+        best_result_transpose=best_result.transpose,
+        config=config,
     )
 
     save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)

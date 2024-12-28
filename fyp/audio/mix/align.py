@@ -238,22 +238,20 @@ def calculate_mashability(
 
                 # Calculate the distance between the latent features
                 should_break = False
-                for i, (fn, feat, da, w) in enumerate(zip(features_fn, submitted_features, dist_arrays, weights)):
-                    feature = fn(dataset, entry.url, transpose_semitone)
-                    assert isinstance(feat, type(feature)) and isinstance(feature, type(feat)), f"Expected {type(feature)} for the {i}-th submitted feature, got {type(feat)}"
-                    if isinstance(feat, DiscreteLatentFeatures) and isinstance(feature, DiscreteLatentFeatures):
-                        new_distance += w * dist_discrete_latent_features(feat, feature, da)
-                    elif isinstance(feat, ContinuousLatentFeatures) and isinstance(feature, ContinuousLatentFeatures):
-                        new_distance += w * dist_continuous_latent_features(feat, feature)
+                if submitted_features is not None:
+                    for i, (fn, feat, da, w) in enumerate(zip(features_fn, submitted_features, dist_arrays, weights)):
+                        feature = fn(dataset, entry.url, transpose_semitone)
+                        assert isinstance(feat, type(feature)) and isinstance(feature, type(feat)), f"Expected {type(feature)} for the {i}-th submitted feature, got {type(feat)}"
+                        if isinstance(feat, DiscreteLatentFeatures) and isinstance(feature, DiscreteLatentFeatures):
+                            new_distance += w * dist_discrete_latent_features(feat, feature, da)
+                        elif isinstance(feat, ContinuousLatentFeatures) and isinstance(feature, ContinuousLatentFeatures):
+                            new_distance += w * dist_continuous_latent_features(feat, feature)
 
-                    if new_distance > best_distance_for_current_song:
-                        should_break = True
-                        break
-                if should_break:
-                    continue
-
-                if filter_top_scores:
-                    best_distance_for_current_song = new_distance
+                        if new_distance > best_distance_for_current_song:
+                            should_break = True
+                            break
+                    if should_break:
+                        continue
 
                 # Use a tuple instead of a dataclass for now, will change it back to a dataclass in scores.get
                 # This is because using tuple literal syntax skips the step to find the dataclass constructor name
