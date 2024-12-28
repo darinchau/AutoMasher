@@ -168,42 +168,35 @@ def _get_distance_array():
     return np.array(distance_array, dtype = np.int32)
 
 # Calculates the distance of chord results except we only put everything as np arrays for numba jit
-@numba.jit(numba.float64(numba.float64[:], numba.float64[:], numba.uint8[:], numba.uint8[:], numba.int32[:, :]), locals={
-    "score": numba.float64,
-    "cumulative_duration": numba.float64,
-    "idx1": numba.int32,
-    "idx2": numba.int32,
-    "len_t1": numba.int32,
-    "len_t2": numba.int32,
-    "min_time": numba.float64,
-    "new_score": numba.float64
-},nopython=True)
-def _dist_chord_results(times1, times2, chords1, chords2, distances):
+@numba.njit
+def _dist_chord_results(times1, times2, chords1, chords2, distances, duration):
     """A jitted version of the chord result distance calculation, which is defined to be the sum of distances times time
     between the two chord results. The distance between two chords is defined to be the distance between the two chords.
     Refer to our report for more detalis."""
-    score = 0
+    score = 0.
     cumulative_duration = 0.
 
     idx1 = 0
     idx2 = 0
-    len_t1 = len(times1)
-    len_t2 = len(times2)
+    len_t1 = len(times1) - 1
+    len_t2 = len(times2) - 1
 
-    while idx1 < len_t1 and idx2 < len_t2:
+    while cumulative_duration < duration and (idx1 < len_t1 or idx2 < len_t2):
         # Find the duration of the next segment to calculate
-        min_time = min(times1[idx1], times2[idx2])
+        next_x = duration
+        if idx1 < len_t1 and times1[idx1 + 1] < next_x:
+            next_x = times1[idx1 + 1]
+        if idx2 < len_t2 and times2[idx2 + 1] < next_x:
+            next_x = times2[idx2 + 1]
 
-        # Score = sum of (distance * duration)
-        # new_score = distances[label1[idx1]][label2[idx2]]
-        new_score = distances[chords1[idx1]][chords2[idx2]]
-        score += new_score * (min_time - cumulative_duration)
-        cumulative_duration = min_time
+        score += distances[chords1[idx1]][chords2[idx2]] * (next_x - cumulative_duration)
+        cumulative_duration = next_x
 
-        if times1[idx1] <= min_time:
+        if idx1 < len_t1 and next_x == times1[idx1 + 1]:
             idx1 += 1
-        if times2[idx2] <= min_time:
+        if idx2 < len_t2 and next_x == times2[idx2 + 1]:
             idx2 += 1
+    score += distances[chords1[idx1]][chords2[idx2]] * (duration - cumulative_duration)
     return score
 
 def calculate_boundaries(beat_result: BeatAnalysisResult, sample_beat_result: BeatAnalysisResult) -> tuple[list[float], list[float]]:
@@ -304,7 +297,7 @@ def calculate_mashability(submitted_chord_result: ChordAnalysisResult, submitted
             times2, chords2 = _slice_chord_result(sample_normalized_chord_times, sample_normalized_chords, i, i+nbars)
             starting_downbeat: float = sample_downbeats[i].item()
             for transpose_semitone, times1, chords1 in transposed_crs:
-                new_distance = _dist_chord_results(times1, times2, chords1, chords2, distances)
+                new_distance = _dist_chord_results(times1, times2, chords1, chords2, distances, nbars)
                 if new_distance > max_distance:
                     continue
                 # Use a tuple instead of a dataclass for now, will change it back to a dataclass in scores.get
@@ -356,4 +349,4 @@ def distance_of_chord_results(submitted_chord_result: ChordAnalysisResult, sampl
     times1, chords1 = submitted_chord_result.grouped_end_times_labels()
     times2, chords2 = sample_chord_result.grouped_end_times_labels()
     distances = _get_distance_array()
-    return _dist_chord_results(times1, times2, chords1, chords2, distances)
+    return _dist_chord_results(times1, times2, chords1, chords2, distances, submitted_chord_result.duration)
