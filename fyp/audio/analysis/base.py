@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 import numpy as np
 import librosa
-from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map, get_chord_notes, get_chord_note_inv
 from ...audio import Audio
 import torch
 from numpy.typing import NDArray

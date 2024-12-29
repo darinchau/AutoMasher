@@ -48,18 +48,22 @@ def get_default_config() -> Hyperparameters:
     )
 
 _BTC_MODEL = None
-def get_model(model_path: str, device: torch.device, use_loaded_model: bool) -> tuple[BTCModel, Hyperparameters, Any, Any]:
-    global _BTC_MODEL
-    if _BTC_MODEL is not None and use_loaded_model:
+_BTC_MODEL_LARGE_VOCA = None
+def get_model(model_path: str, device: torch.device, use_voca: bool, use_loaded_model: bool) -> tuple[BTCModel, Hyperparameters, Any, Any]:
+    global _BTC_MODEL, _BTC_MODEL_LARGE_VOCA
+    if _BTC_MODEL is not None and use_loaded_model and not use_voca:
         return _BTC_MODEL
+    if _BTC_MODEL_LARGE_VOCA is not None and use_loaded_model and use_voca:
+        return _BTC_MODEL_LARGE_VOCA
 
     # Init config
     config = get_default_config()
 
-    config.feature['large_voca'] = True
-    config.model['num_chords'] = 170
-    if "large_voca" not in model_path:
-       raise ValueError(f"The small model has been deprecated. Please use the large model. Perhaps incorrect path detected? {model_path}")
+    if use_voca:
+        config.feature['large_voca'] = True
+        config.model['num_chords'] = 170
+        if "large_voca" not in model_path:
+            model_path = model_path.replace("model.pt", "model_large_voca.pt")
 
     # Load the model
     model = BTCModel(config = config.model).to(device)
@@ -67,10 +71,14 @@ def get_model(model_path: str, device: torch.device, use_loaded_model: bool) -> 
     mean = checkpoint['mean']
     std = checkpoint['std']
     model.load_state_dict(checkpoint['model'])
-    _BTC_MODEL = (model, config, mean, std)
-    return _BTC_MODEL
+    if use_voca:
+        _BTC_MODEL_LARGE_VOCA = (model, config, mean, std)
+        return _BTC_MODEL_LARGE_VOCA
+    else:
+        _BTC_MODEL = (model, config, mean, std)
+        return _BTC_MODEL
 
-def inference(audio: Audio, model_path: str, *, use_loaded_model: bool = True) -> tuple[list[tuple[float, int]], list[torch.Tensor]]:
+def inference(audio: Audio, model_path: str, *, use_voca: bool = True, use_loaded_model: bool = True) -> tuple[list[tuple[float, int]], list[torch.Tensor]]:
     """Main entry point. We will give you back list of triplets: (start, chord)"""
     # Handle audio and resample to the requied sr
     original_wav: np.ndarray = audio.resample(22050).numpy()
@@ -78,7 +86,7 @@ def inference(audio: Audio, model_path: str, *, use_loaded_model: bool = True) -
 
     # Load the model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, config, mean, std = get_model(model_path, device, use_loaded_model)
+    model, config, mean, std = get_model(model_path, device, use_voca, use_loaded_model)
 
     # Compute audio features
     currunt_sec_hz = 0
