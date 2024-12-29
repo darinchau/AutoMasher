@@ -6,6 +6,7 @@ from .base import DiscreteLatentFeatures, ContinuousLatentFeatures
 from .. import Audio
 from typing import Callable
 from ...model import chord_inference as inference
+from ...model.chord import ChordModelOutput
 from ...util.note import (
     get_idx2voca_chord,
     get_inv_voca_map,
@@ -17,12 +18,17 @@ from ...util.note import (
     small_voca_to_large_voca,
     simplify_chord
 )
+from ...util import YouTubeURL
 from functools import lru_cache
 import json
 import numba
 from numpy.typing import NDArray
 from dataclasses import dataclass
 from math import log
+import typing
+
+if typing.TYPE_CHECKING:
+    from ..dataset import SongDataset
 
 # The penalty score per bar for not having a chord
 NO_CHORD_PENALTY = 3
@@ -32,6 +38,9 @@ UNKNOWN_CHORD_PENALTY = 3
 
 # The penalty score for having a chord that is not in the same quality for the circle-of-fifths distnace
 DIFFERENT_QUALITY_PENALTY = 3
+
+LARGE_VOCA_CHORD_DATASET_KEY = "chord_btc_large_voca"
+SIMPLE_CHORD_DATASET_KEY = "chord_btc"
 
 @dataclass(frozen=True)
 class ChordAnalysisResult(DiscreteLatentFeatures[str]):
@@ -107,21 +116,6 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
     def from_data(cls, duration: float, labels: list[int], times: list[float]):
         """Construct a ChordAnalysisResult from native python types. Should function identically as the old constructor."""
         return cls(duration, np.array(labels, dtype=np.uint32), np.array(times, dtype=np.float64))
-
-    def grouped_end_times_labels(self):
-        """Returns a tuple of grouped end times and grouped labels. This is mostly useful for dataset search"""
-        ct = self.group()
-        end_times = ct.times
-
-        ct.features.flags.writeable = True
-        ct.times.flags.writeable = True
-
-        end_times[:-1] = end_times[1:]
-        end_times[-1] = self.duration
-
-        ct.features.flags.writeable = False
-        end_times.flags.writeable = False
-        return end_times, ct.features
 
     @property
     def chords(self) -> list[str]:
@@ -262,32 +256,101 @@ class ChordFeatures(ContinuousLatentFeatures):
     def distance(a: NDArray, b: NDArray) -> float:
         return np.linalg.norm(a - b, 2).item()
 
-def analyse_chord_transformer(audio: Audio, *, model_path: str = "./resources/ckpts/btc_model_large_voca.pt", use_large_voca: bool = True, use_loaded_model: bool = True) -> ChordAnalysisResult:
-    results, _ = inference(audio, model_path=model_path, use_loaded_model=use_loaded_model, use_voca=use_large_voca)
-    times = [r[0] for r in results]
+def analyse_chord_transformer(audio: Audio, *,
+                              dataset: SongDataset | None = None,
+                              url: YouTubeURL | None = None,
+                              regularizer: float = 0.5,
+                              model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
+                              use_large_voca: bool = True) -> ChordAnalysisResult:
+    """Analyse the chords of an audio file using the transformer model
+
+    Parameters:
+    audio (Audio): The audio file to analyse
+    regularizer (float): The regularizer to use. This value penalizes the model for changing chords too often. Defaults to 0.5
+    model_path (str): The path to the model checkpoint. Defaults to "./resources/ckpts/btc_model_large_voca.pt"
+    use_large_voca (bool): Whether to use the large voca chord system. Defaults to True
+    """
+    results = get_chord_result(audio, dataset, url, model_path, use_large_voca)
+
+    time_idx = int(audio.duration * results.time_resolution)
+
+    logit_tensor = results.logits[:time_idx].numpy()
+    T, K = logit_tensor.shape
+    dp = np.zeros_like(logit_tensor)
+    path = np.zeros_like(logit_tensor, dtype=int)
+
+    dp[0] = logit_tensor[0]
+
+    for t in range(1, T):
+        for k in range(K):
+            scores = dp[t-1] - (regularizer * (np.arange(K) != k))
+            best_prev_class = np.argmax(scores)
+            dp[t, k] = logit_tensor[t, k] + scores[best_prev_class]
+            path[t, k] = best_prev_class
+
+    max_indices = np.zeros(T, dtype=np.uint32)
+    max_indices[-1] = np.argmax(dp[-1])
+
+    for t in range(T-2, -1, -1):
+        max_indices[t] = path[t+1, max_indices[t+1]]
+
+    labels: list[int] = max_indices.tolist()
     if use_large_voca:
         chords = get_idx2voca_chord()
         inv_voca = get_inv_voca_map()
-        labels = [inv_voca[chords[r[1]]] for r in results] # Deduplicate the chords
+        labels = [inv_voca[chords[r]] for r in labels] # Deduplicate the chords
     else:
-        labels = [small_voca_to_large_voca(r[1]) for r in results]
+        labels = [small_voca_to_large_voca(r) for r in labels]
 
-    cr = ChordAnalysisResult.from_data(
-        audio.duration,
-        labels = labels,
-        times = times,
-    )
+    times = np.arange(T) / results.time_resolution
+
+    cr = ChordAnalysisResult(
+        duration=audio.duration,
+        features=max_indices,
+        times=times.astype(np.float64)
+    ).group()
     return cr
 
-def analyse_chord_features(audio: Audio, *, model_path: str = "./resources/ckpts/btc_model_large_voca.pt", use_large_voca: bool = True, use_loaded_model: bool = True) -> ContinuousLatentFeatures:
-    _, features = inference(audio, model_path=model_path, use_loaded_model=use_loaded_model, use_voca=use_large_voca)
-    latent = torch.cat(features, dim = 1)[0].cpu().numpy()
-    latent = np.array(latent, dtype=np.float32)
+def analyse_chord_features(audio: Audio, *,
+                              dataset: SongDataset | None = None,
+                              url: YouTubeURL | None = None,
+                              regularizer: float = 0.5,
+                              model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
+                              use_large_voca: bool = True) -> ChordFeatures:
+    """Analyse the chords of an audio file using the transformer model
 
-    time_idx = int(audio.duration * 10.8)
-    latent = latent[:time_idx]
+    Parameters:
+    audio (Audio): The audio file to analyse
+    regularizer (float): The regularizer to use. This value penalizes the model for changing chords too often. Defaults to 0.5
+    model_path (str): The path to the model checkpoint. Defaults to "./resources/ckpts/btc_model_large_voca.pt"
+    use_large_voca (bool): Whether to use the large voca chord system. Defaults to True
+    """
+    results = get_chord_result(audio, dataset, url, model_path, use_large_voca)
+
+    time_idx = int(audio.duration * results.time_resolution)
+    latent = results.features[:time_idx].float().numpy()
+
     return ChordFeatures(
         duration=audio.duration,
         features=latent,
-        times=np.arange(time_idx) / 10.8
+        times=np.arange(time_idx) / results.time_resolution
     )
+
+def get_chord_result(audio: Audio,
+                     dataset: SongDataset | None =  None,
+                     url: YouTubeURL | None = None,
+                     model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
+                     use_large_voca: bool = True) -> ChordModelOutput:
+    results = None
+    key = LARGE_VOCA_CHORD_DATASET_KEY if use_large_voca else SIMPLE_CHORD_DATASET_KEY
+    if dataset is not None:
+        dataset.add_key(SIMPLE_CHORD_DATASET_KEY, "{video_id}.chord")
+        dataset.add_key(LARGE_VOCA_CHORD_DATASET_KEY, "{video_id}.chord")
+        if url is not None and not url.is_placeholder and dataset.has_path(key, url):
+            results = ChordModelOutput.load(dataset.get_path(key, url))
+
+    if results is None:
+        results = inference(audio, model_path=model_path, use_voca=use_large_voca)
+        if dataset is not None and url is not None and not url.is_placeholder:
+            results.save(dataset.get_path(key, url))
+    return results

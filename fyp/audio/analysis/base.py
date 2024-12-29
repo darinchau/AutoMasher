@@ -125,7 +125,7 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
         times = np.zeros_like(self.times)
         idx = 0
         for i in range(self.features.shape[0]):
-            if idx == 0 or not np.all(self.features[i] == self.features[i-1]):
+            if idx == 0 or not self.features[i] == self.features[i-1]:
                 features[idx] = self.features[i]
                 times[idx] = self.times[i]
                 idx += 1

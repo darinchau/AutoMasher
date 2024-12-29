@@ -231,6 +231,10 @@ class SongDataset:
         file_format: str = metadata[key]
         return os.path.join(self.root, key, file_format.format(video_id=url.video_id))
 
+    def has_path(self, key: str, url: YouTubeURL) -> bool:
+        """Check if the file path for the given key and url exists"""
+        return os.path.isfile(self.get_path(key, url))
+
     def list_files(self, key: str) -> list[str]:
         """List all the files in the given key"""
         return os.listdir(os.path.join(self.root, key))

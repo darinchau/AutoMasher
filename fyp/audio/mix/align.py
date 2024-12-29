@@ -201,7 +201,11 @@ def calculate_mashability(
         transpose_cr = submitted_entry.chords.transpose(-transpose_semitone)
         if use_simplified_chord_distance:
             transpose_cr = transpose_cr.simplify()
-        #TODO group the times and labels
+        transpose_cr = ChordAnalysisResult(
+            nbars,
+            transpose_cr.features,
+            submitted_entry.normalized_times,
+        ).group()
         transposed_normalized_crs.append((transpose_semitone, submitted_entry.normalized_times, transpose_cr.features))
 
     scores = MashabilityList()

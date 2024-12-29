@@ -47,15 +47,7 @@ def get_default_config() -> Hyperparameters:
         },
     )
 
-_BTC_MODEL = None
-_BTC_MODEL_LARGE_VOCA = None
-def get_model(model_path: str, device: torch.device, use_voca: bool, use_loaded_model: bool) -> tuple[BTCModel, Hyperparameters, Any, Any]:
-    global _BTC_MODEL, _BTC_MODEL_LARGE_VOCA
-    if _BTC_MODEL is not None and use_loaded_model and not use_voca:
-        return _BTC_MODEL
-    if _BTC_MODEL_LARGE_VOCA is not None and use_loaded_model and use_voca:
-        return _BTC_MODEL_LARGE_VOCA
-
+def get_model(model_path: str, device: torch.device, use_voca: bool) -> tuple[BTCModel, Hyperparameters, Any, Any]:
     # Init config
     config = get_default_config()
 
@@ -74,22 +66,41 @@ def get_model(model_path: str, device: torch.device, use_voca: bool, use_loaded_
         model.load_state_dict(checkpoint['model'])
     except Exception as e:
         raise ValueError("Model cannot load checkpoint. Perhaps you provided the large voca model for small voca or vice versa.") from e
-    if use_voca:
-        _BTC_MODEL_LARGE_VOCA = (model, config, mean, std)
-        return _BTC_MODEL_LARGE_VOCA
-    else:
-        _BTC_MODEL = (model, config, mean, std)
-        return _BTC_MODEL
+    del model.output_layer.lstm
+    return model, config, mean, std
 
-def inference(audio: Audio, model_path: str, *, use_voca: bool = True, use_loaded_model: bool = True) -> tuple[list[tuple[float, int]], list[torch.Tensor]]:
+@dataclass
+class ChordModelOutput:
+    logits: torch.Tensor
+    features: torch.Tensor
+    time_resolution: float = 10.8 # how many timesteps per second
+
+    def save(self, path: str):
+        torch.save({
+            'logits': self.logits,
+            'features': self.features,
+            'time_resolution': self.time_resolution
+        }, path)
+
+    @staticmethod
+    def load(path: str) -> 'ChordModelOutput':
+        file = torch.load(path)
+        return ChordModelOutput(
+            logits = file['logits'],
+            features = file['features'],
+            time_resolution = file['time_resolution']
+        )
+
+def inference(audio: Audio, model_path: str, *, use_voca: bool = True) -> ChordModelOutput:
     """Main entry point. We will give you back list of triplets: (start, chord)"""
     # Handle audio and resample to the requied sr
     original_wav: np.ndarray = audio.resample(22050).numpy()
     sr = 22050
 
     # Load the model
+    # TODO: Profile this function to see if model caching is necessary
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, config, mean, std = get_model(model_path, device, use_voca, use_loaded_model)
+    model, config, mean, std = get_model(model_path, device, use_voca)
 
     # Compute audio features
     currunt_sec_hz = 0
@@ -117,35 +128,27 @@ def inference(audio: Audio, model_path: str, *, use_voca: bool = True, use_loade
     # Process features
     feature = feature.T
     feature = (feature - mean) / std
-    time_unit = feature_per_second
     n_timestep = config.model['timestep']
     num_pad = n_timestep - (feature.shape[0] % n_timestep)
     feature = np.pad(feature, ((0, num_pad), (0, 0)), mode="constant", constant_values=0)
     num_instance = feature.shape[0] // n_timestep
 
     # Inference
-    start_time = 0.0
-    lines: list[tuple[float, int]] = []
     features = []
+    logits = []
     with torch.no_grad():
         model.eval()
         feature = torch.tensor(feature, dtype=torch.float32).unsqueeze(0).to(device)
-        prev_chord: int = -1
         for t in range(num_instance):
             self_attn_output, _ = model.self_attn_layers(feature[:, n_timestep * t:n_timestep * (t + 1), :])
             features.append(self_attn_output)
-            prediction, _ = model.output_layer(self_attn_output)
+            prediction, logit = model.output_layer(self_attn_output)
             prediction = prediction.squeeze()
-            for i in range(n_timestep):
-                if t == 0 and i == 0:
-                    prev_chord = prediction[i].item()
-                    continue
-                if prediction[i].item() != prev_chord:
-                    lines.append((start_time, prev_chord))
-                    start_time = time_unit * (n_timestep * t + i)
-                    prev_chord = prediction[i].item()
-                if t == num_instance - 1 and i + num_pad == n_timestep:
-                    if start_time != time_unit * (n_timestep * t + i):
-                        lines.append((start_time, prev_chord))
-                    break
-    return lines, features
+            logits.append(logit)
+    features = torch.cat(features, dim = 1)[0].cpu().numpy()
+    logits = torch.cat(logits, dim = 1)[0].cpu().numpy()
+    return ChordModelOutput(
+        logits = torch.tensor(logits),
+        features = torch.tensor(features),
+        time_resolution = feature_per_second
+    )
