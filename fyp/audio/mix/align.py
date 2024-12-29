@@ -193,6 +193,7 @@ def calculate_mashability(
         submitted_features = []
 
     # 1. Pretranspose the chord results
+    # Transpose in the opposite direction for the submitted song for the best performance
     transposed_normalized_crs: list[tuple[int, NDArray[np.float64], NDArray[np.uint32]]] = []
     if isinstance(max_transpose, int):
         max_transpose = (-max_transpose, max_transpose)
@@ -200,8 +201,8 @@ def calculate_mashability(
         transpose_cr = submitted_entry.chords.transpose(-transpose_semitone)
         if use_simplified_chord_distance:
             transpose_cr = transpose_cr.simplify()
-        _, chords1 = transpose_cr.grouped_end_times_labels()
-        transposed_normalized_crs.append((transpose_semitone, submitted_entry.normalized_times, chords1))
+        #TODO group the times and labels
+        transposed_normalized_crs.append((transpose_semitone, submitted_entry.normalized_times, transpose_cr.features))
 
     scores = MashabilityList()
 

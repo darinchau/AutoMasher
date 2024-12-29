@@ -70,7 +70,10 @@ def get_model(model_path: str, device: torch.device, use_voca: bool, use_loaded_
     checkpoint = torch.load(model_path, map_location=device)
     mean = checkpoint['mean']
     std = checkpoint['std']
-    model.load_state_dict(checkpoint['model'])
+    try:
+        model.load_state_dict(checkpoint['model'])
+    except Exception as e:
+        raise ValueError("Model cannot load checkpoint. Perhaps you provided the large voca model for small voca or vice versa.") from e
     if use_voca:
         _BTC_MODEL_LARGE_VOCA = (model, config, mean, std)
         return _BTC_MODEL_LARGE_VOCA

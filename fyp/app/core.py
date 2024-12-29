@@ -63,6 +63,30 @@ class MashupConfig:
         filter_short_song_bar_threshold: The minimum number of bars for a song to be considered long enough. Default is 12.
 
         filter_uncached: Whether to filter out songs that are not cached. Default is False.
+
+        mashup_mode: The mode to use for the mashup. Default is MashupMode.NATURAL.
+
+        natural_drum_activity_threshold: The drum activity threshold for the natural mode. Default is 1.
+
+        natural_drum_proportion_threshold: The drum proportion threshold for the natural mode. Default is 0.8.
+
+        natural_vocal_activity_threshold: The vocal activity threshold for the natural mode. Default is 1.
+
+        natural_vocal_proportion_threshold: The vocal proportion threshold for the natural mode. Default is 0.8.
+
+        natural_window_size: The window size for the natural mode. Default is 10.
+
+        left_pan: The left pan for the natural mode. Default is 0.15.
+
+        save_original: Whether to save the original audio in the resources/mashups folder. Default is False.
+
+        append_song_to_dataset: Whether to append the song to the dataset after the search. Default is False.
+
+        load_on_the_fly: Whether to load the entries on the fly instead of loading everything at once. Default is False.
+
+        assert_audio_exists: Whether to assert that the audio exists in the dataset. Default is False.
+
+        use_simplified_chord: Whether to use the simplified chord model and circle-of-fifth distances. Default is True.
         """
     starting_point: float
     min_transpose: int = -3
@@ -99,6 +123,7 @@ class MashupConfig:
     dataset_path: str = "resources/dataset"
     _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
     _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
+    _simple_chord_model_path: str = "resources/ckpts/btc_model.pt"
 
     _verbose: bool = False
     _skip_mashup: bool = False
@@ -461,7 +486,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         song_a_entry = create_entry(
             url = link,
             audio = a_audio,
-            chord_model_path=config._chord_model_path,
+            chord_model_path=config._chord_model_path if not config.use_simplified_chord else config._simple_chord_model_path,
             beat_model_path=config._beat_model_path,
             use_simplified_chord=config.use_simplified_chord,
         )
@@ -546,7 +571,7 @@ def mashup_from_audio(audio: Audio, config: MashupConfig):
     song_a_entry = create_entry(
         url=YouTubeURL.get_placeholder(),
         audio = audio,
-        chord_model_path=config._chord_model_path,
+        chord_model_path=config._chord_model_path if not config.use_simplified_chord else config._simple_chord_model_path,
         beat_model_path=config._beat_model_path,
         use_simplified_chord=config.use_simplified_chord,
     )

@@ -179,8 +179,6 @@ def create_mashup(submitted_audio_a: Audio,
         else:
             mode = MashupMode.VOCAL_B
 
-    print(len(submitted_downbeats_a), len(submitted_downbeats_b))
-
     submitted_parts_b = create_mashup_component(
         submitted_downbeats_a,
         submitted_downbeats_b,

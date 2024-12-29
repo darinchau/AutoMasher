@@ -22,12 +22,16 @@ import json
 import numba
 from numpy.typing import NDArray
 from dataclasses import dataclass
+from math import log
 
 # The penalty score per bar for not having a chord
 NO_CHORD_PENALTY = 3
 
 # The penalty score per bar for having an unknown chord
 UNKNOWN_CHORD_PENALTY = 3
+
+# The penalty score for having a chord that is not in the same quality for the circle-of-fifths distnace
+DIFFERENT_QUALITY_PENALTY = 3
 
 @dataclass(frozen=True)
 class ChordAnalysisResult(DiscreteLatentFeatures[str]):
@@ -187,8 +191,7 @@ class SimpleChordAnalysisResult(ChordAnalysisResult):
     def distance(cls, x: int, y: int):
         # Use circle of fifths to calculate distance
         no_chord = 24
-        key_to_sharp = [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5,
-                        -3, 4, -1, 6, 1, -4, 3, -2, 5, 0, -5, 2, -3]
+        key_to_sharp = [0, -3, -5, 4, 2, -1, -3, -6, 4, 1, -1, -4, 6, 3, 1, -2, -4, 5, 3, 0, -2, -5, 5, 2]
         if x == no_chord and y == no_chord:
             return 0
         if x == no_chord or y == no_chord:
@@ -198,7 +201,8 @@ class SimpleChordAnalysisResult(ChordAnalysisResult):
             dist = 12 - dist
         if dist < -6:
             dist = 12 + dist
-        return abs(dist)
+        is_quality_different = (x % 2) != (y % 2)
+        return abs(dist) + is_quality_different * DIFFERENT_QUALITY_PENALTY
 
     @classmethod
     def map_feature_index(cls, x: int) -> str:

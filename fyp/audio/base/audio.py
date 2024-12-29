@@ -253,14 +253,10 @@ class Audio:
             wav = wav.to(dtype = torch.float32)
         return cls(wav, sr)
 
-    def play(self, blocking: bool = False,
-             callback_fn: Callable[[float], None] | None = None,
-             stop_callback_fn: Callable[[], None] | None = None):
+    def play(self, blocking: bool = False, info: list[tuple[str, float]] | None = None):
         """Plays audio in a separate thread. Use the stop() function or wait() function to let the audio stop playing.
         info is a list of stuff you want to print. Each element is a tuple of (str, float) where the float is the time in seconds
-        callback fn should take a float t which will be called every time an audio chunk is processed. The float will be the current
-        time of the audio. stop_callback_fn will also be called one last time when the audio finished
-        """
+        if progress is true, then display a nice little bar that shows the progress of the audio"""
         sd = get_sounddevice()
         def _play(sound, sr, nc, stop_event):
             event = threading.Event()
@@ -271,10 +267,11 @@ class Audio:
                 sound_ = sound[x:x+frames]
                 x = x + frames
 
-                t = x/sr
-
-                if callback_fn is not None:
-                    callback_fn(t)
+                # Print the info if there are anything
+                while info and x/sr > info[0][1]:
+                    info_str = info[0][0].ljust(longest_info)
+                    print("\r" + info_str, end="")
+                    info.pop(0)
 
                 if stop_event():
                     raise sd.CallbackStop
@@ -291,12 +288,16 @@ class Audio:
             with stream:
                 event.wait()
                 self._stop_audio = True
-                if stop_callback_fn is not None:
-                    stop_callback_fn()
 
-        if is_ipython():
-            from IPython.display import Audio as IPAudio # type: ignore
-            return IPAudio(self.numpy(), rate = self.sample_rate)
+        if info is not None:
+            blocking = True # Otherwise jupyter notebook will behave weirdly
+        else:
+            if is_ipython():
+                from IPython.display import Audio as IPAudio
+                return IPAudio(self.numpy(), rate = self.sample_rate)
+            info = []
+        info = sorted(info, key = lambda x: x[1])
+        longest_info = max([len(x[0]) for x in info]) if info else 0
         sound = self._data.mean(dim = 0).unsqueeze(1).detach().cpu().numpy()
         self._thread = threading.Thread(target=_play, args=(sound, self.sample_rate, self.nchannels.value, lambda :self._stop_audio))
         self._stop_audio = False

@@ -123,7 +123,6 @@ class SongDataset:
         if not os.path.exists(root):
             raise FileNotFoundError(f"Directory {root} does not exist")
 
-        print(f"Initializing dataset at {root}")
         self.root = root
         self.load_on_the_fly = load_on_the_fly
         self.assert_audio_exists = assert_audio_exists
@@ -146,8 +145,6 @@ class SongDataset:
                 self.pickle()
             else:
                 self.load_from_directory()
-
-        print(f"Dataset initialized at {root}")
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
@@ -287,6 +284,8 @@ class SongDataset:
             return self._data[url]
         file = self.get_data_path(url)
         file_url = get_url(file[-16:-5])
+        if not os.path.isfile(file):
+            return None
         if self.assert_audio_exists:
             audio_path = self.get_audio_path(file_url)
             if not os.path.isfile(audio_path):

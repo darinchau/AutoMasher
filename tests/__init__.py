@@ -11,6 +11,13 @@ from fyp.audio.analysis import OnsetFeatures
 from fyp.util.url import get_url
 import numpy as np
 from math import isclose
+from fyp.audio.mix.align import (
+    calculate_onset_boundaries,
+    calculate_mashability,
+    get_valid_starting_points,
+)
+from fyp.audio.analysis.base import _dist_discrete_latent
+from fyp.audio.analysis.chord import NO_CHORD_PENALTY, UNKNOWN_CHORD_PENALTY, ChordAnalysisResult, SimpleChordAnalysisResult
 
 class AutoMasherTests(unittest.TestCase):
     def test_get_valid_starting_points(self):
@@ -261,14 +268,6 @@ class TestOnsetFeatures(unittest.TestCase):
 
 
 # Tests every step of the search process
-from fyp.audio.mix.align import (
-    calculate_onset_boundaries,
-    calculate_mashability,
-    get_valid_starting_points,
-)
-from fyp.audio.analysis.base import _dist_discrete_latent
-from fyp.audio.analysis.chord import NO_CHORD_PENALTY, UNKNOWN_CHORD_PENALTY, ChordAnalysisResult
-
 def dist_chord(a: ChordAnalysisResult, b: ChordAnalysisResult):
     assert a.duration == b.duration
     dist_array = ChordAnalysisResult.get_dist_array()
@@ -522,3 +521,22 @@ class TestAlign(unittest.TestCase):
         dist = dist_chord(chord1, chord2)
         target = ChordAnalysisResult.fdist("C", "F")
         self.assertTrue(np.isclose(dist, target), msg=f"Distance: {dist}")
+
+    def test_chord_dist_simplify(self):
+        list_results = [
+            ("C", "C", 0),
+            ("C", "B", 5),
+            ("G", "B", 4),
+            ("G", "C", 1),
+            ("C", "G", 1),
+            ("C", "D", 2),
+            ("F", "G", 2),
+            ("C#", "E", 3),
+            ("G#", "A#", 2),
+            ("A#", "G#", 2),
+            ("A#", "A", 5),
+            ("C", "F#", 6),
+        ]
+        for a, b, target in list_results:
+            dist = ChordAnalysisResult.fdist(a, b)
+            self.assertTrue(np.isclose(dist, target), msg=f"Distance: {dist} mismatch for ({a}, {b})")

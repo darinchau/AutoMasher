@@ -144,7 +144,7 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
     @lru_cache(maxsize=1)
     def get_dist_array(cls):
         """Get the distance array between all latent features"""
-        dist_array = np.zeros((cls.latent_size(), cls.latent_size()))
+        dist_array = np.zeros((cls.latent_size(), cls.latent_size()), dtype=np.float64)
         for i in range(cls.latent_size()):
             for j in range(cls.latent_size()):
                 dist = cls.distance(i, j)
@@ -210,6 +210,7 @@ def _slice_features(times: NDArray[np.float64], features: NDArray, start: float,
     new_features = features[start_idx:end_idx]
     return new_times, new_features
 
+@numba.jit(nopython=True)
 def _dist_discrete_latent(times1, times2, chords1, chords2, distances, duration) -> float:
     """A jitted version of the latent result distance calculation, which is defined to be the sum of distances times time
     between the two latent feature. Refer to our report for more detalis.
