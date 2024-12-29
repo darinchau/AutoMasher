@@ -156,7 +156,6 @@ class SongDataset:
         self.load_on_the_fly = load_on_the_fly
         self.assert_audio_exists = assert_audio_exists
         self.filters: list[Callable[[DatasetEntry], bool]] = []
-        self._keys: set[str] = set()
 
         self.init_directory_structure()
         directory_invalid_reason = self._check_directory_structure()
@@ -190,12 +189,14 @@ class SongDataset:
             with open(self.metadata_path, "w") as f:
                 json.dump({}, f)
 
-    def add_key(self, key: str, file_format: str):
+        self.register("audio", "{video_id}.mp3")
+        self.register("parts", "{video_id}.demucs")
+        self.register("datafiles", "{video_id}.dat3")
+
+    def register(self, key: str, file_format: str):
         """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
 
         The file format should contain the string "{video_id}" which will be replaced by the video id of the url"""
-        if key in self._keys:
-            return
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         if not "file_structure" in metadata:
@@ -203,7 +204,6 @@ class SongDataset:
         metadata["file_structure"][key] = file_format
         with open(self.metadata_path, "w") as f:
             json.dump(metadata, f)
-        self._keys.add(key)
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
@@ -228,6 +228,8 @@ class SongDataset:
             raise ValueError("Cannot get data path for placeholder url")
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
+        if key not in metadata["file_structure"]:
+            raise ValueError(f"Key {key} not registered")
         file_format: str = metadata[key]
         return os.path.join(self.root, key, file_format.format(video_id=url.video_id))
 
@@ -237,6 +239,10 @@ class SongDataset:
 
     def list_files(self, key: str) -> list[str]:
         """List all the files in the given key"""
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        if key not in metadata["file_structure"]:
+            raise ValueError(f"Key {key} not registered")
         return os.listdir(os.path.join(self.root, key))
 
     def load_from_directory(self, verbose: bool = True):
