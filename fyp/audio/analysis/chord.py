@@ -244,6 +244,11 @@ class SimpleChordAnalysisResult(ChordAnalysisResult):
         labels = [large_voca_to_small_voca_map()[x] for x in data["labels"]]
         return cls.from_data(data["duration"], labels, data["times"])
 
+    def unsimplify(self) -> ChordAnalysisResult:
+        """Convert the SimpleChordAnalysisResult to a ChordAnalysisResult"""
+        unsimplified_labels = np.array([small_voca_to_large_voca(label) for label in self.features], dtype=np.uint32)
+        return ChordAnalysisResult(self.duration, unsimplified_labels, self.times)
+
 class ChordFeatures(ContinuousLatentFeatures):
     @staticmethod
     def latent_dims():
@@ -255,10 +260,13 @@ class ChordFeatures(ContinuousLatentFeatures):
 
 def analyse_chord_transformer(audio: Audio, *, model_path: str = "./resources/ckpts/btc_model_large_voca.pt", use_large_voca: bool = True, use_loaded_model: bool = True) -> ChordAnalysisResult:
     results, _ = inference(audio, model_path=model_path, use_loaded_model=use_loaded_model, use_voca=use_large_voca)
-    chords = get_idx2voca_chord()
     times = [r[0] for r in results]
-    inv_voca = get_inv_voca_map()
-    labels = [inv_voca[chords[r[1]]] for r in results]
+    if use_large_voca:
+        chords = get_idx2voca_chord()
+        inv_voca = get_inv_voca_map()
+        labels = [inv_voca[chords[r[1]]] for r in results] # Deduplicate the chords
+    else:
+        labels = [small_voca_to_large_voca(r[1]) for r in results]
 
     cr = ChordAnalysisResult.from_data(
         audio.duration,

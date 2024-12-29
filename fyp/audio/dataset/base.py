@@ -546,7 +546,8 @@ def create_entry(url: YouTubeURL, *,
                  genre: SongGenre = SongGenre.UNKNOWN,
                  views: int | None = None,
                  chord_model_path: str | None = None,
-                 beat_model_path: str | None = None) -> DatasetEntry:
+                 beat_model_path: str | None = None,
+                 use_simplified_chord: bool = False) -> DatasetEntry:
     """Creates the dataset entry from the data - performs normalization and music duration postprocessing"""
     if dataset is not None:
         entry = dataset.get_by_url(url)
@@ -571,9 +572,9 @@ def create_entry(url: YouTubeURL, *,
     if chords is None and (chord_times is None or chord_labels is None):
         assert audio is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
         if chord_model_path is not None:
-            chords = analyse_chord_transformer(audio, model_path=chord_model_path)
+            chords = analyse_chord_transformer(audio, model_path=chord_model_path, use_large_voca=not use_simplified_chord)
         else:
-            chords = analyse_chord_transformer(audio)
+            chords = analyse_chord_transformer(audio, use_large_voca=not use_simplified_chord)
         chord_fail_reason = verify_chord_result(chords, duration, url)
         if chord_fail_reason is not None:
             raise ValueError(f"Chord verification failed: {chord_fail_reason}")

@@ -93,6 +93,7 @@ class MashupConfig:
     append_song_to_dataset: bool = False # If true, append the song to the dataset after the search
     load_on_the_fly: bool = False # If true, load the entries on the fly instead of loading everything at once
     assert_audio_exists: bool = False # If true, assert that the audio exists in the dataset
+    use_simplified_chord: bool = True # If true, use the simplified chord model and circle-of-fifth distances. This can potentially improve the search results.
 
     # The path of stuff should not be exposed to the user
     dataset_path: str = "resources/dataset"
@@ -462,6 +463,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
             audio = a_audio,
             chord_model_path=config._chord_model_path,
             beat_model_path=config._beat_model_path,
+            use_simplified_chord=config.use_simplified_chord,
         )
 
     assert isinstance(song_a_entry, DatasetEntry), f"Expected DatasetEntry, got {type(song_a_entry)}"
@@ -495,6 +497,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         keep_first_k=config.keep_first_k_results,
         filter_top_scores=config.filter_first,
         verbose=config._verbose,
+        use_simplified_chord_distance=config.use_simplified_chord,
     )
 
     if len(scores) == 0:
@@ -545,6 +548,7 @@ def mashup_from_audio(audio: Audio, config: MashupConfig):
         audio = audio,
         chord_model_path=config._chord_model_path,
         beat_model_path=config._beat_model_path,
+        use_simplified_chord=config.use_simplified_chord,
     )
 
     write("Determining slice results...")
@@ -575,6 +579,7 @@ def mashup_from_audio(audio: Audio, config: MashupConfig):
         keep_first_k=config.keep_first_k_results,
         filter_top_scores=config.filter_first,
         verbose=config._verbose,
+        use_simplified_chord_distance=config.use_simplified_chord,
     )
 
     if len(scores) == 0:

@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 from ...util import YouTubeURL
-from ..analysis import ChordAnalysisResult, BeatAnalysisResult
+from ..analysis import ChordAnalysisResult, BeatAnalysisResult, SimpleChordAnalysisResult
 from tqdm.auto import tqdm
 import numpy as np
 from numpy.typing import NDArray
@@ -21,7 +21,7 @@ from ..analysis.base import (
     dist_continuous_latent_features,
 )
 from ..analysis.chord import ChordAnalysisResult
-from functools import reduce
+from ...util import simplify_chord
 
 @dataclass(frozen=True)
 class MashabilityResult:
@@ -143,6 +143,7 @@ def calculate_mashability(
         min_music_percentage: float = 0.5,
         delta_bpm: tuple[float, float] = (0.9, 1.1),
         max_distance: float = float("inf"),
+        use_simplified_chord_distance: bool = False,
         keep_first_k: int = 10,
         filter_top_scores: bool = True,
         verbose: bool = True,
@@ -163,6 +164,7 @@ def calculate_mashability(
         delta_bpm: The minimum and maximum delta bpm between the sample song and the submitted song
         max_distance: The maximum distance between the sample song and the submitted song. This allows early exit if the distance is too large
             and may significantly speed up the calculation
+        use_simplified_chord_distance: Whether to use the simplified chord distance. This is potentially more accurate
         keep_first_k: The number of top scores to keep in the returned results. This will in turn allow us to use a heap to keep track of the top scores
         filter_top_scores: Whether to filter the top scores to only keep the top scores that are unique
         verbose: Whether to print the progress bar
@@ -194,11 +196,11 @@ def calculate_mashability(
     transposed_normalized_crs: list[tuple[int, NDArray[np.float64], NDArray[np.uint32]]] = []
     if isinstance(max_transpose, int):
         max_transpose = (-max_transpose, max_transpose)
-    else:
-        max_transpose = max_transpose
     for transpose_semitone in range(max_transpose[0], max_transpose[1] + 1):
-        new_chord_result = submitted_entry.chords.transpose(-transpose_semitone)
-        _, chords1 = new_chord_result.grouped_end_times_labels()
+        transpose_cr = submitted_entry.chords.transpose(-transpose_semitone)
+        if use_simplified_chord_distance:
+            transpose_cr = transpose_cr.simplify()
+        _, chords1 = transpose_cr.grouped_end_times_labels()
         transposed_normalized_crs.append((transpose_semitone, submitted_entry.normalized_times, chords1))
 
     scores = MashabilityList()
@@ -208,7 +210,10 @@ def calculate_mashability(
 
     # 2. Calculate the distance between the submitted song and the sample song for each song
     #TODO - Implement the parallel version of this
-    chord_distances_array = ChordAnalysisResult.get_dist_array()
+    if use_simplified_chord_distance:
+        chord_distances_array = SimpleChordAnalysisResult.get_dist_array()
+    else:
+        chord_distances_array = ChordAnalysisResult.get_dist_array()
     for entry in tqdm(dataset, desc="Searching database", disable=not verbose):
         valid_start_points = get_valid_starting_points(
             music_duration=entry.music_duration,
@@ -236,6 +241,8 @@ def calculate_mashability(
             times2, chords2 = _slice_and_group_end(entry.normalized_times, entry.chords.features, i, i+nbars)
             starting_downbeat_time: float = entry.downbeats.onsets[i].item()
             best_distance_for_current_song = max_distance
+            if use_simplified_chord_distance:
+                chords2 = np.array([simplify_chord(label) for label in chords2], dtype=np.uint32)
             for transpose_semitone, times1, chords1 in transposed_normalized_crs:
                 new_distance = _dist_discrete_latent(times1, times2, chords1, chords2, chord_distances_array, nbars)
                 if new_distance > best_distance_for_current_song:
