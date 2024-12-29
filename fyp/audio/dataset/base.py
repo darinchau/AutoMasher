@@ -105,8 +105,9 @@ class SongDataset:
             - <youtube_id>.demucs
         - error_logs.txt
         - log.json
-        - pack.db
+        - pack.data
         - dataset.pkl
+        - .db
 
     Where:
     - <youtube_id> is the youtube video id
@@ -115,10 +116,38 @@ class SongDataset:
     - <youtube_id>.demucs is the parts file containing the separated parts of the audio
     - error_logs.txt is a file containing error logs
     - log.json is a file containing information about calculations done on the dataset
-    - pack.db is a file containing the dataset in a compressed format
+    - pack.data is a file containing the dataset in a compressed format
+    - .db is a file containing the metadata of the dataset in json format
+
+    Has the following attributes
+    - root: str: The root directory of the dataset
+    - load_on_the_fly: bool: Whether to load the dataset on the fly or not
+    - assert_audio_exists: bool: Whether to assert that the audio file exists or not
+
+    Has the following methods
+    - init_directory_structure: None: Initializes the directory structure
+    - add_key: None: Adds a key to the dataset
+    - _check_directory_structure: str | None: Checks if the directory structure is correct
+    - get_path: str: Gets the path for the given key and url
+    - list_files: list[str]: Lists all the files in the given key
+    - load_from_directory: None: Reloads the dataset from the directory into memory
+    - write_error: None: Writes an error to the error log
+    - __len__: int: Returns the length of the dataset
+    - __iter__: Iterable[DatasetEntry]: Returns an iterator over the dataset
+    - __contains__: bool: Checks if the dataset contains the given url
+    - save_entry: None: Saves the entry to the dataset
+    - filter: SongDataset: Returns a filtered version of the dataset
+    - write_info: None: Writes information to the info file
+    - read_info: list[YouTubeURL] | dict[YouTubeURL, str] | None: Reads information from the info file
+    - read_info_urls: set[YouTubeURL]: Reads information from the info file and returns the urls
+    - get_audio: Audio: Gets the audio for the given url
+    - get_parts: DemucsCollection: Gets the parts for the given url
+    - get_or_create_entry: DatasetEntry: Gets or creates the entry for the given url
+    - pack: None: Packs the dataset into a single file
+    - pickle: None: Pickles the dataset into a single file
     """
     def __init__(self, root: str, *, load_on_the_fly: bool = False, assert_audio_exists: bool = False):
-        from .v3 import DatasetEntryEncoder, SongDatasetEncoder
+        from .compress import DatasetEntryEncoder, SongDatasetEncoder
 
         if not os.path.exists(root):
             raise FileNotFoundError(f"Directory {root} does not exist")
@@ -127,6 +156,7 @@ class SongDataset:
         self.load_on_the_fly = load_on_the_fly
         self.assert_audio_exists = assert_audio_exists
         self.filters: list[Callable[[DatasetEntry], bool]] = []
+        self._keys: set[str] = set()
 
         self.init_directory_structure()
         directory_invalid_reason = self._check_directory_structure()
@@ -141,61 +171,73 @@ class SongDataset:
                 with open(self.pickle_path, "rb") as f:
                     self._data = pickle.load(f)
             elif os.path.exists(self.pack_path):
-                self._data = SongDatasetEncoder().read_from_path(os.path.join(self.root, "pack.db"))
+                self._data = SongDatasetEncoder().read_from_path(self.pack_path)
                 self.pickle()
             else:
                 self.load_from_directory()
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
-        if not os.path.exists(self.datafile_path):
-            os.makedirs(self.datafile_path)
-
-        if not os.path.exists(self.audio_path):
-            os.makedirs(self.audio_path)
-
         if not os.path.exists(self.error_logs_path):
             with open(self.error_logs_path, "w") as f:
                 f.write("")
-
-        if not os.path.exists(self.parts_path):
-            os.makedirs(self.parts_path)
 
         if not os.path.exists(self.info_path):
             with open(self.info_path, "w") as f:
                 json.dump({}, f)
 
-    def clean_directory(self) -> list[str]:
-        """Ensures the all audios have corresponding datafiles and vice versa. Returns a list of paths to remove"""
-        audio_files = {file[:-4] for file in os.listdir(self.audio_path)}
-        data_files = {file[:-5] for file in os.listdir(self.datafile_path)}
+        if not os.path.exists(self.metadata_path):
+            with open(self.metadata_path, "w") as f:
+                json.dump({}, f)
 
-        paths_to_remove = []
+    def add_key(self, key: str, file_format: str):
+        """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
 
-        for file in audio_files - data_files:
-            paths_to_remove.append(os.path.join(self.audio_path, file + ".mp3"))
-        for file in data_files - audio_files:
-            paths_to_remove.append(os.path.join(self.datafile_path, file + ".dat3"))
-
-        return paths_to_remove
+        The file format should contain the string "{video_id}" which will be replaced by the video id of the url"""
+        if key in self._keys:
+            return
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        if not "file_structure" in metadata:
+            metadata["file_structure"] = {}
+        metadata["file_structure"][key] = file_format
+        with open(self.metadata_path, "w") as f:
+            json.dump(metadata, f)
+        self._keys.add(key)
+        directory_invalid_reason = self._check_directory_structure()
+        if directory_invalid_reason is not None:
+            raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
 
     def _check_directory_structure(self) -> str | None:
         """Checks if the files in the respective directories are correct"""
-        for file in os.listdir(self.datafile_path):
-            if not file.endswith(".dat3"):
-                return f"Invalid datafile: {file}"
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        for key, file_format in metadata["file_structure"].items():
+            if not os.path.exists(self.root + "/" + key):
+                return f"File {key} does not exist"
+            if "{video_id}" not in file_format:
+                return f"Invalid file format for {key}: {file_format}"
+            for file in self.list_files(key):
+                if not len(file) == len(file_format.format(video_id="")) + 11:
+                    return f"Invalid file format for {key}: {file} in {self.root}/{key}"
+        return None
 
-        for file in os.listdir(self.audio_path):
-            if not file.endswith(".mp3"):
-                return f"Invalid audio: {file}"
+    def get_path(self, key: str, url: YouTubeURL) -> str:
+        """Get the file path for the given key and url"""
+        if url.is_placeholder:
+            raise ValueError("Cannot get data path for placeholder url")
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        file_format: str = metadata[key]
+        return os.path.join(self.root, key, file_format.format(video_id=url.video_id))
 
-        for file in os.listdir(self.parts_path):
-            if not file.endswith(".demucs"):
-                return f"Invalid parts: {file}"
+    def list_files(self, key: str) -> list[str]:
+        """List all the files in the given key"""
+        return os.listdir(os.path.join(self.root, key))
 
     def load_from_directory(self, verbose: bool = True):
         """Reloads the dataset from the directory into memory"""
-        for file in tqdm(os.listdir(self.datafile_path), desc="Loading dataset", disable=not verbose):
+        for file in tqdm(self.list_files("datafiles"), desc="Loading dataset", disable=not verbose):
             url = get_url(file[:-5])
             entry = self.get_by_url(url)
             if entry is None:
@@ -224,12 +266,8 @@ class SongDataset:
             print(f"Error writing error: {traceback.format_exc()}")
 
     @property
-    def datafile_path(self):
-        return os.path.join(self.root, "datafiles")
-
-    @property
-    def audio_path(self):
-        return os.path.join(self.root, "audio")
+    def metadata_path(self):
+        return os.path.join(self.root, ".db")
 
     @property
     def error_logs_path(self):
@@ -248,33 +286,11 @@ class SongDataset:
         return os.path.join(self.root, "dataset.pkl")
 
     @property
-    def parts_path(self):
-        return os.path.join(self.root, "parts")
-
-    @property
     def encoder(self):
         if not hasattr(self, "_encoder"):
-            from .v3 import DatasetEntryEncoder
+            from .compress import DatasetEntryEncoder
             self._encoder = DatasetEntryEncoder()
         return self._encoder
-
-    def get_data_path(self, url: YouTubeURL):
-        """Return the path to the datafile of the given url"""
-        if url.is_placeholder:
-            raise ValueError("Cannot get data path for placeholder url")
-        return os.path.join(self.datafile_path, f"{url.video_id}.dat3")
-
-    def get_audio_path(self, url: YouTubeURL):
-        """Return the path to the audio file of the given url"""
-        if url.is_placeholder:
-            raise ValueError("Cannot get audio path for placeholder url")
-        return os.path.join(self.audio_path, f"{url.video_id}.mp3")
-
-    def get_parts_path(self, url: YouTubeURL):
-        """Return the path to the parts file of the given url"""
-        if url.is_placeholder:
-            raise ValueError("Cannot get parts path for placeholder url")
-        return os.path.join(self.parts_path, f"{url.video_id}.demucs")
 
     def get_by_url(self, url: YouTubeURL) -> DatasetEntry | None:
         """Try to get the entry by url. If it does not exist, return None"""
@@ -282,12 +298,12 @@ class SongDataset:
             return None
         if url in self._data and all(f(self._data[url]) for f in self.filters):
             return self._data[url]
-        file = self.get_data_path(url)
+        file = self.get_path("datafiles", url)
         file_url = get_url(file[-16:-5])
         if not os.path.isfile(file):
             return None
         if self.assert_audio_exists:
-            audio_path = self.get_audio_path(file_url)
+            audio_path = self.get_path("audio", file_url)
             if not os.path.isfile(audio_path):
                 return None
         try:
@@ -300,11 +316,11 @@ class SongDataset:
             return None
 
     def __len__(self):
-        return len(os.listdir(self.datafile_path)) if self.load_on_the_fly else len(self._data)
+        return len(self.list_files("datafiles")) if self.load_on_the_fly else len(self._data)
 
     def __iter__(self):
         if self.load_on_the_fly:
-            urls = [get_url(file[:-5]) for file in os.listdir(self.datafile_path)]
+            urls = [get_url(file[:-5]) for file in self.list_files("datafiles")]
             for url in urls:
                 entry = self.get_by_url(url)
                 if entry is not None:
@@ -317,12 +333,12 @@ class SongDataset:
 
     def save_entry(self, entry: DatasetEntry):
         """This adds an entry to the dataset and checks for the presence of audio"""
-        audio_path = self.get_audio_path(entry.url)
+        audio_path = self.get_path("audio", entry.url)
         if self.assert_audio_exists and not os.path.isfile(audio_path):
             raise FileNotFoundError(f"Audio file {audio_path} not found")
         if not self.load_on_the_fly:
             self._data[entry.url] = entry
-        path = os.path.join(self.datafile_path, f"{entry.url.video_id}.dat3")
+        path = self.get_path("datafiles", entry.url)
         if not os.path.isfile(path):
             self.encoder.write_to_path(entry, path)
 
@@ -379,23 +395,25 @@ class SongDataset:
     def get_audio(self, url: YouTubeURL) -> Audio:
         if url.is_placeholder:
             raise ValueError("Cannot get audio for placeholder url")
-        if os.path.isfile(self.get_audio_path(url)):
-            return Audio.load(self.get_audio_path(url))
+        path = self.get_path("audio", url)
+        if os.path.isfile(path):
+            return Audio.load(path)
         # Save and reload to ensure consistency
         audio = Audio.load(url)
-        audio.save(self.get_audio_path(url))
-        audio = Audio.load(self.get_audio_path(url))
+        audio.save(path)
+        audio = Audio.load(path)
         return audio
 
     def get_parts(self, url: YouTubeURL) -> DemucsCollection:
         if url.is_placeholder:
             raise ValueError("Cannot get parts for placeholder url")
-        if os.path.isfile(self.get_parts_path(url)):
-            return DemucsCollection.load(self.get_parts_path(url))
+        path = self.get_path("parts", url)
+        if os.path.isfile(path):
+            return DemucsCollection.load(path)
         # Save and reload to ensure consistency
         parts = get_demucs().separate(self.get_audio(url))
-        parts.save(self.get_parts_path(url))
-        parts = DemucsCollection.load(self.get_parts_path(url))
+        parts.save(path)
+        parts = DemucsCollection.load(path)
         return parts
 
     def get_or_create_entry(self, url: YouTubeURL) -> DatasetEntry:
@@ -409,7 +427,7 @@ class SongDataset:
 
     def pack(self):
         """Packs the dataset into a single file"""
-        from .v3 import SongDatasetEncoder
+        from .compress import SongDatasetEncoder
         data: dict[YouTubeURL, DatasetEntry] = {}
         if self.load_on_the_fly:
             for entry in self:

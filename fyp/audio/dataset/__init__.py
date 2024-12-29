@@ -9,7 +9,7 @@ from .base import (
     create_entry
 )
 
-from .v3 import (
+from .compress import (
     DatasetEntryEncoder,
     SongDatasetEncoder
 )

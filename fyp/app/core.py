@@ -255,6 +255,10 @@ def load_dataset(config: MashupConfig) -> SongDataset:
         assert_audio_exists=config.assert_audio_exists
     )
 
+    dataset.add_key("audio", "{video_id}.mp3")
+    dataset.add_key("parts", "{video_id}.demucs")
+    dataset.add_key("datafiles", "{video_id}.dat3")
+
     if config.filter_short_song_bar_threshold > 0:
         dataset = dataset.filter(lambda x: len(x.downbeats) >= config.filter_short_song_bar_threshold)
 
