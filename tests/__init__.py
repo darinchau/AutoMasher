@@ -538,5 +538,5 @@ class TestAlign(unittest.TestCase):
             ("C", "F#", 6),
         ]
         for a, b, target in list_results:
-            dist = ChordAnalysisResult.fdist(a, b)
+            dist = SimpleChordAnalysisResult.fdist(a, b)
             self.assertTrue(np.isclose(dist, target), msg=f"Distance: {dist} mismatch for ({a}, {b})")
