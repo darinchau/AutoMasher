@@ -209,7 +209,7 @@ def calculate_mashability(
     # 2. Precalculate distance arrays
     dist_arrays = [x.get_dist_array() if isinstance(x, DiscreteLatentFeatures) and x.latent_size() < 3000 else None for x in submitted_features]
 
-    # 2. Calculate the distance between the submitted song and the sample song for each song
+    # 3. Calculate the distance between the submitted song and the sample song for each song
     #TODO - Implement the parallel version of this
     if use_simplified_chord_distance:
         chord_distances_array = SimpleChordAnalysisResult.get_dist_array()
