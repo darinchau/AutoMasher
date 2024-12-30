@@ -189,7 +189,7 @@ class SongDataset:
             with open(self.metadata_path, "w") as f:
                 json.dump({}, f)
 
-        self.register("audio", "{video_id}.mp3")
+        self.register("audio", "{video_id}.wav")
         self.register("parts", "{video_id}.demucs")
         self.register("datafiles", "{video_id}.dat3")
 
