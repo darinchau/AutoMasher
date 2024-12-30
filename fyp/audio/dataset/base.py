@@ -55,9 +55,6 @@ class SongGenre(Enum):
     def from_int(i: int) -> SongGenre:
         return list(SongGenre)[i]
 
-def _is_sorted(ls: list[float]):
-    return all(a <= b for a, b in zip(ls, ls[1:]))
-
 @dataclass(frozen=True)
 class DatasetEntry:
     """The main data structure in AutoMasher. This represents a single entry in the dataset.
@@ -197,6 +194,8 @@ class SongDataset:
         """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
 
         The file format should contain the string "{video_id}" which will be replaced by the video id of the url"""
+        if "{video_id}" not in file_format:
+            raise ValueError("File format must contain {video_id}")
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         if not "file_structure" in metadata:
@@ -574,8 +573,17 @@ def create_entry(url: YouTubeURL, *,
                  views: int | None = None,
                  chord_model_path: str | None = None,
                  beat_model_path: str | None = None,
-                 use_simplified_chord: bool = False) -> DatasetEntry:
-    """Creates the dataset entry from the data - performs normalization and music duration postprocessing"""
+                 use_simplified_chord: bool = False,
+                 strict: bool = False) -> DatasetEntry:
+    """Creates the dataset entry from the data - performs normalization and music duration postprocessing
+
+    If the dataset is provided, then the audio, chords, beats and downbeats can be None. In this case, the audio, chords, beats and downbeats will be loaded from the dataset.
+    If the dataset is not provided, then the audio, chords, beats and downbeats must be provided.
+    If the duration is not provided, then the audio, chords, beats or downbeats must be provided to calculate the duration.
+    If the chord model path is provided, then the chords will be calculated using the chord model path.
+    If the beat model path is provided, then the beats and downbeats will be calculated using the beat model path.
+    If the use_simplified_chord is True, then the simplified chord model will be used.
+    If the strict is True, then it will raise an error on bad entries"""
     if dataset is not None:
         entry = dataset.get_by_url(url)
         if entry is not None:
@@ -602,12 +610,15 @@ def create_entry(url: YouTubeURL, *,
             chords = analyse_chord_transformer(audio, model_path=chord_model_path, use_large_voca=not use_simplified_chord)
         else:
             chords = analyse_chord_transformer(audio, use_large_voca=not use_simplified_chord)
-        chord_fail_reason = verify_chord_result(chords, duration, url)
-        if chord_fail_reason is not None:
-            raise ValueError(f"Chord verification failed: {chord_fail_reason}")
     elif chords is None:
         assert chord_times is not None and chord_labels is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
         chords = ChordAnalysisResult.from_data(duration, chord_labels, chord_times)
+
+    assert chords is not None
+    if strict:
+        chord_fail_reason = verify_chord_result(chords, duration, url)
+        if chord_fail_reason is not None:
+            raise ValueError(f"Chord verification failed: {chord_fail_reason}")
 
     if (beats is None and beats_list is None) or (downbeats is None and downbeats_list is None):
         assert audio is not None, "Either beats or downbeats or audio must be provided"
@@ -616,9 +627,6 @@ def create_entry(url: YouTubeURL, *,
             bt = analyse_beat_transformer(audio, parts, model_path=beat_model_path)
         else:
             bt = analyse_beat_transformer(audio, parts)
-        beat_fail_reason = verify_beats_result(bt, duration, url)
-        if beat_fail_reason is not None:
-            raise ValueError(f"Beat verification failed: {beat_fail_reason}")
         beats = bt._beats
         downbeats = bt._downbeats
 
@@ -629,6 +637,13 @@ def create_entry(url: YouTubeURL, *,
     if downbeats is None:
         assert downbeats_list is not None, "Either downbeats or downbeats_list must be provided"
         downbeats = OnsetFeatures(duration, np.array(downbeats_list, dtype=np.float64))
+
+    assert beats is not None
+    assert downbeats is not None
+    if strict:
+        beat_fail_reason = verify_beats_result(BeatAnalysisResult(beats, downbeats), duration, url)
+        if beat_fail_reason is not None:
+            raise ValueError(f"Beat verification failed: {beat_fail_reason}")
 
     normalized_times = get_normalized_times(chords.times, downbeats)
     normalized_cr = ChordAnalysisResult(
