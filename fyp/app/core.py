@@ -121,6 +121,7 @@ class MashupConfig:
 
     # The path of stuff should not be exposed to the user
     dataset_path: str = "resources/dataset"
+    max_dataset_size: str = "16GB"
     _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
     _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
     _simple_chord_model_path: str = "resources/ckpts/btc_model.pt"
@@ -252,7 +253,8 @@ def load_dataset(config: MashupConfig) -> SongDataset:
     dataset = SongDataset(
         config.dataset_path,
         load_on_the_fly=config.load_on_the_fly,
-        assert_audio_exists=config.assert_audio_exists
+        assert_audio_exists=config.assert_audio_exists,
+        max_dir_size=config.max_dataset_size,
     )
 
     if config.filter_short_song_bar_threshold > 0:
