@@ -157,7 +157,7 @@ def app():
                     dataset_path = gr.Textbox(
                         label="Dataset Path",
                         interactive=True,
-                        value="D:/Repository/project-remucs/audio-infos-v3",
+                        value="./resources/dataset",
                         info="The path to the dataset."
                     )
                 with gr.Column():

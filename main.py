@@ -74,7 +74,7 @@ def main():
 
         save_original=True,
         _skip_mashup=False,
-        dataset_path="D:/Repository/project-remucs/audio-infos-v3",
+        dataset_path="./resources/dataset",
         _verbose=True
     )
 
