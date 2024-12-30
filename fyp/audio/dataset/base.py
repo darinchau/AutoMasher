@@ -8,14 +8,20 @@ from copy import deepcopy
 from ..base import Audio
 from ...util import get_url
 from ...util import YouTubeURL
+from ..analysis import ChordAnalysisResult, OnsetFeatures
+from ..separation import DemucsAudioSeparator, DemucsCollection
+from ..analysis import BeatAnalysisResult, ChordAnalysisResult, analyse_beat_transformer, analyse_chord_transformer
+from ...util import get_inv_voca_map
 from enum import Enum
-import os
 import json
 import traceback
 from typing import Callable
-
+from numpy.typing import NDArray
+import numpy as np
 from tqdm.auto import tqdm
 from typing import Iterable
+import pickle
+import numba
 
 class SongGenre(Enum):
     POP = "pop"
@@ -54,189 +60,37 @@ def _is_sorted(ls: list[float]):
 
 @dataclass(frozen=True)
 class DatasetEntry:
-    """A single entry in the dataset. This is a dataclass that represents a single entry in the dataset.
-    Typically we use the create_entry function to create a DatasetEntry object.
-
-    chords: list[int] - The chord progression of the song
-    chord_times: list[float] - The time in seconds where the chord changes
-    downbeats: list[float] - The time in seconds where the downbeats are
-    beats: list[float] - The time in seconds where the beats are
-    genre: SongGenre - The genre of the song
-    url: str - The url of the youtube video
-    playlist: str - The url of the youtube playlist this song is taken from
-    views: int - The number of views of the video at the time of scraping
-    length: float - The length of the song in seconds
-    normalized_chord_times: list[float] - The normalized chord times
-    music_duration: list[float] - The percentage of the music at each bar"""
-    chords: list[int]
-    chord_times: list[float]
-    downbeats: list[float]
-    beats: list[float]
+    """The main data structure in AutoMasher. This represents a single entry in the dataset.
+    Typically we use the create_entry function to create a DatasetEntry object."""
+    chords: ChordAnalysisResult
+    downbeats: OnsetFeatures
+    beats: OnsetFeatures
     genre: SongGenre
     url: YouTubeURL
     views: int
-    length: float
-    normalized_chord_times: list[float]
-    music_duration: list[float]
+    normalized_times: NDArray[np.float64]
+    music_duration: NDArray[np.float64]
+
+    @property
+    def duration(self):
+        return self.chords.duration
 
     def __post_init__(self):
-        assert len(self.chords) == len(self.chord_times) == len(self.normalized_chord_times), f"{len(self.chords)} != {len(self.chord_times)} != {len(self.normalized_chord_times)}"
+        assert len(self.chords.features) == len(self.normalized_times), f"{len(self.chords.features)} != {len(self.normalized_times)}"
+
         assert len(self.downbeats) == len(self.music_duration), f"{len(self.downbeats)} != {len(self.music_duration)}"
-        assert all(0 <= c < 600 for c in self.chord_times), f"Invalid chord times: {self.chord_times}"
-        assert all(0 <= c < 170 for c in self.chords), f"Invalid chords: {self.chords}"
-        assert all(0 <= c < 600 for c in self.downbeats), f"Invalid downbeats: {self.downbeats}"
-        assert all(0 <= c < 600 for c in self.beats), f"Invalid beats: {self.beats}"
-        assert self.views >= 0
-        assert self.length > 0
-        assert _is_sorted(self.chord_times)
-        assert _is_sorted(self.downbeats)
-        assert _is_sorted(self.beats)
+        assert np.all(self.normalized_times < len(self.downbeats)), f"Normalized times out of bounds: {self.normalized_times} >= {len(self.downbeats)}"
+        assert np.all(self.normalized_times >= 0), f"Normalized times out of bounds: {self.normalized_times} >= {len(self.downbeats)}"
+
+        assert self.chords.duration == self.downbeats.duration == self.beats.duration, f"Duration mismatch: {self.chords.duration} != {self.downbeats.duration} != {self.beats.duration}"
+        assert self.chords.duration <= 600, f"Duration too long: {self.chords.duration}"
+        assert self.views >= 0 or self.views == -1, f"Invalid views: {self.views}"
 
     def __repr__(self):
         return f"DatasetEntry([{self.url.video_id}])"
 
-    def equal(self, value: DatasetEntry, *, eps: float = 1e-5) -> bool:
-        """Check if the given value is equal to this entry. This is useful for testing purposes.
-        This is a bit more lenient than __eq__ as it allows for some floating point error."""
-        if self.url != value.url:
-            return False
-        if self.genre != value.genre:
-            return False
-        if self.views != value.views:
-            return False
-        if abs(self.length - value.length) > eps:
-            return False
-        if self.chords != value.chords:
-            return False
-        if len(self.chord_times) != len(value.chord_times):
-            return False
-        if any(abs(a - b) > eps for a, b in zip(self.chord_times, value.chord_times)):
-            return False
-        if len(self.downbeats) != len(value.downbeats):
-            return False
-        if any(abs(a - b) > eps for a, b in zip(self.downbeats, value.downbeats)):
-            return False
-        if len(self.beats) != len(value.beats):
-            return False
-        if any(abs(a - b) > eps for a, b in zip(self.beats, value.beats)):
-            return False
-        return True
-
-    @property
-    def _cache_handler(self):
-        from ..cache import LocalCache
-        return LocalCache("resources/cache", self.url)
-
-    def get_audio(self) -> Audio:
-        return self._cache_handler.get_audio()
-
-    @property
-    def cached(self):
-        return self._cache_handler.cached_audio
-
-    @staticmethod
-    def from_url(url: YouTubeURL, genre: SongGenre = SongGenre.UNKNOWN):
-        from .create import process_audio
-        audio = Audio.load(url)
-        entry = process_audio(audio, url, genre, verbose=False)
-        if isinstance(entry, str):
-            raise ValueError(f"Failed to process audio: {entry}")
-        return entry
-
-class SongDataset:
-    """A data structure that holds a bunch of dataset entries for query. Use a hashmap for now. lmk if there are more efficient ways to do this."""
-    def __init__(self):
-        self._data: dict[YouTubeURL, DatasetEntry] = {}
-
-    def get_by_url(self, url: YouTubeURL) -> DatasetEntry | None:
-        return self._data.get(url, None)
-
-    def __getitem__(self, url: str | YouTubeURL | int) -> DatasetEntry:
-        if isinstance(url, YouTubeURL):
-            return self._data[url]
-        if isinstance(url, str):
-            return self._data[get_url(url)]
-        if isinstance(url, int):
-            return list(self._data.values())[url]
-        raise TypeError(f"Invalid type for url: {type(url)}")
-
-    def __len__(self):
-        return len(self._data)
-
-    def __iter__(self):
-        return iter(self._data.values())
-
-    def add_entry(self, entry: DatasetEntry):
-        self._data[entry.url] = entry
-
-    def filter(self, filter_func: Callable[[DatasetEntry], bool] | None):
-        """Returns a new dataset with the entries that satisfy the filter function. If filter_func is None, return yourself"""
-        if filter_func is None:
-            return self
-        new_dataset = SongDataset()
-        for entry in self:
-            if filter_func(entry):
-                new_dataset.add_entry(entry)
-        return new_dataset
-
-    @property
-    def urls(self):
-        return sorted(self._data.keys())
-
-    @staticmethod
-    def load(dataset_path: str):
-        """Loads a v3 dataset from the given path. Only .db, .fast.db, and a folder of .dat3 files are supported"""
-        from .v3 import SongDatasetEncoder, DatasetEntryEncoder, FastSongDatasetEncoder
-
-        if os.path.isfile(dataset_path) and "fast.db" in dataset_path:
-            try:
-                return FastSongDatasetEncoder().read_from_path(dataset_path)
-            except Exception as e:
-                raise ValueError(f"Error reading dataset: {e}")
-
-        if os.path.isfile(dataset_path):
-            try:
-                return SongDatasetEncoder().read_from_path(dataset_path)
-            except Exception as e:
-                raise ValueError(f"Error reading dataset: {e}")
-
-        data_files = [f for f in os.listdir(dataset_path) if f.endswith(".dat3")]
-        if data_files:
-            dataset = SongDataset()
-            encoder = DatasetEntryEncoder()
-            for data_file in data_files:
-                try:
-                    entry = encoder.read_from_path(os.path.join(dataset_path, data_file))
-                except Exception as e:
-                    print(f"Error reading {data_file}: {e}")
-                    continue
-                dataset.add_entry(entry)
-            return dataset
-
-        raise ValueError(f"Invalid dataset path: {dataset_path}")
-
-    def __repr__(self):
-        return f"SongDataset({len(self)} entries)"
-
-    def pack(self, path_out: str = "dataset_v3.db"):
-        from .v3 import SongDatasetEncoder
-        dataset_encoder = SongDatasetEncoder()
-        dataset_encoder.write_to_path(self, path_out)
-
-        read_dataset = dataset_encoder.read_from_path(path_out)
-        print(f"Read dataset from {path_out} ({len(read_dataset)} entries)")
-        for url, entry in tqdm(read_dataset._data.items(), total=len(read_dataset)):
-            read_entry = self.get_by_url(url)
-            if read_entry is None:
-                raise ValueError(f"Entry {entry} not found in read dataset")
-            if entry != read_entry:
-                print(f"Entry {entry} mismatch")
-                raise ValueError(f"Entry {entry} mismatch")
-
-        print("Dataset packed successfully")
-
 # Provides a unified directory structure and API that defines a AutoMasher v3 dataset
-class LocalSongDataset(SongDataset):
+class SongDataset:
     """New in v3
 
     Provides a unified definition of a directory structure that ought to define a v3 dataset. This is useful particularly for loading datasets from a directory.
@@ -247,45 +101,82 @@ class LocalSongDataset(SongDataset):
             - <youtube_id>.mp3
         - datafiles/
             - <youtube_id>.dat3
+        - parts/
+            - <youtube_id>.demucs
         - error_logs.txt
         - log.json
+        - pack.data
+        - dataset.pkl
+        - .db
 
     Where:
     - <youtube_id> is the youtube video id
     - <youtube_id>.mp3 is the audio file
     - <youtube_id>.dat3 is the datafile containing the song information
+    - <youtube_id>.demucs is the parts file containing the separated parts of the audio
     - error_logs.txt is a file containing error logs
     - log.json is a file containing information about calculations done on the dataset
+    - pack.data is a file containing the dataset in a compressed format
+    - .db is a file containing the metadata of the dataset in json format
+
+    Has the following attributes
+    - root: str: The root directory of the dataset
+    - load_on_the_fly: bool: Whether to load the dataset on the fly or not
+    - assert_audio_exists: bool: Whether to assert that the audio file exists or not
+
+    Has the following methods
+    - init_directory_structure: None: Initializes the directory structure
+    - add_key: None: Adds a key to the dataset
+    - _check_directory_structure: str | None: Checks if the directory structure is correct
+    - get_path: str: Gets the path for the given key and url
+    - list_files: list[str]: Lists all the files in the given key
+    - load_from_directory: None: Reloads the dataset from the directory into memory
+    - write_error: None: Writes an error to the error log
+    - __len__: int: Returns the length of the dataset
+    - __iter__: Iterable[DatasetEntry]: Returns an iterator over the dataset
+    - __contains__: bool: Checks if the dataset contains the given url
+    - save_entry: None: Saves the entry to the dataset
+    - filter: SongDataset: Returns a filtered version of the dataset
+    - write_info: None: Writes information to the info file
+    - read_info: list[YouTubeURL] | dict[YouTubeURL, str] | None: Reads information from the info file
+    - read_info_urls: set[YouTubeURL]: Reads information from the info file and returns the urls
+    - get_audio: Audio: Gets the audio for the given url
+    - get_parts: DemucsCollection: Gets the parts for the given url
+    - get_or_create_entry: DatasetEntry: Gets or creates the entry for the given url
+    - pack: None: Packs the dataset into a single file
+    - pickle: None: Pickles the dataset into a single file
     """
-    def __init__(self, root: str, *, load_on_the_fly: bool = False):
-        from .v3 import DatasetEntryEncoder
+    def __init__(self, root: str, *, load_on_the_fly: bool = False, assert_audio_exists: bool = False):
+        from .compress import DatasetEntryEncoder, SongDatasetEncoder
 
         if not os.path.exists(root):
             raise FileNotFoundError(f"Directory {root} does not exist")
 
         self.root = root
         self.load_on_the_fly = load_on_the_fly
+        self.assert_audio_exists = assert_audio_exists
+        self.filters: list[Callable[[DatasetEntry], bool]] = []
 
         self.init_directory_structure()
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
 
-        self._encoder = DatasetEntryEncoder()
+        self._data: dict[YouTubeURL, DatasetEntry] = {}
 
-        super(SongDataset, self).__init__()
-
-        if not load_on_the_fly:
-            self._load_from_directory()
+        # There may be extra data in the dataset in places other than the packed db - but that shouldnt matter
+        if not self.load_on_the_fly:
+            if os.path.exists(self.pickle_path):
+                with open(self.pickle_path, "rb") as f:
+                    self._data = pickle.load(f)
+            elif os.path.exists(self.pack_path):
+                self._data = SongDatasetEncoder().read_from_path(self.pack_path)
+                self.pickle()
+            else:
+                self.load_from_directory()
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
-        if not os.path.exists(self.datafile_path):
-            os.makedirs(self.datafile_path)
-
-        if not os.path.exists(self.audio_path):
-            os.makedirs(self.audio_path)
-
         if not os.path.exists(self.error_logs_path):
             with open(self.error_logs_path, "w") as f:
                 f.write("")
@@ -294,42 +185,83 @@ class LocalSongDataset(SongDataset):
             with open(self.info_path, "w") as f:
                 json.dump({}, f)
 
-    def clean_directory(self) -> list[str]:
-        """Ensures the all audios have corresponding datafiles and vice versa. Returns a list of paths to remove"""
-        audio_files = {file[:-4] for file in os.listdir(self.audio_path)}
-        data_files = {file[:-5] for file in os.listdir(self.datafile_path)}
+        if not os.path.exists(self.metadata_path):
+            with open(self.metadata_path, "w") as f:
+                json.dump({}, f)
 
-        paths_to_remove = []
+        self.register("audio", "{video_id}.wav")
+        self.register("parts", "{video_id}.demucs")
+        self.register("datafiles", "{video_id}.dat3")
 
-        for file in audio_files - data_files:
-            paths_to_remove.append(os.path.join(self.audio_path, file + ".mp3"))
-        for file in data_files - audio_files:
-            paths_to_remove.append(os.path.join(self.datafile_path, file + ".dat3"))
+    def register(self, key: str, file_format: str):
+        """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
 
-        return paths_to_remove
+        The file format should contain the string "{video_id}" which will be replaced by the video id of the url"""
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        if not "file_structure" in metadata:
+            metadata["file_structure"] = {}
+        metadata["file_structure"][key] = file_format
+        with open(self.metadata_path, "w") as f:
+            json.dump(metadata, f)
+        directory_invalid_reason = self._check_directory_structure()
+        if directory_invalid_reason is not None:
+            raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
 
     def _check_directory_structure(self) -> str | None:
         """Checks if the files in the respective directories are correct"""
-        for file in os.listdir(self.datafile_path):
-            if not file.endswith(".dat3"):
-                return f"Invalid datafile: {file}"
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        for key, file_format in metadata["file_structure"].items():
+            if not os.path.exists(self.root + "/" + key):
+                return f"File {key} does not exist"
+            if "{video_id}" not in file_format:
+                return f"Invalid file format for {key}: {file_format}"
+            for file in self.list_files(key):
+                if not len(file) == len(file_format.format(video_id="")) + 11:
+                    return f"Invalid file format for {key}: {file} in {self.root}/{key}"
+        return None
 
-        for file in os.listdir(self.audio_path):
-            if not file.endswith(".mp3"):
-                return f"Invalid audio: {file}"
+    def get_path(self, key: str, url: YouTubeURL) -> str:
+        """Get the file path for the given key and url"""
+        if url.is_placeholder:
+            raise ValueError("Cannot get data path for placeholder url")
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        if key not in metadata["file_structure"]:
+            raise ValueError(f"Key {key} not registered")
+        file_format: str = metadata[key]
+        return os.path.join(self.root, key, file_format.format(video_id=url.video_id))
 
-    def _load_from_directory(self):
-        for file in os.listdir(self.datafile_path):
-            if not file.endswith(".dat3"):
-                continue
-            try:
-                entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
-            except Exception as e:
-                self.write_error(f"Error reading {file}", e)
+    def has_path(self, key: str, url: YouTubeURL) -> bool:
+        """Check if the file path for the given key and url exists"""
+        return os.path.isfile(self.get_path(key, url))
+
+    def list_files(self, key: str) -> list[str]:
+        """List all the files in the given key"""
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        if key not in metadata["file_structure"]:
+            raise ValueError(f"Key {key} not registered")
+        return os.listdir(os.path.join(self.root, key))
+
+    def load_from_directory(self, verbose: bool = True):
+        """Reloads the dataset from the directory into memory"""
+        for file in tqdm(self.list_files("datafiles"), desc="Loading dataset", disable=not verbose):
+            url = get_url(file[:-5])
+            entry = self.get_by_url(url)
+            if entry is None:
                 continue
             self._data[entry.url] = entry
 
+        if not os.path.isfile(self.pack_path):
+            self.pack()
+
     def write_error(self, error: str, e: Exception | None = None):
+        print(f"Error: {error}")
+        if e:
+            print(f"Error: {e}")
+            print(f"Error: {traceback.format_exc()}")
         try:
             with open(self.error_logs_path, "a") as f:
                 f.write(error + "\n")
@@ -344,12 +276,8 @@ class LocalSongDataset(SongDataset):
             print(f"Error writing error: {traceback.format_exc()}")
 
     @property
-    def datafile_path(self):
-        return os.path.join(self.root, "datafiles")
-
-    @property
-    def audio_path(self):
-        return os.path.join(self.root, "audio")
+    def metadata_path(self):
+        return os.path.join(self.root, ".db")
 
     @property
     def error_logs_path(self):
@@ -359,85 +287,80 @@ class LocalSongDataset(SongDataset):
     def info_path(self):
         return os.path.join(self.root, "log.json")
 
-    def get_data_path(self, url: YouTubeURL):
-        """Return the path to the datafile of the given url"""
-        return os.path.join(self.datafile_path, f"{url.video_id}.dat3")
+    @property
+    def pack_path(self):
+        return os.path.join(self.root, "pack.db")
 
-    def get_audio_path(self, url: YouTubeURL):
-        """Return the path to the audio file of the given url"""
-        return os.path.join(self.audio_path, f"{url.video_id}.mp3")
+    @property
+    def pickle_path(self):
+        return os.path.join(self.root, "dataset.pkl")
+
+    @property
+    def encoder(self):
+        if not hasattr(self, "_encoder"):
+            from .compress import DatasetEntryEncoder
+            self._encoder = DatasetEntryEncoder()
+        return self._encoder
 
     def get_by_url(self, url: YouTubeURL) -> DatasetEntry | None:
-        if url in self._data:
+        """Try to get the entry by url. If it does not exist, return None"""
+        if url.is_placeholder:
+            return None
+        if url in self._data and all(f(self._data[url]) for f in self.filters):
             return self._data[url]
-        if self.load_on_the_fly:
-            file = f"{url.video_id}.dat3"
-            try:
-                entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
-                return entry
-            except Exception as e:
-                self.write_error(f"Error reading {file}", e)
+        file = self.get_path("datafiles", url)
+        file_url = get_url(file[-16:-5])
+        if not os.path.isfile(file):
+            return None
+        if self.assert_audio_exists:
+            audio_path = self.get_path("audio", file_url)
+            if not os.path.isfile(audio_path):
                 return None
-        return None
-
-    def __getitem__(self, url: str | YouTubeURL | int) -> DatasetEntry:
-        if isinstance(url, YouTubeURL):
-            entry = self.get_by_url(url)
-            if entry is None:
-                raise KeyError(f"URL {url} not found")
+        try:
+            entry = self.encoder.read_from_path(file)
+            if not all(f(entry) for f in self.filters):
+                return None
             return entry
-        if isinstance(url, str):
-            entry = self.get_by_url(get_url(url))
-            if entry is None:
-                raise KeyError(f"URL {url} not found")
-            return entry
-        if isinstance(url, int):
-            file = os.listdir(self.datafile_path)[url]
-            entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
-            return entry
-        raise TypeError(f"Invalid type for url: {type(url)}")
+        except Exception as e:
+            self.write_error(f"Error reading {file}", e)
+            return None
 
     def __len__(self):
-        return len(os.listdir(self.datafile_path)) if self.load_on_the_fly else len(self._data)
+        return len(self.list_files("datafiles")) if self.load_on_the_fly else len(self._data)
 
     def __iter__(self):
         if self.load_on_the_fly:
-            for file in os.listdir(self.datafile_path):
-                try:
-                    entry = self._encoder.read_from_path(os.path.join(self.datafile_path, file))
+            urls = [get_url(file[:-5]) for file in self.list_files("datafiles")]
+            for url in urls:
+                entry = self.get_by_url(url)
+                if entry is not None:
                     yield entry
-                except Exception as e:
-                    self.write_error(f"Error reading {file}", e)
-                    continue
         else:
             yield from self._data.values()
 
-    def add_entry(self, entry: DatasetEntry):
+    def __contains__(self, url: YouTubeURL):
+        return self.get_by_url(url) is not None
+
+    def save_entry(self, entry: DatasetEntry):
         """This adds an entry to the dataset and checks for the presence of audio"""
-        audio_path = self.get_audio_path(entry.url)
-        if not os.path.isfile(audio_path):
+        audio_path = self.get_path("audio", entry.url)
+        if self.assert_audio_exists and not os.path.isfile(audio_path):
             raise FileNotFoundError(f"Audio file {audio_path} not found")
         if not self.load_on_the_fly:
             self._data[entry.url] = entry
-        path = os.path.join(self.datafile_path, f"{entry.url.video_id}.dat3")
+        path = self.get_path("datafiles", entry.url)
         if not os.path.isfile(path):
-            self._encoder.write_to_path(entry, path)
+            self.encoder.write_to_path(entry, path)
 
-    def filter(self, filter_func: Callable[[DatasetEntry], bool] | None) -> SongDataset:
-        """Returns a new dataset with the entries that satisfy the filter function. If filter_func is None, return yourself"""
+    def filter(self, filter_func: Callable[[DatasetEntry], bool] | None):
+        """Returns self with the filter applied lazily"""
         if filter_func is None:
             return self
-        new_dataset = SongDataset()
-        for entry in self:
-            if filter_func(entry):
-                new_dataset.add_entry(entry)
-        return new_dataset
-
-    @property
-    def urls(self):
         if self.load_on_the_fly:
-            return [get_url(file[:-5]) for file in os.listdir(self.datafile_path)]
-        return list(self._data.keys())
+            self.filters.append(filter_func)
+        else:
+            self._data = {url: entry for url, entry in self._data.items() if filter_func(entry)}
+        return self
 
     def __repr__(self):
         return f"LocalSongDataset(at: {self.root}, {len(self)} entries)"
@@ -478,3 +401,256 @@ class LocalSongDataset(SongDataset):
         if isinstance(infos, dict):
             return set(infos.keys())
         return set(infos)
+
+    def get_audio(self, url: YouTubeURL) -> Audio:
+        if url.is_placeholder:
+            raise ValueError("Cannot get audio for placeholder url")
+        path = self.get_path("audio", url)
+        if os.path.isfile(path):
+            return Audio.load(path)
+        # Save and reload to ensure consistency
+        audio = Audio.load(url)
+        audio.save(path)
+        audio = Audio.load(path)
+        return audio
+
+    def get_parts(self, url: YouTubeURL) -> DemucsCollection:
+        if url.is_placeholder:
+            raise ValueError("Cannot get parts for placeholder url")
+        path = self.get_path("parts", url)
+        if os.path.isfile(path):
+            return DemucsCollection.load(path)
+        # Save and reload to ensure consistency
+        parts = get_demucs().separate(self.get_audio(url))
+        parts.save(path)
+        parts = DemucsCollection.load(path)
+        return parts
+
+    def get_or_create_entry(self, url: YouTubeURL) -> DatasetEntry:
+        if url.is_placeholder:
+            raise ValueError("Cannot get or create entry for placeholder url")
+        entry = self.get_by_url(url)
+        if entry is None:
+            audio = self.get_audio(url)
+            entry = create_entry(url, dataset=self, audio=audio)
+        return entry
+
+    def pack(self):
+        """Packs the dataset into a single file"""
+        from .compress import SongDatasetEncoder
+        data: dict[YouTubeURL, DatasetEntry] = {}
+        if self.load_on_the_fly:
+            for entry in self:
+                data[entry.url] = entry
+        else:
+            data = self._data
+        SongDatasetEncoder().write_to_path(data, self.pack_path)
+
+    def pickle(self):
+        """Pickle the dataset into a single file"""
+        with open(self.pickle_path, "wb") as f:
+            pickle.dump(self._data, f)
+
+def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatures) -> NDArray[np.float64]:
+    """Normalize the chord result with the beat result. This is done by retime the chord result as the number of downbeats."""
+    # For every time stamp in the chord result, retime it as the number of downbeats.
+    # For example, if the time stamp is half way between downbeat[1] and downbeat[2], then it should be 1.5
+    # If the time stamp is before the first downbeat, then it should be 0.
+    # If the time stamp is after the last downbeat, then it should be the number of downbeats.
+    downbeats = br.onsets.tolist() + [br.duration]
+    new_chord_times = []
+    curr_downbeat, curr_downbeat_idx, next_downbeat = 0, 0, downbeats[1]
+    for chord_times in unnormalized_times:
+        while chord_times > next_downbeat:
+            curr_downbeat_idx += 1
+            curr_downbeat = next_downbeat
+            next_downbeat = downbeats[curr_downbeat_idx + 1]
+        normalized_time = curr_downbeat_idx + (chord_times - curr_downbeat) / (next_downbeat - curr_downbeat)
+        new_chord_times.append(normalized_time)
+    return np.array(new_chord_times, dtype=np.float64)
+
+@numba.njit
+def _get_music_duration(times: NDArray[np.float64], features: NDArray[np.uint32], duration: float, no_chord_idx: int, bar_idx: int) -> float:
+    start_idx = np.searchsorted(times, bar_idx, side='right') - 1
+    end_idx = np.searchsorted(times, bar_idx + 1, side='right')
+    new_times = times[start_idx:end_idx] - bar_idx
+    new_times[0] = 0.
+    music_duration = 0.
+    new_features = features[start_idx:end_idx]
+    for i in range(len(new_times) - 1):
+        if new_features[i] != no_chord_idx:
+            music_duration += new_times[i + 1] - new_times[i]
+    if new_features[-1] != no_chord_idx:
+        music_duration += duration - new_times[-1]
+    return music_duration
+
+_DEMUCS = None
+def get_demucs():
+    global _DEMUCS
+    if not _DEMUCS:
+        _DEMUCS = DemucsAudioSeparator()
+    return _DEMUCS
+
+# Returns None if the chord result is valid, otherwise returns an error message
+def verify_chord_result(cr: ChordAnalysisResult, audio_duration: float, video_url: YouTubeURL | None = None) -> str | None:
+    labels = cr.features
+    chord_times = cr.times
+
+    if len(labels) != len(chord_times):
+        return f"Length mismatch: labels({len(labels)}) != chord_times({len(chord_times)})"
+
+    # Check if the chord times are sorted monotonically
+    if len(chord_times) == 0 or chord_times[-1] > audio_duration:
+        return f"Chord times error: {video_url}"
+
+    # Check if the chord times are sorted monotonically
+    if not all([t1 < t2 for t1, t2 in zip(chord_times, chord_times[1:])]):
+        return f"Chord times not sorted monotonically: {video_url}"
+
+    # New in v3: Check if there are enough chords
+    no_chord_duration = 0.
+    for t1, t2, c in zip(chord_times, chord_times[1:], labels):
+        if c == get_inv_voca_map()["No chord"]:
+            no_chord_duration += t2 - t1
+    if no_chord_duration > 0.5 * audio_duration:
+        return f"Too much no chord: {video_url} ({no_chord_duration}) (Proportion: {no_chord_duration / audio_duration}) - probably this is not a song"
+
+    return None
+
+def verify_parts_result(parts: DemucsCollection, mean_vocal_threshold: float, video_url: YouTubeURL | None = None) -> str | None:
+    # New in v3: Check if there are enough vocals
+    mean_vocal_volume = parts.vocals.volume
+    if mean_vocal_volume < mean_vocal_threshold:
+        return f"Too few vocals: {video_url} ({mean_vocal_volume})"
+    return None
+
+def verify_beats_result(br: BeatAnalysisResult, audio_duration: float, video_url: YouTubeURL | None = None, reject_weird_meter: bool = True, bad_alignment_threshold: float = 0.1) -> str | None:
+    """Verify the beat result. If strict is True, then it will reject songs with weird meters."""
+    # New in v3: Reject if there are too few downbeats
+    if len(br.downbeats) < 12:
+        return f"Too few downbeats: {video_url} ({len(br.downbeats)})"
+
+    # New in v3: Reject songs with weird meters
+    # Remove all songs with 3/4 meter as well because 96% of the songs are 4/4
+    # This is rejecting way too many songs. Making this optional
+    beat_align_idx = np.abs(br.beats[:, None] - br.downbeats[None, :]).argmin(axis = 0)
+    nbeat_in_bar = beat_align_idx[1:] - beat_align_idx[:-1]
+    if reject_weird_meter and not np.all(nbeat_in_bar == 4):
+        return f"Weird meter: {video_url} ({nbeat_in_bar})"
+
+    # New in v3: Reject songs with a bad alignment
+    beat_alignment = np.abs(br.beats[:, None] - br.downbeats[None, :]).min(axis = 0)
+    if np.max(beat_alignment) > bad_alignment_threshold:
+        return f"Bad alignment: {video_url} ({np.max(beat_alignment)})"
+
+    # Check if beats and downbeats make sense
+    if len(br.beats) == 0 or br.beats[-1] >= audio_duration:
+        return f"Beats error: {video_url}"
+
+    if len(br.downbeats) == 0 or br.downbeats[-1] >= audio_duration:
+        return f"Downbeats error: {video_url}"
+
+    if not all([b1 < b2 for b1, b2 in zip(br.beats, br.beats[1:])]):
+        return f"Beats not sorted monotonically: {video_url}"
+
+    if not all([d1 < d2 for d1, d2 in zip(br.downbeats, br.downbeats[1:])]):
+        return f"Downbeats not sorted monotonically: {video_url}"
+
+    return None
+
+# Create a dataset entry from the given data
+def create_entry(url: YouTubeURL, *,
+                 dataset: SongDataset | None = None,
+                 audio: Audio | None = None,
+                 chords: ChordAnalysisResult | None = None,
+                 chord_times: list[float] | None = None,
+                 chord_labels: list[int] | None = None,
+                 beats: OnsetFeatures | None = None,
+                 downbeats: OnsetFeatures | None = None,
+                 beats_list: list[float] | None = None,
+                 downbeats_list: list[float] | None = None,
+                 duration: float | None = None,
+                 genre: SongGenre = SongGenre.UNKNOWN,
+                 views: int | None = None,
+                 chord_model_path: str | None = None,
+                 beat_model_path: str | None = None,
+                 use_simplified_chord: bool = False) -> DatasetEntry:
+    """Creates the dataset entry from the data - performs normalization and music duration postprocessing"""
+    if dataset is not None:
+        entry = dataset.get_by_url(url)
+        if entry is not None:
+            return entry
+
+    if duration is None:
+        if audio is not None:
+            duration = audio.duration
+        elif chords is not None:
+            duration = chords.duration
+        elif beats is not None:
+            duration = beats.duration
+        elif downbeats is not None:
+            duration = downbeats.duration
+        elif dataset is not None:
+            audio = dataset.get_audio(url)
+            duration = audio.duration
+        else:
+            raise ValueError("If duration is not provided, then either audio, chords, beats or downbeats must be provided to calculate the duration")
+
+    if chords is None and (chord_times is None or chord_labels is None):
+        assert audio is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
+        if chord_model_path is not None:
+            chords = analyse_chord_transformer(audio, model_path=chord_model_path, use_large_voca=not use_simplified_chord)
+        else:
+            chords = analyse_chord_transformer(audio, use_large_voca=not use_simplified_chord)
+        chord_fail_reason = verify_chord_result(chords, duration, url)
+        if chord_fail_reason is not None:
+            raise ValueError(f"Chord verification failed: {chord_fail_reason}")
+    elif chords is None:
+        assert chord_times is not None and chord_labels is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
+        chords = ChordAnalysisResult.from_data(duration, chord_labels, chord_times)
+
+    if (beats is None and beats_list is None) or (downbeats is None and downbeats_list is None):
+        assert audio is not None, "Either beats or downbeats or audio must be provided"
+        parts = dataset.get_parts(url) if dataset is not None else get_demucs().separate(audio)
+        if beat_model_path is not None:
+            bt = analyse_beat_transformer(audio, parts, model_path=beat_model_path)
+        else:
+            bt = analyse_beat_transformer(audio, parts)
+        beat_fail_reason = verify_beats_result(bt, duration, url)
+        if beat_fail_reason is not None:
+            raise ValueError(f"Beat verification failed: {beat_fail_reason}")
+        beats = bt._beats
+        downbeats = bt._downbeats
+
+    if beats is None:
+        assert beats_list is not None, "Either beats or beats_list must be provided"
+        beats = OnsetFeatures(duration, np.array(beats_list, dtype=np.float64))
+
+    if downbeats is None:
+        assert downbeats_list is not None, "Either downbeats or downbeats_list must be provided"
+        downbeats = OnsetFeatures(duration, np.array(downbeats_list, dtype=np.float64))
+
+    normalized_times = get_normalized_times(chords.times, downbeats)
+    normalized_cr = ChordAnalysisResult(
+        duration=duration,
+        features=chords.features,
+        times=normalized_times
+    )
+
+    # For each bar, calculate its music duration
+    music_duration: list[float] = []
+    no_chord_idx = get_inv_voca_map()["No chord"]
+    for i in range(len(downbeats)):
+        bar_music_duration = _get_music_duration(normalized_cr.times, normalized_cr.features, normalized_cr.duration, no_chord_idx, i)
+        music_duration.append(bar_music_duration)
+
+    return DatasetEntry(
+        chords=chords,
+        downbeats=downbeats,
+        beats=beats,
+        genre=genre,
+        url=url,
+        views=views if views is not None else -1,
+        normalized_times=normalized_times,
+        music_duration=np.array(music_duration, dtype=np.float64)
+    )

@@ -71,14 +71,8 @@ class SoftmaxOutputLayer(OutputLayer):
     def forward(self, hidden):
         logits = self.output_projection(hidden)
         probs = F.softmax(logits, -1)
-        # _, predictions = torch.max(probs, dim=-1)
-        topk, indices = torch.topk(probs, 2)
-        predictions = indices[:,:,0]
-        second = indices[:,:,1]
-        if self.probs_out is True:
-            return logits
-            # return probs
-        return predictions, second
+        _, predictions = torch.max(probs, dim=-1)
+        return predictions, logits
 
     def loss(self, hidden, labels):
         logits = self.output_projection(hidden)

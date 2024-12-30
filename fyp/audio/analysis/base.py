@@ -1,290 +1,279 @@
 from __future__ import annotations
 from torch import Tensor
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar, Generic
 from dataclasses import dataclass
 from functools import lru_cache
 import numpy as np
 import librosa
-from ...util.note import get_keys, get_idx2voca_chord, transpose_chord, get_inv_voca_map
 from ...audio import Audio
 import torch
 from numpy.typing import NDArray
 import numpy as np
 import numba
 import json
-from ..dataset import DatasetEntry
-import re
+from abc import ABC, abstractmethod
+import typing
 
 @dataclass(frozen=True)
-class BeatAnalysisResult:
-    """A class that represents the result of a beat analysis."""
+class OnsetFeatures:
+    """A class of features that represents segmentations over the song. The onsets are in seconds and marks the start of each segment"""
     duration: float
-    beats: NDArray[np.float32]
-    downbeats: NDArray[np.float32]
+    onsets: NDArray[np.float64]
 
     def __post_init__(self):
-        assert len(self.beats) == 0 or self.duration >= self.beats[-1]
-        assert len(self.downbeats) == 0 or self.duration >= self.downbeats[-1]
-        assert isinstance(self.beats, np.ndarray)
-        assert isinstance(self.downbeats, np.ndarray)
-        assert self.beats.dtype == np.float32
-        assert self.downbeats.dtype == np.float32
+        assert len(self.onsets) == 0 or self.duration >= self.onsets[-1]
+        assert isinstance(self.onsets, np.ndarray)
+        assert self.onsets.dtype == np.float64
 
-        self.beats.flags.writeable = False
-        self.downbeats.flags.writeable = False
+        # Assert onsets are sorted by time
+        assert np.all(self.onsets[1:] >= self.onsets[:-1]), "Onsets must be sorted"
+
+        self.onsets.flags.writeable = False
+
+    def __len__(self):
+        return self.onsets.shape[0]
 
     @property
     def tempo(self):
-        bpm = float(np.average(1 / (self.beats[1:] - self.beats[:-1]) * 60))
-        return bpm
+        """Returns the average onset per minute of the song"""
+        return float(np.average(1 / (self.onsets[1:] - self.onsets[:-1]) * 60))
 
     @property
-    def nbars(self):
-        """Returns the number of bars in the song"""
-        return self.downbeats.shape[0]
+    def nsegments(self):
+        """Returns the number of segments in the song"""
+        return self.onsets.shape[0]
 
-    @classmethod
-    def from_data_entry(cls, data_entry: DatasetEntry):
-        return cls.from_data(data_entry.length, data_entry.beats, data_entry.downbeats)
-
-    @classmethod
-    def from_data(cls, duration: float, beats: list[float], downbeats: list[float]):
-        return cls(
-            duration,
-            np.array(beats, dtype=np.float32),
-            np.array(downbeats, dtype=np.float32)
-        )
-
-    def slice_seconds(self, start: float, end: float) -> BeatAnalysisResult:
+    def slice_seconds(self, start: float, end: float) -> OnsetFeatures:
         """Slice the beat analysis result by seconds. includes start and excludes end"""
         assert start >= 0.
         if abs(end - self.duration) < 1e-6 or end == -1:
             end = self.duration
         assert end > start and end <= self.duration
 
-        beat_mask = (self.beats >= start) & (self.beats < end)
-        beats = self.beats[beat_mask] - start
+        beat_mask = (self.onsets >= start) & (self.onsets < end)
+        beats = self.onsets[beat_mask] - start
 
-        downbeat_mask = (self.downbeats >= start) & (self.downbeats < end)
-        downbeats = self.downbeats[downbeat_mask] - start
+        return OnsetFeatures(end - start, beats)
 
-        return BeatAnalysisResult(end - start, beats, downbeats)
-
-    def change_speed(self, speed: float) -> BeatAnalysisResult:
+    def change_speed(self, speed: float) -> OnsetFeatures:
         """Change the speed of the beat analysis result"""
-        beats = self.beats / speed
-        downbeats = self.downbeats / speed
-        return BeatAnalysisResult(self.duration / speed, beats, downbeats)
+        beats = self.onsets / speed
+        return OnsetFeatures(self.duration / speed, beats)
 
-    def join(self, other: BeatAnalysisResult) -> BeatAnalysisResult:
-        """Join two beat analysis results. shift_amount is the amount to shift the times of the second beat analysis result by."""
-        shift_amount = self.duration
-        beats = np.concatenate([self.beats, other.beats + shift_amount])
-        downbeats = np.concatenate([self.downbeats, other.downbeats + shift_amount])
-        return BeatAnalysisResult(self.duration + other.duration, beats, downbeats)
-
-    def get_duration(self):
-        return self.duration
-
-    def make_click_track(self, audio: Audio):
-        click_track = librosa.clicks(times=self.beats, sr=audio.sample_rate, length=audio.nframes)
-        down_click_track = librosa.clicks(times=self.downbeats, sr=audio.sample_rate, length=audio.nframes, click_freq=1500)
-
-        click_track = audio.numpy() * 0.5 + click_track + down_click_track
-        click_track = torch.tensor([click_track])
-        return Audio(click_track, audio.sample_rate)
-
-    def save(self, path: str):
-        json_dict = {
-            "duration": self.duration,
-            "beats": self.beats.tolist(),
-            "downbeats": self.downbeats.tolist()
-        }
-
-        with open(path, "w") as f:
-            json.dump(json_dict, f)
-
-    @classmethod
-    def load(cls, path: str):
-        with open(path, "r") as f:
-            data = json.load(f)
-        return cls.from_data(data["duration"], data["beats"], data["downbeats"])
-
+T = TypeVar("T")
 @dataclass(frozen=True)
-class KeyAnalysisResult:
-    """Has the following properties:
-
-    key_correlation: list[float] - The correlation of each key."""
-    key_correlation: tuple[float, ...]
-    chromagram: NDArray[np.float32]
-
-    def __post_init__(self):
-        assert len(self.key_correlation) == len(get_keys())
-        assert self.chromagram.shape[0] == 12
-        self.chromagram.flags.writeable = False
-
-    @property
-    def key(self):
-        return np.argmax(np.array(self.key_correlation)).item()
-
-    @property
-    def key_name(self):
-        return get_keys()[self.key]
-
-    def get_correlation(self, key: str):
-        assert key in get_keys()
-        return self.key_correlation[get_keys().index(key)]
-
-    def show_correlations(self):
-        for key, corr in zip(get_keys(), self.key_correlation):
-            print(f"{key}: {corr}")
-
-    def plot_chromagram(self):
-        import matplotlib.pyplot as plt
-        plt.imshow(self.chromagram, aspect='auto', origin='lower')
-        plt.show()
-
-@dataclass(frozen=True)
-class ChordAnalysisResult:
-    """A class with the following attributes:
-
-    labels: list[int] - The chord labels for each frame
-    chords: list[str] - The chord names. `chords[labels[i]]` is the chord name for the ith frame
-    times: list[float] - The times of each frame"""
+class DiscreteLatentFeatures(ABC, Generic[T]):
+    """A class that represents the latent features of a song"""
     duration: float
-    labels: NDArray[np.uint8]
+    features: NDArray[np.uint32]
     times: NDArray[np.float64]
 
     def __post_init__(self):
-        assert self.times[0] == 0, "First chord must appear at 0"
+        assert self.duration > 0
+        assert len(self.features.shape) == 1
+        assert self.features.shape[0] > 0
+        assert np.all(self.features < self.latent_size())
+        assert self.features.dtype == np.uint32
+        assert isinstance(self.features, np.ndarray)
+        assert self.latent_size() > 0
 
-        chords = get_idx2voca_chord()
-        assert self.labels.shape[0] == self.times.shape[0]
-        assert np.all(self.labels < len(chords))
+        assert len(self.times.shape) == 1
         assert self.times.shape[0] > 0
         assert self.duration >= self.times[-1]
-
-        assert isinstance(self.labels, np.ndarray)
-        assert isinstance(self.times, np.ndarray)
-        assert self.labels.dtype == np.uint8
-        assert self.times.dtype == np.float64
-
-        # Check that the times are sorted
+        assert self.times[0] == 0
         assert np.all(self.times[1:] >= self.times[:-1]), "Times must be sorted"
 
-        self.labels.flags.writeable = False
+        assert self.features.shape[0] == self.times.shape[0]
+
+        self.features.flags.writeable = False
         self.times.flags.writeable = False
 
     @classmethod
-    def from_data(cls, duration: float, labels: list[int], times: list[float]):
-        """Construct a ChordAnalysisResult from native python types. Should function identically as the old constructor."""
-        return cls(duration, np.array(labels, dtype=np.uint8), np.array(times, dtype=np.float64))
+    @abstractmethod
+    def latent_size(cls) -> int:
+        """The number of features of the latent space. Since it is discrete it should be finite"""
+        raise NotImplementedError
 
-    def group(self) -> ChordAnalysisResult:
-        """Group the chord analysis result by chord, and deletes the duplicate chords."""
-        labels = np.zeros_like(self.labels)
+    @classmethod
+    @abstractmethod
+    def distance(cls, a: int, b: int) -> float:
+        """The distance between two latent features. The inputs should be two latent feature indices"""
+        raise NotImplementedError
+
+    @classmethod
+    @abstractmethod
+    def map_feature_index(cls, x: int) -> T:
+        """Map the feature index to the latent space"""
+        raise NotImplementedError
+
+    @classmethod
+    def map_feature_name(cls, x: T) -> int:
+        """Map the feature name to the latent space"""
+        for i in range(cls.latent_size()):
+            if cls.map_feature_index(i) == x:
+                return i
+        raise ValueError(f"Feature {x} not found in latent space")
+
+    @classmethod
+    def fdist(cls, a: T, b: T) -> float:
+        """The distance between two latent features. The inputs should be two latent feature indices"""
+        return cls.distance(cls.map_feature_name(a), cls.map_feature_name(b))
+
+    def group(self):
+        """Group the latent features, and deletes duplicates."""
+        features = np.zeros_like(self.features)
         times = np.zeros_like(self.times)
         idx = 0
-        for i in range(self.labels.shape[0]):
-            if idx == 0 or self.labels[i] != labels[idx - 1]:
-                labels[idx] = self.labels[i]
+        for i in range(self.features.shape[0]):
+            if idx == 0 or not self.features[i] == self.features[i-1]:
+                features[idx] = self.features[i]
                 times[idx] = self.times[i]
                 idx += 1
-        return ChordAnalysisResult(self.duration, labels[:idx], times[:idx])
+        return self.__class__(self.duration, features[:idx], times[:idx])
 
-    def grouped_end_times_labels(self):
-        """Returns a tuple of grouped end times and grouped labels. This is mostly useful for dataset search"""
-        ct = self.group()
-        end_times = ct.times
-
-        # Unlock the arrays is safe now because ct is a copy of self and is not shared with other objects
-        ct.labels.flags.writeable = True
-        ct.times.flags.writeable = True
-
-        end_times[:-1] = end_times[1:]
-        end_times[-1] = self.duration
-        return end_times, ct.labels
-
-    @property
-    def chords(self) -> list[str]:
-        """Returns a list of chord labels"""
-        chords = get_idx2voca_chord()
-        chord_labels = [chords[label] for label in self.labels]
-        return chord_labels
-
-    @property
-    def info(self) -> list[tuple[str, float]]:
-        """A utility for getting the chord info for real-time display"""
-        return list(zip(self.chords, self.times.tolist()))
-
-    def slice_seconds(self, start: float, end: float) -> ChordAnalysisResult:
-        """Slice the chord analysis result by seconds and shifts the times to start from 0
-        includes start and excludes end"""
+    def slice_seconds(self, start: float, end: float):
+        """Slice the chord analysis result by seconds and shifts the times to start from 0 includes start and excludes end"""
         assert start >= 0
         if abs(end - self.duration) < 1e-6 or end == -1:
             end = self.duration
         assert end > start and end <= self.duration
-        new_times, new_labels = _slice_chord_result(self.times, self.labels, start, end)
-        return ChordAnalysisResult(end - start, new_labels, new_times)
-
-    def join(self, other: ChordAnalysisResult) -> ChordAnalysisResult:
-        """Join two chord analysis results. shift_amount is the amount to shift the times of the second chord analysis result by."""
-        shift_amount = self.duration
-        labels = np.concatenate([self.labels, other.labels])
-        times = np.concatenate([self.times, other.times + shift_amount])
-        return ChordAnalysisResult(self.duration + other.duration, labels, times)
-
-    def change_speed(self, speed: float) -> ChordAnalysisResult:
-        """Change the speed of the chord analysis result"""
-        times = self.times / speed
-        return ChordAnalysisResult(self.duration / speed, self.labels, times)
-
-    def get_duration(self):
-        return self.duration
-
-    def __repr__(self):
-        s = "ChordAnalysisResult("
-        cr = self.group()
-        for chord, time in zip(cr.chords, cr.times):
-            s += "\n\t" + chord + " " + str(time)
-        s += "\n)"
-        return s
-
-    def transpose(self, semitones: int) -> ChordAnalysisResult:
-        """Transpose the chords by semitones"""
-        voca = get_idx2voca_chord()
-        inv_map = get_inv_voca_map()
-        labels = [inv_map[transpose_chord(voca[label], semitones)] for label in self.labels]
-        np_labels = np.array(labels, dtype=np.uint8)
-        return ChordAnalysisResult(self.duration, np_labels, self.times)
+        new_times, new_labels = _slice_features(self.times, self.features, start, end)
+        return self.__class__(end - start, new_labels, new_times)
 
     @classmethod
-    def from_data_entry(cls, entry: DatasetEntry):
-        return cls.from_data(entry.length, entry.chords, entry.chord_times)
+    @lru_cache(maxsize=1)
+    def get_dist_array(cls):
+        """Get the distance array between all latent features"""
+        dist_array = np.zeros((cls.latent_size(), cls.latent_size()), dtype=np.float64)
+        for i in range(cls.latent_size()):
+            for j in range(cls.latent_size()):
+                dist = cls.distance(i, j)
+                assert dist >= 0, f"Distance between {i} and {j} is negative"
+                dist_array[i, j] = dist
+        return dist_array
 
-    def save(self, path: str):
-        json_dict = {
-            "duration": self.duration,
-            "labels": self.labels.tolist(),
-            "times": self.times.tolist()
-        }
+@dataclass(frozen=True)
+class ContinuousLatentFeatures(ABC):
+    """A class that represents the continuous latent features of a song"""
+    duration: float
+    features: NDArray[np.float32]
+    times: NDArray[np.float64]
 
-        with open(path, "w") as f:
-            json.dump(json_dict, f)
+    def __post_init__(self):
+        assert self.duration > 0
+        assert len(self.features.shape) == 2
+        assert self.features.shape[0] > 0
+        assert self.features.shape[1] == self.latent_dims()
+        assert self.features.dtype == np.float32
+        assert isinstance(self.features, np.ndarray)
 
-    @classmethod
-    def load(cls, path: str):
-        with open(path, "r") as f:
-            data = json.load(f)
-        return cls.from_data(data["duration"], data["labels"], data["times"])
+        assert len(self.times.shape) == 1
+        assert self.times.shape[0] > 0
+        assert self.duration >= self.times[-1]
+        assert self.times[0] == 0
+        assert np.all(self.times[1:] >= self.times[:-1]), "Times must be sorted"
+
+        assert self.features.shape[0] == self.times.shape[0]
+
+        self.features.flags.writeable = False
+        self.times.flags.writeable = False
+
+    @staticmethod
+    @abstractmethod
+    def latent_dims():
+        """The number of latent dimensions"""
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def distance(a: NDArray, b: NDArray) -> float:
+        """The distance between two latent features. Inputs should be two 1D latent feature vectors"""
+        raise NotImplementedError
+
+    def slice_seconds(self, start: float, end: float):
+        """Slice the chord analysis result by seconds and shifts the times to start from 0 includes start and excludes end"""
+        assert start >= 0
+        if abs(end - self.duration) < 1e-6 or end == -1:
+            end = self.duration
+        assert end > start and end <= self.duration
+        new_times, new_features = _slice_features(self.times, self.features, start, end)
+
+        return self.__class__(end - start, new_features, new_times)
 
 @numba.jit(nopython=True)
-def _slice_chord_result(times: NDArray[np.float64], labels: NDArray[np.uint8], start: float, end: float):
-    """This function is used as an optimization to calling slice_seconds, then group_labels/group_times on a ChordAnalysis Result"""
+def _slice_features(times: NDArray[np.float64], features: NDArray, start: float, end: float):
     start_idx = np.searchsorted(times, start, side='right') - 1
     end_idx = np.searchsorted(times, end, side='right')
     new_times = times[start_idx:end_idx] - start
     # Set the start to 0 if the first chord is before the start
     new_times[0] = 0.
-    new_labels = labels[start_idx:end_idx]
-    return new_times, new_labels
+    new_features = features[start_idx:end_idx]
+    return new_times, new_features
+
+@numba.jit(nopython=True)
+def _dist_discrete_latent(times1, times2, chords1, chords2, distances, duration) -> float:
+    """A jitted version of the latent result distance calculation, which is defined to be the sum of distances times time
+    between the two latent feature. Refer to our report for more detalis.
+
+    This assumes times1 and times2 comes from a DiscreteLatentFeatures object with the same duration"""
+    score = 0.
+    cumulative_duration = 0.
+
+    idx1 = 0
+    idx2 = 0
+    len_t1 = len(times1) - 1
+    len_t2 = len(times2) - 1
+
+    while cumulative_duration < duration and (idx1 < len_t1 or idx2 < len_t2):
+        # Find the duration of the next segment to calculate
+        next_x = duration
+        if idx1 < len_t1 and times1[idx1 + 1] < next_x:
+            next_x = times1[idx1 + 1]
+        if idx2 < len_t2 and times2[idx2 + 1] < next_x:
+            next_x = times2[idx2 + 1]
+
+        score += distances[chords1[idx1]][chords2[idx2]] * (next_x - cumulative_duration)
+        cumulative_duration = next_x
+
+        if idx1 < len_t1 and next_x == times1[idx1 + 1]:
+            idx1 += 1
+        if idx2 < len_t2 and next_x == times2[idx2 + 1]:
+            idx2 += 1
+    score += distances[chords1[idx1]][chords2[idx2]] * (duration - cumulative_duration)
+    return score
+
+F = typing.TypeVar('F', bound=DiscreteLatentFeatures)
+def dist_discrete_latent_features(a: F, b: F, dist_array: NDArray[np.float64] | None = None) -> float:
+    """Calculate the distance between two discrete latent features"""
+    raise NotImplementedError("This function is not implemented yet")
+
+G = typing.TypeVar('G', bound=ContinuousLatentFeatures)
+def dist_continuous_latent_features(a: G, b: G) -> float:
+    """Calculate the distance between two discrete latent features"""
+    score = 0.
+    cumulative_duration = 0.
+
+    times1 = a.times
+    times2 = b.times
+
+    idx1 = 0
+    idx2 = 0
+    len_t1 = len(times1)
+    len_t2 = len(times2)
+
+    while idx1 < len_t1 and idx2 < len_t2:
+        # Find the duration of the next segment to calculate
+        min_time: float = min(times1[idx1], times2[idx2])
+
+        # Score = sum of (distance * duration)
+        # Assuming symmetric zero distance - we can aggregate the calculations first
+        label1 = a.features[idx1]
+        label2 = b.features[idx2]
+        score += a.distance(label1, label2) * (min_time - cumulative_duration)
+        cumulative_duration = min_time
+
+        if times1[idx1] <= min_time:
+            idx1 += 1
+        if times2[idx2] <= min_time:
+            idx2 += 1
+    return score

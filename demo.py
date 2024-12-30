@@ -13,8 +13,7 @@ import base64
 import gradio as gr
 import traceback
 from fyp.util import is_ipython, is_colab
-from fyp.app import mashup_from_id
-from fyp.audio.cache import LocalCache
+from fyp.app import mashup_from_id, load_dataset
 from fyp import mashup_song, MashupConfig, MashupMode, get_url, InvalidMashup, Audio
 
 # Set to None to disable caching
@@ -55,9 +54,10 @@ def mashup(
     filter_short_song_bar_threshold_input: int,
     search_radius_input: int,
     left_pan: float,
-    save_original: bool
+    save_original: bool,
+    append_song_to_dataset: bool,
+    dataset_path: str
 ):
-    cache_handler_factory = lambda url: LocalCache(CACHE_DIR, url)
     mashup_mode_ = MashupMode.NATURAL if not mashup_mode.strip() else {
         v: k for k, v in get_mashup_mode_desc_map().items()
     }[mashup_mode]
@@ -79,12 +79,16 @@ def mashup(
         filter_short_song_bar_threshold=filter_short_song_bar_threshold_input,
         left_pan=left_pan,
         _verbose=True,
-        save_original=save_original
+        save_original=save_original,
+        append_song_to_dataset=append_song_to_dataset,
+        load_on_the_fly=False,
+        assert_audio_exists=False,
+        dataset_path=dataset_path,
     )
 
     if mashup_id and mashup_id != "Enter Mashup ID":
         try:
-            mashup = mashup_from_id(mashup_id, config, cache_handler_factory)
+            mashup = mashup_from_id(mashup_id, config)
             return gr.Textbox("Mashup complete!"), pack_audio(mashup)
         except InvalidMashup as e:
             print(traceback.format_exc())
@@ -96,23 +100,24 @@ def mashup(
         return gr.Textbox(f"Error: Invalid YouTube link ({e})"), None
 
     try:
-        mashup, _, system_message = mashup_song(link, config, cache_handler_factory)
+        mashup, _, system_message = mashup_song(link, config)
         return gr.Textbox(system_message), pack_audio(mashup)
     except Exception as e:
         print(traceback.format_exc())
         return gr.Textbox(f"Error: {e}"), None
 
-def get_audio_from_link(input_yt_link: str, starting_point: float):
+def get_audio_from_link(input_yt_link: str, starting_point: float, dataset_path: str):
     try:
         link = get_url(input_yt_link)
     except Exception as e:
         return gr.Textbox(f"Error: Invalid YouTube link ({e})"), None
 
     title = link.title
-    cache_handler = LocalCache(CACHE_DIR, link)
+    # Set load_on_the_fly to True to avoid loading the entire dataset into memory
+    dataset = load_dataset(MashupConfig(1, dataset_path = dataset_path, load_on_the_fly=True))
 
     try:
-        audio = cache_handler.get_audio()
+        audio = dataset.get_audio(link)
         slice_end = min(audio.duration, starting_point + 10)
         audio = audio.slice_seconds(starting_point, slice_end)
     except Exception as e:
@@ -137,31 +142,38 @@ def app():
                 with gr.Column():
                     input_yt_link = gr.Textbox(
                         label="Input YouTube Link",
+                        value="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                         placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                         interactive=True,
                         info="Paste a YouTube link here to get started",
                     )
                     starting_point = gr.Number(
                         label="Starting point (seconds)",
-                        value=42.0,
+                        value=43.0,
                         interactive=True,
                         minimum=0,
                         info="Pick a complete verse, ideally at the start of the chorus, to get the best results",
                     )
+                    dataset_path = gr.Textbox(
+                        label="Dataset Path",
+                        interactive=True,
+                        value="D:/Repository/project-remucs/audio-infos-v3",
+                        info="The path to the dataset."
+                    )
+                with gr.Column():
                     title = gr.Textbox(
                         label="Video Title",
                         placeholder="Rick Astley - Never Gonna Give You Up",
                         interactive=False,
                         info="The title of the video will be displayed here",
                     )
-                with gr.Column():
                     input_audio = gr.Audio(label="Input Audio")
                     refresh_button = gr.Button(
                         "Refresh input audio", variant="primary",
                     )
                     refresh_button.click(
                         get_audio_from_link,
-                        [input_yt_link, starting_point],
+                        [input_yt_link, starting_point, dataset_path],
                         [title, input_audio],
                     )
             with gr.Accordion("Advanced Settings"):
@@ -225,12 +237,19 @@ def app():
                                 info="If you have a mashup ID, you can enter it here to recreate the mashup. In this case the song link and starting point will be ignored"
                             )
                             with gr.Row():
-                                save_original = gr.Checkbox(
-                                    label="Save Original",
-                                    interactive=True,
-                                    value=False,
-                                    info="Save the original song in the output as well"
-                                )
+                                with gr.Column():
+                                    save_original = gr.Checkbox(
+                                        label="Save Original",
+                                        interactive=True,
+                                        value=False,
+                                        info="Save the original song in the output as well"
+                                    )
+                                    append_song_to_dataset = gr.Checkbox(
+                                        label="Append Song to Dataset",
+                                        interactive=True,
+                                        value=True,
+                                        info="Append the song to the dataset for future use"
+                                    )
                                 left_pan = gr.Number(
                                     label="Left Pan",
                                     interactive=True,
@@ -324,7 +343,9 @@ def app():
                             filter_short_song_bar_threshold_input,
                             search_radius_input,
                             left_pan,
-                            save_original
+                            save_original,
+                            append_song_to_dataset,
+                            dataset_path
                         ],
                         [output_msg, output_audio],
                     )

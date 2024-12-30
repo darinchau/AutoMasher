@@ -7,6 +7,10 @@
 # get_chord_notes() -> dict[str, frozenset[str]]: Gets a dictionary of chord notes
 # get_chord_note_inv() -> dict[frozenset[str], str]: Gets a dictionary of chord notes, inverse of get_chord_notes()
 # get_chord_quality(chord: str) -> tuple[str, str]: Gets the quality of a chord. Returns (note, quality) string tuple
+# small_voca_to_chord(x: int) -> str: Gets the large voca index from the small voca index
+# small_voca_to_large_voca(x: int) -> int: Gets the large voca index from the small voca index
+# large_voca_to_small_voca_map() -> dict[int, int]: Gets the mapping from large voca index to small voca index (works for only small voca chords)
+# simplify_chord(x: int) -> int: Simplify a large voca chord to a small voca chord (works for each large voca chord)
 
 from typing import Any
 from functools import lru_cache
@@ -44,7 +48,47 @@ def get_inv_voca_map() -> dict[str, int]:
     inv_voca_map = {v: i for i, v in enumerate(idx2voca_chord)}
     return inv_voca_map
 
+@lru_cache(maxsize=25)
+def small_voca_to_chord(x: int) -> str:
+    """Get the large voca index from the small voca index"""
+    if not (0 <= x < 25):
+        return "Unknown"
+    if x == 24:
+        return "No chord"
+
+    minmaj = x % 2
+    root = x // 2
+
+    return idx_to_notes(root) + ('' if minmaj == 0 else ':min')
+
+@lru_cache(maxsize=25)
+def small_voca_to_large_voca(x: int) -> int:
+    """Get the large voca index from the small voca index"""
+    if not (0 <= x < 25):
+        return 168
+    if x == 24:
+        return 169
+
+    minmaj = x % 2
+    root = x // 2
+
+    return root * 14 + (1 - minmaj)
+
 @lru_cache(maxsize=1)
+def large_voca_to_small_voca_map() -> dict[int, int]:
+    """Get the mapping from large voca index to small voca index"""
+    return {small_voca_to_large_voca(i): i for i in range(25)}
+
+@lru_cache(maxsize=170)
+def simplify_chord(x: int) -> int:
+    """Simplify a large voca chord to a small voca chord"""
+    mapping = ['min', 'maj', 'min', 'maj', 'min', 'maj', 'min', 'min', 'maj', 'maj', 'min', 'min', 'maj', 'maj']
+    if x in [168, 169]:
+        return 24
+    root = x // 14
+    quality = x % 14
+    return root * 2 + (1 if mapping[quality] == 'min' else 0)
+
 def notes_to_idx(note: str):
     """Return the index given the note name. The index is the number of semitones from C."""
     mapping = {
@@ -68,7 +112,6 @@ def notes_to_idx(note: str):
     }
     return mapping[note]
 
-@lru_cache(maxsize=None)
 def idx_to_notes(idx: int):
     """Return the note name given the index. The index is the number of semitones from C."""
     mapping = {
@@ -87,64 +130,13 @@ def idx_to_notes(idx: int):
     }
     return mapping[idx % 12]
 
-@lru_cache(maxsize=128)
 def move_semitone(note: str, semitone: int):
     """Move a note by a number of semitones. Returns the new note. If the note is a black key, then the note is always sharp instead of flat."""
     return idx_to_notes(notes_to_idx(note) + semitone)
 
-def fix_enharmonic_equivs(mapping: dict[str, Any]):
-    """Add equivalent key names for enharmonics in the correlation dict and delete what doesnt make sense in music theory"""
-    # Major keys
-    mapping['Db major'] = mapping['C# major']
-    mapping['Eb major'] = mapping['D# major']
-    mapping['Gb major'] = mapping['F# major']
-    mapping['Ab major'] = mapping['G# major']
-    mapping['Bb major'] = mapping['A# major']
-    del mapping['D# major']
-    del mapping['G# major']
-    del mapping['A# major']
-
-    # Minor keys
-    mapping['Eb minor'] = mapping['D# minor']
-    mapping['Ab minor'] = mapping['G# minor']
-    mapping['Bb minor'] = mapping['A# minor']
-
-    return mapping
-
-@lru_cache(maxsize=1)
 def get_pitch_names():
     """All the pitch names in a 12-tone equal temperament system."""
     return ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
-
-@lru_cache(maxsize=1)
-def get_keys():
-    """All 24 majors and minors"""
-    return [
-        "C major",
-        "C# major",
-        "D major",
-        "D# major",
-        "E major",
-        "F major",
-        "F# major",
-        "G major",
-        "G# major",
-        "A major",
-        "A# major",
-        "B major",
-        "C minor",
-        "C# minor",
-        "D minor",
-        "D# minor",
-        "E minor",
-        "F minor",
-        "F# minor",
-        "G minor",
-        "G# minor",
-        "A minor",
-        "A# minor",
-        "B minor",
-    ]
 
 @lru_cache(maxsize=1)
 def get_chord_notes() -> dict[str, frozenset[str]]:
@@ -191,7 +183,7 @@ def get_chord_note_inv() -> dict[frozenset[str], str]:
     chord_notes_inv = {v: k for k, v in chord_notes_map.items()}
     return chord_notes_inv
 
-@lru_cache
+@lru_cache(maxsize=None)
 def get_chord_quality(chord: str) -> tuple[str, str]:
     """Get the quality of a chord. Returns (note, quality) string tuple"""
     assert chord in get_chord_notes(), f"{chord} not a recognised chord"

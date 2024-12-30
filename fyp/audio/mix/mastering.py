@@ -28,7 +28,6 @@ def mastering(audio: Audio, reference: Audio) -> Audio:
 
     return result
 
-
 def create_mashup_from_parts(
         submitted_audio_a: Audio,
         submitted_audio_b: Audio,

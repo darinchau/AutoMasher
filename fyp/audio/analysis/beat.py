@@ -1,15 +1,80 @@
 ### Provides an algorithm for bpm detection from librosa.
-
+from __future__ import annotations
 import os
 from typing import Any
 from ...audio import Audio
-from .base import BeatAnalysisResult
+from .base import OnsetFeatures
+from dataclasses import dataclass
+import json
 from typing import Callable
 import numpy as np
 from .. import DemucsCollection
 from ..separation import DemucsAudioSeparator
 from ...model import beats_inference as inference
 import warnings
+
+@dataclass(frozen=True)
+class BeatAnalysisResult:
+    """A class that represents the result of a beat analysis."""
+    _beats: OnsetFeatures
+    _downbeats: OnsetFeatures
+
+    @property
+    def duration(self):
+        return self._beats.duration
+
+    @property
+    def beats(self):
+        return self._beats.onsets
+
+    @property
+    def downbeats(self):
+        return self._downbeats.onsets
+
+    @property
+    def tempo(self):
+        return self._beats.tempo
+
+    @property
+    def nbars(self):
+        """Returns the number of bars in the song"""
+        return self._downbeats.nsegments
+
+    @classmethod
+    def from_data(cls, duration: float, beats: list[float], downbeats: list[float]):
+        _beats = OnsetFeatures(duration, np.array(beats, dtype=np.float64))
+        _downbeats = OnsetFeatures(duration, np.array(downbeats, dtype=np.float64))
+        return cls(_beats, _downbeats)
+
+    def slice_seconds(self, start: float, end: float) -> BeatAnalysisResult:
+        """Slice the beat analysis result by seconds. includes start and excludes end"""
+        return BeatAnalysisResult(
+            self._beats.slice_seconds(start, end),
+            self._downbeats.slice_seconds(start, end)
+        )
+
+    def change_speed(self, speed: float) -> BeatAnalysisResult:
+        """Change the speed of the beat analysis result"""
+        return BeatAnalysisResult(
+            self._beats.change_speed(speed),
+            self._downbeats.change_speed(speed)
+        )
+
+    def save(self, path: str):
+        json_dict = {
+            "duration": self.duration,
+            "beats": self.beats.tolist(),
+            "downbeats": self.downbeats.tolist()
+        }
+
+        with open(path, "w") as f:
+            json.dump(json_dict, f)
+
+    @classmethod
+    def load(cls, path: str):
+        with open(path, "r") as f:
+            data = json.load(f)
+        return cls.from_data(data["duration"], data["beats"], data["downbeats"])
 
 def analyse_beat_transformer(audio: Audio | None = None,
                                 parts: DemucsCollection | dict[str, Audio] | None = None,

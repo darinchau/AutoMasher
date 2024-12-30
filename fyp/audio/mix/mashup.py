@@ -4,9 +4,9 @@ import torch
 from math import isclose
 from ..base import Audio, DemucsCollection
 from ...util import get_url
-from ..analysis import BeatAnalysisResult
+from ..analysis import OnsetFeatures
 from ..manipulation import PitchShift
-from ..mix.align import calculate_boundaries
+from ..mix.align import calculate_onset_boundaries
 from .mastering import create_mashup_from_parts
 from dataclasses import dataclass
 from enum import Enum
@@ -80,13 +80,15 @@ def cross_fade(song1: Audio, song2: Audio, fade_duration: float, cross_fade_mode
     song2_normal = song2.slice_frames(fade_duration_frames, song2.nframes)
     return song1_normal.join(cross_fade).join(song2_normal)
 
-def create_mashup_component(song_a_submitted_bt: BeatAnalysisResult, song_b_submitted_bt: BeatAnalysisResult, transpose: int, song_b_submitted_parts: DemucsCollection, song_a_nframes: int, song_a_sr: int, song_b_nframes: int):
+def create_mashup_component(song_a_submitted_bt: OnsetFeatures, song_b_submitted_bt: OnsetFeatures,
+                            transpose: int, song_b_submitted_parts: DemucsCollection, song_a_nframes: int, song_a_sr: int, song_b_nframes: int):
     """Creates the song B components that ought to be used for mashup. This includes transposing the parts and aligning song B with song A
 
     Returns the song B parts that should be ready for mashup"""
-    assert isclose(song_b_submitted_parts.get_duration(), song_b_submitted_bt.get_duration(), abs_tol=1/44100), f"Song B parts duration {song_b_submitted_parts.get_duration()} does not match the beat analysis duration {song_b_submitted_bt.get_duration()}"
+    assert isclose(song_b_submitted_parts.get_duration(), song_b_submitted_bt.duration, abs_tol=1/44100), \
+        f"Song B parts duration {song_b_submitted_parts.get_duration()} does not match the beat analysis duration {song_b_submitted_bt.duration}"
 
-    factors, boundaries = calculate_boundaries(song_a_submitted_bt, song_b_submitted_bt)
+    factors, boundaries = calculate_onset_boundaries(song_a_submitted_bt, song_b_submitted_bt)
 
     # Transpose the parts
     trimmed_parts: dict[str, Audio] = {}
@@ -113,11 +115,10 @@ def calculate_average_volume(audio: Audio, window_size: int, hop: int = 512) -> 
     vol = vol.reshape(-1, window_size)
     return vol.mean(axis = 1)
 
-
 def create_mashup(submitted_audio_a: Audio,
                   submitted_audio_b: Audio,
-                  submitted_bt_a: BeatAnalysisResult,
-                  submitted_bt_b: BeatAnalysisResult,
+                  submitted_downbeats_a: OnsetFeatures,
+                  submitted_downbeats_b: OnsetFeatures,
                   submitted_parts_a: DemucsCollection,
                   submitted_parts_b: DemucsCollection,
                   transpose: int,
@@ -178,7 +179,15 @@ def create_mashup(submitted_audio_a: Audio,
         else:
             mode = MashupMode.VOCAL_B
 
-    submitted_parts_b = create_mashup_component(submitted_bt_a, submitted_bt_b, transpose, submitted_parts_b, submitted_parts_a.vocals.nframes, int(submitted_parts_a.vocals.sample_rate), submitted_parts_b.vocals.nframes)
+    submitted_parts_b = create_mashup_component(
+        submitted_downbeats_a,
+        submitted_downbeats_b,
+        transpose,
+        submitted_parts_b,
+        submitted_parts_a.vocals.nframes,
+        int(submitted_parts_a.vocals.sample_rate),
+        submitted_parts_b.vocals.nframes
+    )
 
     if verbose:
         print("Creating mashup with mode", mode)
@@ -187,8 +196,8 @@ def create_mashup(submitted_audio_a: Audio,
         print("Drum A proportions", drum_a_pass_threshold)
         print("Drum B proportions", drum_b_pass_threshold)
         print("Transpose", transpose)
-        print(f"Downbeats A: {submitted_bt_a.downbeats}")
-        print(f"Downbeats B: {submitted_bt_b.downbeats}")
+        print(f"Downbeats A: {submitted_downbeats_a}")
+        print(f"Downbeats B: {submitted_downbeats_b}")
 
     mix_bitmask = {
         MashupMode.VOCAL_A: 0b00011110,
