@@ -22,6 +22,9 @@ from tqdm.auto import tqdm
 from typing import Iterable
 import pickle
 import numba
+import warnings
+
+PURGE_ERROR_LIMIT_BYTES = 1 << 32 # 4GB
 
 class SongGenre(Enum):
     POP = "pop"
@@ -143,7 +146,11 @@ class SongDataset:
     - pack: None: Packs the dataset into a single file
     - pickle: None: Pickles the dataset into a single file
     """
-    def __init__(self, root: str, *, load_on_the_fly: bool = False, assert_audio_exists: bool = False):
+    def __init__(self, root: str, *,
+                 load_on_the_fly: bool = False,
+                 assert_audio_exists: bool = False,
+                 max_dir_size: str | None = "16GB"
+        ):
         from .compress import DatasetEntryEncoder, SongDatasetEncoder
 
         if not os.path.exists(root):
@@ -154,10 +161,26 @@ class SongDataset:
         self.assert_audio_exists = assert_audio_exists
         self.filters: list[Callable[[DatasetEntry], bool]] = []
 
+        # Interpret max_dir_size
+        if max_dir_size is not None:
+            if max_dir_size.lower().endswith("gb"):
+                self.max_dir_size = int(max_dir_size[:-2]) * 1024 * 1024 * 1024
+            elif max_dir_size.lower().endswith("mb"):
+                self.max_dir_size = int(max_dir_size[:-2]) * 1024 * 1024
+            elif max_dir_size.lower().endswith("kb"):
+                self.max_dir_size = int(max_dir_size[:-2]) * 1024
+            else:
+                raise ValueError(f"Invalid max_dir_size format: should be in GB, MB or KB: got {max_dir_size}")
+        else:
+            self.max_dir_size = float("inf")
+
         self.init_directory_structure()
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
+
+        self.purge_list = ["parts", "audio"]
+        self._purge_files()
 
         self._data: dict[YouTubeURL, DatasetEntry] = {}
 
@@ -187,7 +210,7 @@ class SongDataset:
                 json.dump({}, f)
 
         self.register("audio", "{video_id}.wav")
-        self.register("parts", "{video_id}.demucs")
+        self.register("parts", "{video_id}.wav.demucs")
         self.register("datafiles", "{video_id}.dat3")
 
     def register(self, key: str, file_format: str):
@@ -220,6 +243,58 @@ class SongDataset:
                 if not len(file) == len(file_format.format(video_id="")) + 11:
                     return f"Invalid file format for {key}: {file} in {self.root}/{key}"
         return None
+
+    def _purge_files(self, exclusion: list[str] | set[str] | None = None):
+        # Purge the largest files
+        if exclusion is None:
+            exclusion = []
+
+        exclusion = set(exclusion)
+
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(self.root):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                # skip if it is symbolic link
+                if not os.path.islink(fp):
+                    total_size += os.path.getsize(fp)
+        if total_size < self.max_dir_size:
+            return
+
+        nbytes_to_purge = total_size - self.max_dir_size
+
+        if nbytes_to_purge > PURGE_ERROR_LIMIT_BYTES:
+            warnings.warn(f"Dataset exceeds the size limit by more than 4GB - file size limit will not be maintained")
+            self.max_dir_size = float('inf')
+            return
+
+        #TODO implement a LRU system in the future
+        # First consider parts, then consider audios
+        # key is file directory and values are file size in bytes
+        for key in self.purge_list:
+            if nbytes_to_purge <= 0:
+                continue
+
+            files: dict[str, float] = {
+                os.path.join(self.root, key, file): os.path.getsize(os.path.join(self.root, key, file))
+                for file in self.list_files(key)
+                if file not in exclusion
+            }
+
+            while nbytes_to_purge > 0 and len(files) > 0:
+                file = max(files, key=files.get) # type: ignore
+                file_size = files.pop(file)
+                try:
+                    os.remove(file)
+                    nbytes_to_purge -= file_size
+                except Exception as e:
+                    print("Error removing file", file, e)
+
+        # If we still have not purged enough, then warn the user about it
+        if nbytes_to_purge > 0:
+            warnings.warn(f"Unable to maintain file limit: dataset size still exceeds the limit by {nbytes_to_purge} bytes")
+
+        return
 
     def get_path(self, key: str, url: YouTubeURL) -> str:
         """Get the file path for the given key and url"""
@@ -411,6 +486,7 @@ class SongDataset:
         audio = Audio.load(url)
         audio.save(path)
         audio = Audio.load(path)
+        self._purge_files([path])
         return audio
 
     def get_parts(self, url: YouTubeURL) -> DemucsCollection:
@@ -422,16 +498,17 @@ class SongDataset:
         # Save and reload to ensure consistency
         parts = get_demucs().separate(self.get_audio(url))
         parts.save(path)
-        parts = DemucsCollection.load(path)
+        self._purge_files([path])
         return parts
 
-    def get_or_create_entry(self, url: YouTubeURL) -> DatasetEntry:
+    def get_or_create_entry(self, url: YouTubeURL, **kwargs) -> DatasetEntry:
+        """Gets the entry from the dataset, or if it doesn't exist, create one. Any excess kwargs will be passed to create_entry"""
         if url.is_placeholder:
             raise ValueError("Cannot get or create entry for placeholder url")
         entry = self.get_by_url(url)
         if entry is None:
             audio = self.get_audio(url)
-            entry = create_entry(url, dataset=self, audio=audio)
+            entry = create_entry(url, dataset=self, audio=audio, **kwargs)
         return entry
 
     def pack(self):

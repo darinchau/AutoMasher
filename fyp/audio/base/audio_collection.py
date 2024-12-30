@@ -80,9 +80,10 @@ class DemucsCollection:
             vocals=func(self._vocals)
         )
 
-    def save(self, path: str, inner_format: str = "mp3"):
-        """Save the collection to a zip file."""
-        assert inner_format in ["wav", "mp3"], "Invalid inner format"
+    def save(self, path: str):
+        """Save the collection to a zip file. The path should be either .wav.demucs or .mp3.demucs."""
+        assert path.endswith(".wav.demucs") or path.endswith(".mp3.demucs"), "The path should end with .wav.demucs or .mp3.demucs, got " + path
+        inner_format = path.split(".")[-2]
         with zipfile.ZipFile(path, 'w') as z:
             with tempfile.TemporaryDirectory() as tmpdirname:
                 for k, v in self.items():
@@ -90,15 +91,15 @@ class DemucsCollection:
                 for root, dirs, files in os.walk(tmpdirname):
                     for file in files:
                         z.write(os.path.join(root, file), file)
-            z.writestr("format.txt", inner_format)
 
     @staticmethod
     def load(path: str) -> DemucsCollection:
         """Load a collection from a zip file."""
+        assert path.endswith(".wav.demucs") or path.endswith(".mp3.demucs"), "The path should end with .wav.demucs or .mp3.demucs, got " + path
+        inner_format = path.split(".")[-2]
         with zipfile.ZipFile(path, 'r') as z:
             with tempfile.TemporaryDirectory() as tmpdirname:
                 z.extractall(tmpdirname)
-                inner_format = z.read("format.txt").decode("utf-8")
                 return DemucsCollection(
                     bass=Audio.load(os.path.join(tmpdirname, "bass." + inner_format)),
                     drums=Audio.load(os.path.join(tmpdirname, "drums." + inner_format)),
