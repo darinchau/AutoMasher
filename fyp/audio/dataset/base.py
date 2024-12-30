@@ -460,7 +460,7 @@ class SongDataset:
             info[key].append(value.video_id)
 
         with open(self.info_path, "w") as f:
-            json.dump(info, f)
+            json.dump(info, f, indent=2)
 
     def read_info(self, key: str) -> list[YouTubeURL] | dict[YouTubeURL, str] | None:
         with open(self.info_path, "r") as f:
