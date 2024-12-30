@@ -2,7 +2,6 @@
 from __future__ import annotations
 import os
 from typing import Any
-from ...audio import Audio
 from .base import OnsetFeatures
 from dataclasses import dataclass
 import json
@@ -12,6 +11,21 @@ from .. import DemucsCollection
 from ..separation import DemucsAudioSeparator
 from ...model import beats_inference as inference
 import warnings
+import requests
+from typing import Any
+from ...audio import Audio, AudioMode
+import librosa
+import soundfile as sf
+import random
+from contextlib import contextmanager
+import json
+from ...util import YouTubeURL
+import typing
+
+if typing.TYPE_CHECKING:
+    from ..dataset import SongDataset
+
+BEAT_DATASET_KEY = "beats"
 
 @dataclass(frozen=True)
 class BeatAnalysisResult:
@@ -76,71 +90,133 @@ class BeatAnalysisResult:
             data = json.load(f)
         return cls.from_data(data["duration"], data["beats"], data["downbeats"])
 
-def analyse_beat_transformer(audio: Audio | None = None,
-                                parts: DemucsCollection | dict[str, Audio] | None = None,
-                                separator: DemucsAudioSeparator | None = None,
-                                do_normalization: bool = False,
-                                model_path: str = "./resources/ckpts/beat_transformer.pt",
-                                use_loaded_model: bool = True) -> BeatAnalysisResult:
-    """Beat transformer but runs locally using Demucs and some uh workarounds
+@contextmanager
+# This creates a temp file with a temp file name and cleans it up at the end
+def get_temp_file(extension: str):
+    def get_random_string():
+        s = "temp"
+        for _ in range(6):
+            s += "qwertyuiopasdfghjklzxcvbnm"[random.randint(0, 25)]
+        return s
+    def get_unique_filename(name):
+        # Check if the file already exists
+        if not os.path.isfile(f"{name}.{extension}"):
+            return f"{name}.{extension}"
 
-    Args:
-        audio (Audio, optional): The audio to use. If not provided, parts must be provided. Defaults to None.
-        parts (AudioCollection | Callable[[], AudioCollection], optional): The parts to use.
-            If not provided, audio must be provided. If callable, assumes a lazily-evaluated value. Defaults to None.
-        separator (AudioSeparator, optional): The separator to use. Defaults to None.
-        do_normalization (bool, optional): Whether to normalize the downbeat frames to the closest beat frame. Defaults to False.
-        cache_path (str, optional): The path to save the cache. Defaults to None.
-        model_path (str, optional): The path to the model. Defaults to "./resources/ckpts/beat_transformer.pt"."""
-    # Handle audio/parts case
+        # If the file already exists, add a number to the end of the filename
+        i = 1
+        while True:
+            new_name = f"{name} ({i}).{extension}"
+            if not os.path.isfile(new_name):
+                return new_name
+            i += 1
+    fn = get_unique_filename(get_random_string())
+    try:
+        with open(fn, 'w+b'):
+            pass
+        yield fn
+    finally:
+        if os.path.isfile(fn):
+            os.remove(fn)
+
+def analyse_beat_transformer(audio: Audio | None = None,
+                             dataset: SongDataset | None = None,
+                             url: YouTubeURL | None = None,
+                             parts: DemucsCollection| None = None,
+                             backend: typing.Literal["demucs", "spleeter"] = "demucs",
+                             backend_url: str | None = None,
+                             do_normalization: bool = False,
+                             model_path: str = "./resources/ckpts/beat_transformer.pt",
+                             use_loaded_model: bool = True) -> BeatAnalysisResult:
+    """Beat transformer but runs locally using Demucs and some uh workarounds"""
+    if dataset is not None:
+        dataset.register("beats", "{video_id}.beats")
+        if url is not None and not url.is_placeholder and dataset.has_path("beats", url):
+            return BeatAnalysisResult.load(dataset.get_path("beats", url))
+
     duration = -1.
     if audio is None and parts is None:
         raise ValueError("Either audio or parts must be provided")
 
-    if parts is None and audio is not None:
-        demucs = DemucsAudioSeparator() if separator is None else separator
+    if parts is None and audio is not None and backend == "demucs":
+        demucs = DemucsAudioSeparator()
         parts = demucs.separate(audio)
         duration = audio.duration
-    elif parts is not None:
-        if isinstance(parts, DemucsCollection):
-            duration = parts.get_duration()
-            parts = {
-                "vocals": parts.vocals,
-                "drums": parts.drums,
-                "bass": parts.bass,
-                "other": parts.other,
-            }
-        elif isinstance(parts, dict):
-            duration = list(parts.values())[0].duration
-        else:
-            raise ValueError("Unknown parts type")
 
-    # Resample as needed
-    assert parts is not None
-    assert duration > 0
+    if parts is not None:
+        duration = parts.get_duration()
+        parts_dict = {
+            "vocals": parts.vocals,
+            "drums": parts.drums,
+            "bass": parts.bass,
+            "other": parts.other,
+        }
 
-    parts = {k: v.resample(44100).to_nchannels(2) for k, v in parts.items()}
+        assert parts is not None
+        assert duration > 0
 
-    # Detect whether the parts is Demucs or Spleeter or something else
-    assert parts is not None
-    key_set = set(parts.keys())
-    expected_key_set = {"vocals", "piano", "bass", "drums", "other"}
-    parts_dict = {}
-    if key_set == expected_key_set:
-        # Spleeter audio
-        for k in key_set:
-            parts_dict[k] = parts[k].numpy(keep_dims=True).T
-    elif key_set == {"vocals", "bass", "drums", "other"}:
-        # Demucs audio
-        for k in key_set:
-            parts_dict[k] = parts[k].numpy(keep_dims=True).T
+        parts_dict = {k: v.resample(44100).to_nchannels(2).numpy(keep_dims=True).T for k, v in parts_dict.items()}
         parts_dict['piano'] = np.zeros_like(parts_dict['vocals'])
-    else:
-        raise ValueError("Unknown audio type - found the following keys: " + str(key_set))
 
-    assert set(parts_dict.keys()) == expected_key_set
-    with warnings.catch_warnings():
-        beat_frames, downbeat_frames = inference(parts_dict, model_path=model_path, use_loaded_model=use_loaded_model)
+        with warnings.catch_warnings():
+            beat_frames, downbeat_frames = inference(parts_dict, model_path=model_path, use_loaded_model=use_loaded_model)
+    else:
+        assert backend == "spleeter"
+        assert audio is not None, "Audio must be provided if using spleeter"
+        assert backend_url is not None, "Backend URL must be provided if using spleeter"
+
+        audio_ = audio.resample(44100).to_nchannels(AudioMode.STEREO)
+
+        with get_temp_file("wav") as fn:
+            with sf.SoundFile(fn, 'w', samplerate=audio_.sample_rate, channels=1, format='WAV') as f:
+                audio_ = audio_.numpy()
+                f.write(audio_)
+
+            with open(fn, 'rb') as f:
+                wav_bytes = f.read()
+
+        if backend_url[-1] == "/":
+            backend_url = backend_url[:-1]
+
+        preflight = requests.get(backend_url + "/alive")
+        fail_reason = None
+        if preflight.status_code != 200:
+            fail_reason = f"Beat transformer preflight failed with status code {preflight.status_code}. Have you forgot to activate the backer end API? Falling back to demucs for now"
+        elif isinstance(preflight.json(), dict) and preflight.json().get("alive") != "true":
+            fail_reason = "Wrong response from beat transformer. Falling back to demucs for now"
+
+        if fail_reason is not None:
+            warnings.warn(fail_reason)
+            return analyse_beat_transformer(
+                audio=audio,
+                dataset=dataset,
+                url=url,
+                parts=None,
+                backend="demucs",
+                backend_url=None,
+                do_normalization=do_normalization,
+                model_path=model_path,
+                use_loaded_model=use_loaded_model
+            )
+
+        r = requests.post(backend_url + "/beat", data=wav_bytes)
+        if r.status_code != 200:
+            warnings.warn(f"Beat transformer failed with status code {r.status_code}. Have you forgot to activate the backer end API?")
+            return analyse_beat_transformer(
+                audio=audio,
+                dataset=dataset,
+                url=url,
+                parts=None,
+                backend="demucs",
+                backend_url=None,
+                do_normalization=do_normalization,
+                model_path=model_path,
+                use_loaded_model=use_loaded_model
+            )
+
+        data = r.json()
+        downbeat_frames: list[float] = [int(x) / 44100 for x in data["downbeat_frames"]]
+        beat_frames: list[float] = [int(x) / 44100 for x in data["beat_frames"]]
 
     # Empirically, the downbeat frames are not always the same as the beat frames
     # So we need to map the downbeat frames to the closest beat frame

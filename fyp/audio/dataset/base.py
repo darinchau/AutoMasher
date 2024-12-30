@@ -23,6 +23,7 @@ from typing import Iterable
 import pickle
 import numba
 import warnings
+import typing
 
 PURGE_ERROR_LIMIT_BYTES = 1 << 32 # 4GB
 
@@ -226,6 +227,8 @@ class SongDataset:
         metadata["file_structure"][key] = file_format
         with open(self.metadata_path, "w") as f:
             json.dump(metadata, f)
+        if not os.path.exists(self.root + "/" + key):
+            os.makedirs(self.root + "/" + key)
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
@@ -650,6 +653,9 @@ def create_entry(url: YouTubeURL, *,
                  views: int | None = None,
                  chord_model_path: str | None = None,
                  beat_model_path: str | None = None,
+                 chord_regularizer: float = 0.5,
+                 beat_backend: typing.Literal["demucs", "spleeter"] = "demucs",
+                 beat_backend_url: str | None = None,
                  use_simplified_chord: bool = False,
                  strict: bool = False) -> DatasetEntry:
     """Creates the dataset entry from the data - performs normalization and music duration postprocessing
@@ -684,9 +690,22 @@ def create_entry(url: YouTubeURL, *,
     if chords is None and (chord_times is None or chord_labels is None):
         assert audio is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
         if chord_model_path is not None:
-            chords = analyse_chord_transformer(audio, model_path=chord_model_path, use_large_voca=not use_simplified_chord)
+            chords = analyse_chord_transformer(
+                audio,
+                dataset=dataset,
+                url=url,
+                regularizer=chord_regularizer,
+                model_path=chord_model_path,
+                use_large_voca=not use_simplified_chord
+            )
         else:
-            chords = analyse_chord_transformer(audio, use_large_voca=not use_simplified_chord)
+            chords = analyse_chord_transformer(
+                audio,
+                dataset=dataset,
+                url=url,
+                regularizer=chord_regularizer,
+                use_large_voca=not use_simplified_chord
+            )
     elif chords is None:
         assert chord_times is not None and chord_labels is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
         chords = ChordAnalysisResult.from_data(duration, chord_labels, chord_times)
@@ -701,9 +720,24 @@ def create_entry(url: YouTubeURL, *,
         assert audio is not None, "Either beats or downbeats or audio must be provided"
         parts = dataset.get_parts(url) if dataset is not None else get_demucs().separate(audio)
         if beat_model_path is not None:
-            bt = analyse_beat_transformer(audio, parts, model_path=beat_model_path)
+            bt = analyse_beat_transformer(
+                audio,
+                dataset=dataset,
+                url=url,
+                parts=parts,
+                backend=beat_backend,
+                backend_url=beat_backend_url,
+                model_path=beat_model_path
+            )
         else:
-            bt = analyse_beat_transformer(audio, parts)
+            bt = analyse_beat_transformer(
+                audio,
+                dataset=dataset,
+                url=url,
+                parts=parts,
+                backend=beat_backend,
+                backend_url=beat_backend_url
+            )
         beats = bt._beats
         downbeats = bt._downbeats
 
