@@ -1,6 +1,5 @@
 from .base import (
     SongDataset,
-    SongGenre,
     DatasetEntry,
     get_normalized_times,
     verify_parts_result,

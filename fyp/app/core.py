@@ -12,7 +12,7 @@ from ..audio.analysis import (
     DiscreteLatentFeatures,
     ContinuousLatentFeatures,
 )
-from ..audio.dataset import SongDataset, DatasetEntry, SongGenre, create_entry
+from ..audio.dataset import SongDataset, DatasetEntry, create_entry
 from ..audio.mix import create_mashup, MashabilityResult, calculate_mashability, MashupMode
 from ..audio.separation import DemucsAudioSeparator
 from ..util import YouTubeURL, get_url
