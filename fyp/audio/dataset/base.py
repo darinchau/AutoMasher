@@ -27,38 +27,6 @@ import typing
 
 PURGE_ERROR_LIMIT_BYTES = 1 << 32 # 4GB
 
-class SongGenre(Enum):
-    POP = "pop"
-    CANTOPOP = "cantopop"
-    VOCALOID = "vocaloid"
-    KPOP = "kpop"
-    NIGHTCORE = "nightcore"
-    ANIME = "anime"
-    BROADWAY = "broadway"
-    JPOP = "jp-pop"
-    UNKNOWN = "unknown"
-
-    @property
-    def mapping(self):
-        return {
-            SongGenre.POP: 0,
-            SongGenre.CANTOPOP: 1,
-            SongGenre.VOCALOID: 2,
-            SongGenre.KPOP: 3,
-            SongGenre.NIGHTCORE: 4,
-            SongGenre.ANIME: 5,
-            SongGenre.BROADWAY: 6,
-            SongGenre.JPOP: 7,
-            SongGenre.UNKNOWN: 8
-        }
-
-    def to_int(self) -> int:
-        return self.mapping[self]
-
-    @staticmethod
-    def from_int(i: int) -> SongGenre:
-        return list(SongGenre)[i]
-
 @dataclass(frozen=True)
 class DatasetEntry:
     """The main data structure in AutoMasher. This represents a single entry in the dataset.
@@ -66,9 +34,7 @@ class DatasetEntry:
     chords: ChordAnalysisResult
     downbeats: OnsetFeatures
     beats: OnsetFeatures
-    genre: SongGenre
     url: YouTubeURL
-    views: int
     normalized_times: NDArray[np.float64]
     music_duration: NDArray[np.float64]
 
@@ -85,7 +51,6 @@ class DatasetEntry:
 
         assert self.chords.duration == self.downbeats.duration == self.beats.duration, f"Duration mismatch: {self.chords.duration} != {self.downbeats.duration} != {self.beats.duration}"
         assert self.chords.duration <= 600, f"Duration too long: {self.chords.duration}"
-        assert self.views >= 0 or self.views == -1, f"Invalid views: {self.views}"
 
     def __repr__(self):
         return f"DatasetEntry([{self.url.video_id}])"
@@ -649,8 +614,6 @@ def create_entry(url: YouTubeURL, *,
                  beats_list: list[float] | None = None,
                  downbeats_list: list[float] | None = None,
                  duration: float | None = None,
-                 genre: SongGenre = SongGenre.UNKNOWN,
-                 views: int | None = None,
                  chord_model_path: str | None = None,
                  beat_model_path: str | None = None,
                  chord_regularizer: float = 0.5,
@@ -774,9 +737,7 @@ def create_entry(url: YouTubeURL, *,
         chords=chords,
         downbeats=downbeats,
         beats=beats,
-        genre=genre,
         url=url,
-        views=views if views is not None else -1,
         normalized_times=normalized_times,
         music_duration=np.array(music_duration, dtype=np.float64)
     )

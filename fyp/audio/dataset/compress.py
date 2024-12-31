@@ -5,7 +5,7 @@ import re
 import struct
 from abc import ABC, abstractmethod
 from typing import Iterator, TypeVar, Generic
-from .base import DatasetEntry, SongDataset, SongGenre
+from .base import DatasetEntry, SongDataset
 from ...util import get_url, YouTubeURL
 from collections import Counter
 import numpy as np
@@ -210,14 +210,6 @@ class ChordLabelsEncoder(BitsEncoder[list[int]]):
             raise ValueError("Too many chord labels")
         return chord_labels
 
-class GenreEncoder(BitsEncoder[SongGenre]):
-    def encode(self, data: SongGenre) -> Iterator[int]:
-        yield data.to_int()
-
-    def decode(self, data: Iterator[int]) -> SongGenre:
-        genre = SongGenre.from_int(next(data))
-        return genre
-
 class StringEncoder(BitsEncoder[str]):
     def __init__(self, limit: int = 1000):
         self.limit = limit
@@ -277,7 +269,6 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         self.chord_time_encoder = ChordTimesEncoder(chord_time_resolution)
         self.beat_time_encoder = BeatTimesEncoder(beat_time_resolution)
         self.chord_labels_encoder = ChordLabelsEncoder()
-        self.genre_encoder = GenreEncoder()
         self.string_encoder = StringEncoder()
         self.float32_encoder = Float32Encoder()
         self.int64_encoder = Int64Encoder()
@@ -288,8 +279,6 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         yield from self.beat_time_encoder.encode(data.downbeats.onsets.tolist())
         yield from self.beat_time_encoder.encode(data.beats.onsets.tolist())
         yield from self.string_encoder.encode(data.url.video_id)
-        yield from self.genre_encoder.encode(data.genre)
-        yield from self.int64_encoder.encode(data.views)
         yield from self.float32_encoder.encode(data.duration)
 
     def decode(self, data: Iterator[int]) -> DatasetEntry:
@@ -298,8 +287,6 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
         downbeats = self.beat_time_encoder.decode(data)
         beats = self.beat_time_encoder.decode(data)
         youtube_id = self.string_encoder.decode(data)
-        genre = self.genre_encoder.decode(data)
-        views = self.int64_encoder.decode(data)
         length = self.float32_encoder.decode(data)
 
         entry = create_entry(
@@ -308,15 +295,14 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
             downbeats_list=downbeats,
             chord_labels=chords,
             chord_times=chord_times,
-            genre=genre,
-            views=views,
             url=get_url(youtube_id),
         )
 
         return entry
 
 class SongDatasetEncoder(BitsEncoder[dict[YouTubeURL, DatasetEntry]]):
-    def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024, progress_bar: bool = True):
+    def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024, progress_bar: bool = True, old: bool = False):
+        """If old is True, the encoder will use the old format which includes the views and genre of the song"""
         self.entry_encoder: BitsEncoder[DatasetEntry] = DatasetEntryEncoder(chord_time_resolution, beat_time_resolution)
         self.int64_encoder = Int64Encoder()
         self.checksum_encoder = Int32Encoder()

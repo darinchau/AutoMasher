@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 import numba
 import heapq
 import typing
-from ..dataset import SongDataset, DatasetEntry, SongGenre
+from ..dataset import SongDataset, DatasetEntry
 from math import exp
 from ..analysis.base import (
     OnsetFeatures,
@@ -36,7 +36,6 @@ class MashabilityResult:
     start_bar: int
     transpose: int
     timestamp: float
-    genre: SongGenre
 
     @property
     def title(self):
@@ -60,7 +59,6 @@ class MashabilityList:
             start_bar=i,
             transpose=k,
             timestamp=start,
-            genre=entry.genre,
         )) for distance, (i, k, start, entry) in self.ls]
 
         # Separate into few cases to make this efficient
