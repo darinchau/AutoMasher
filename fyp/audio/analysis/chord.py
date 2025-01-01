@@ -355,6 +355,6 @@ def get_chord_result(audio: Audio,
 
     if results is None:
         results = inference(audio, model_path=model_path, use_voca=use_large_voca)
-        if dataset is not None and url is not None and not url.is_placeholder:
+        if use_cache and dataset is not None and url is not None and not url.is_placeholder:
             results.save(dataset.get_path(key, url))
     return results
