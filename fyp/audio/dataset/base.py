@@ -200,13 +200,16 @@ class SongDataset:
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         for key, file_format in metadata["file_structure"].items():
-            if not os.path.exists(self.root + "/" + key):
-                return f"File {key} does not exist"
             if "{video_id}" in file_format:
+                if not os.path.exists(self.root + "/" + key):
+                    return f"File {key} does not exist"
                 expected_file_format_length = len(file_format.format(video_id="")) + 11
                 for file in self.list_files(key):
                     if len(file) != expected_file_format_length:
                         return f"Invalid file format for {key}: {file} in {self.root}/{key}"
+            else:
+                if not os.path.isfile(self.root + "/" + file_format):
+                    return f"File {file_format} does not exist"
         return None
 
     def _purge_files(self, exclusion: list[str] | set[str] | None = None):
