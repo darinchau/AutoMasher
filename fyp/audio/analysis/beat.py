@@ -166,6 +166,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
         assert backend_url is not None, "Backend URL must be provided if using spleeter"
 
         audio_ = audio.resample(44100).to_nchannels(AudioMode.STEREO)
+        duration = audio_.duration
 
         with get_temp_file("wav") as fn:
             with sf.SoundFile(fn, 'w', samplerate=audio_.sample_rate, channels=1, format='WAV') as f:
