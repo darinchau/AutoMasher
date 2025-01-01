@@ -272,7 +272,7 @@ class SongDataset:
             metadata = json.load(f)
         if key not in metadata["file_structure"]:
             raise ValueError(f"Key {key} not registered")
-        file_format: str = metadata[key]
+        file_format: str = metadata["file_structure"][key]
         return os.path.join(self.root, key, file_format.format(video_id=url.video_id))
 
     def has_path(self, key: str, url: YouTubeURL) -> bool:
