@@ -190,7 +190,7 @@ class SongDataset:
         if "{video_id}" in file_format and not os.path.exists(self.root + "/" + key):
             os.makedirs(self.root + "/" + key)
         elif "{video_id}" not in file_format and not os.path.isfile(self.root + "/" + key):
-            open(self.root + "/" + key, "w").close()
+            open(self.root + "/" + file_format, "w").close()
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
