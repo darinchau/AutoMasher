@@ -403,12 +403,12 @@ class SongDataset:
             info[key] = {}
 
         if desc is not None:
-            assert all(isinstance(x, dict) for x in info[key]), f"Invalid info format: key: {key} should contain description and url"
-            if value.video_id in [x[1] for x in info[key]]:
+            assert isinstance(info[key], dict), f"Invalid info format: key: {key} should contain description and url"
+            if value.video_id in info[key]:
                 return
-            info[key].append([desc, value.video_id])
+            info[key][value.video_id] = desc
         else:
-            assert all(isinstance(x, str) for x in info[key]), f"Invalid info format: key: {key} should contain only urls"
+            assert isinstance(info[key], list), f"Invalid info format: key: {key} should contain only urls"
             if value.video_id in info[key]:
                 return
             info[key].append(value.video_id)
