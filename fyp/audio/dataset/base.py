@@ -169,13 +169,13 @@ class SongDataset:
         self.register("audio", "{video_id}.wav")
         self.register("parts", "{video_id}.wav.demucs")
         self.register("datafiles", "{video_id}.dat3")
-        self.register("info", "info.json")
+        self.register("info", "info.json", initial_data="{}")
         self.register("error", "error_logs.txt")
         self.register("pack", "pack.data", create=False)
         self.register("pickle", "dataset.pkl", create=False)
 
 
-    def register(self, key: str, file_format: str, *, create: bool = True):
+    def register(self, key: str, file_format: str, *, create: bool = True, initial_data: str | None = None):
         """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
 
         The file format should contain the string "{video_id}" which will be replaced by the video id of the url
@@ -190,7 +190,8 @@ class SongDataset:
         if "{video_id}" in file_format and not os.path.exists(self.root + "/" + key):
             os.makedirs(self.root + "/" + key)
         elif create and "{video_id}" not in file_format and not os.path.isfile(self.root + "/" + key):
-            open(self.root + "/" + file_format, "w").close()
+            with open(self.root + "/" + file_format, "w") as f:
+                f.write(initial_data or "")
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
