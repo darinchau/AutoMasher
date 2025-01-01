@@ -200,11 +200,11 @@ class SongDataset:
         for key, file_format in metadata["file_structure"].items():
             if not os.path.exists(self.root + "/" + key):
                 return f"File {key} does not exist"
-            if "{video_id}" not in file_format:
-                return f"Invalid file format for {key}: {file_format}"
-            for file in self.list_files(key):
-                if not len(file) == len(file_format.format(video_id="")) + 11:
-                    return f"Invalid file format for {key}: {file} in {self.root}/{key}"
+            if "{video_id}" in file_format:
+                expected_file_format_length = len(file_format.format(video_id="")) + 11
+                for file in self.list_files(key):
+                    if len(file) != expected_file_format_length:
+                        return f"Invalid file format for {key}: {file} in {self.root}/{key}"
         return None
 
     def _purge_files(self, exclusion: list[str] | set[str] | None = None):
