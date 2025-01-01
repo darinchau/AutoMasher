@@ -271,7 +271,7 @@ class SongDataset:
         if "{video_id}" in file_format and url is None:
             raise ValueError(f"Invalid file format for {key}: {file_format} - a URL is expected")
         if url is None:
-            return os.path.join(self.root, key)
+            return os.path.join(self.root, file_format)
         return os.path.join(self.root, key, file_format.format(video_id=url.video_id))
 
     def has_path(self, key: str, url: YouTubeURL) -> bool:
