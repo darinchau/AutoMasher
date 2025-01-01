@@ -407,7 +407,7 @@ class SongDataset:
     def __repr__(self):
         return f"LocalSongDataset(at: {self.root}, {len(self)} entries)"
 
-    def write_info(self, key: str, value: YouTubeURL, desc: str | None = None):
+    def write_info(self, key: str, value: YouTubeURL, desc: str | None = None, *, indent: int | str | None = None):
         with open(self.info_path, "r") as f:
             info = json.load(f)
         if key not in info:
@@ -425,7 +425,7 @@ class SongDataset:
             info[key].append(value.video_id)
 
         with open(self.info_path, "w") as f:
-            json.dump(info, f, indent=2)
+            json.dump(info, f, indent=indent)
 
     def read_info(self, key: str) -> list[YouTubeURL] | dict[YouTubeURL, str] | None:
         with open(self.info_path, "r") as f:
