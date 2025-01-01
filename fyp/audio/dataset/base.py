@@ -171,11 +171,11 @@ class SongDataset:
         self.register("datafiles", "{video_id}.dat3")
         self.register("info", "info.json")
         self.register("error", "error_logs.txt")
-        self.register("pack", "pack.data")
-        self.register("pickle", "dataset.pkl")
+        self.register("pack", "pack.data", create=False)
+        self.register("pickle", "dataset.pkl", create=False)
 
 
-    def register(self, key: str, file_format: str):
+    def register(self, key: str, file_format: str, *, create: bool = True):
         """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
 
         The file format should contain the string "{video_id}" which will be replaced by the video id of the url
@@ -189,7 +189,7 @@ class SongDataset:
             json.dump(metadata, f)
         if "{video_id}" in file_format and not os.path.exists(self.root + "/" + key):
             os.makedirs(self.root + "/" + key)
-        elif "{video_id}" not in file_format and not os.path.isfile(self.root + "/" + key):
+        elif create and "{video_id}" not in file_format and not os.path.isfile(self.root + "/" + key):
             open(self.root + "/" + file_format, "w").close()
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
@@ -207,9 +207,6 @@ class SongDataset:
                 for file in self.list_files(key):
                     if len(file) != expected_file_format_length:
                         return f"Invalid file format for {key}: {file} in {self.root}/{key}"
-            else:
-                if not os.path.isfile(self.root + "/" + file_format):
-                    return f"File {file_format} does not exist"
         return None
 
     def _purge_files(self, exclusion: list[str] | set[str] | None = None):
