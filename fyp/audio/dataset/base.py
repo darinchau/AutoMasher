@@ -301,11 +301,13 @@ class SongDataset:
         if not os.path.isfile(self.get_path("pack")):
             self.pack()
 
-    def write_error(self, error: str, e: Exception | None = None):
-        print(f"Error: {error}")
+    def write_error(self, error: str, e: Exception | None = None, print_fn: Callable[[str], Any] | None = print):
+        if print_fn is None:
+            print_fn = lambda x: None
+        print_fn(f"Error: {error}")
         if e:
-            print(f"Error: {e}")
-            print(f"Error: {traceback.format_exc()}")
+            print_fn(f"Error: {e}")
+            print_fn(f"Error: {traceback.format_exc()}")
         try:
             with open(self.error_logs_path, "a") as f:
                 f.write(error + "\n")
@@ -314,10 +316,10 @@ class SongDataset:
                     f.write(traceback.format_exc() + "\n")
                     f.write("\n")
         except Exception as e2:
-            print(f"Error : {e2}")
-            print(f"Error writing error: {error}")
-            print(f"Error writing error: {e}")
-            print(f"Error writing error: {traceback.format_exc()}")
+            print_fn(f"Error : {e2}")
+            print_fn(f"Error writing error: {error}")
+            print_fn(f"Error writing error: {e}")
+            print_fn(f"Error writing error: {traceback.format_exc()}")
 
     @property
     def metadata_path(self):
