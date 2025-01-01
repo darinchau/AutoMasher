@@ -187,8 +187,10 @@ class SongDataset:
         metadata["file_structure"][key] = file_format
         with open(self.metadata_path, "w") as f:
             json.dump(metadata, f)
-        if not os.path.exists(self.root + "/" + key):
+        if "{video_id}" in file_format and not os.path.exists(self.root + "/" + key):
             os.makedirs(self.root + "/" + key)
+        elif "{video_id}" not in file_format and not os.path.isfile(self.root + "/" + key):
+            open(self.root + "/" + key, "w").close()
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
