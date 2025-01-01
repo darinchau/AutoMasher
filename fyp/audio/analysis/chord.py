@@ -261,7 +261,8 @@ def analyse_chord_transformer(audio: Audio, *,
                               url: YouTubeURL | None = None,
                               regularizer: float = 0.5,
                               model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
-                              use_large_voca: bool = True) -> ChordAnalysisResult:
+                              use_large_voca: bool = True,
+                              use_cache: bool = True) -> ChordAnalysisResult:
     """Analyse the chords of an audio file using the transformer model
 
     Parameters:
@@ -269,8 +270,9 @@ def analyse_chord_transformer(audio: Audio, *,
     regularizer (float): The regularizer to use. This value penalizes the model for changing chords too often. Defaults to 0.5
     model_path (str): The path to the model checkpoint. Defaults to "./resources/ckpts/btc_model_large_voca.pt"
     use_large_voca (bool): Whether to use the large voca chord system. Defaults to True
+    use_cache (bool): Whether to use the cache. Defaults to True
     """
-    results = get_chord_result(audio, dataset, url, model_path, use_large_voca)
+    results = get_chord_result(audio, dataset, url, model_path, use_large_voca, use_cache)
 
     time_idx = int(audio.duration * results.time_resolution)
 
@@ -314,9 +316,9 @@ def analyse_chord_transformer(audio: Audio, *,
 def analyse_chord_features(audio: Audio, *,
                               dataset: SongDataset | None = None,
                               url: YouTubeURL | None = None,
-                              regularizer: float = 0.5,
                               model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
-                              use_large_voca: bool = True) -> ChordFeatures:
+                              use_large_voca: bool = True,
+                              use_cache: bool = True) -> ChordFeatures:
     """Analyse the chords of an audio file using the transformer model
 
     Parameters:
@@ -324,8 +326,9 @@ def analyse_chord_features(audio: Audio, *,
     regularizer (float): The regularizer to use. This value penalizes the model for changing chords too often. Defaults to 0.5
     model_path (str): The path to the model checkpoint. Defaults to "./resources/ckpts/btc_model_large_voca.pt"
     use_large_voca (bool): Whether to use the large voca chord system. Defaults to True
+    use_cache (bool): Whether to use the cache. Defaults to True
     """
-    results = get_chord_result(audio, dataset, url, model_path, use_large_voca)
+    results = get_chord_result(audio, dataset, url, model_path, use_large_voca, use_cache)
 
     time_idx = int(audio.duration * results.time_resolution)
     latent = results.features[:time_idx].float().numpy()
@@ -340,10 +343,11 @@ def get_chord_result(audio: Audio,
                      dataset: SongDataset | None =  None,
                      url: YouTubeURL | None = None,
                      model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
-                     use_large_voca: bool = True) -> ChordModelOutput:
+                     use_large_voca: bool = True,
+                     use_cache: bool = True) -> ChordModelOutput:
     results = None
     key = LARGE_VOCA_CHORD_DATASET_KEY if use_large_voca else SIMPLE_CHORD_DATASET_KEY
-    if dataset is not None:
+    if use_cache and dataset is not None:
         dataset.register(SIMPLE_CHORD_DATASET_KEY, "{video_id}.chord")
         dataset.register(LARGE_VOCA_CHORD_DATASET_KEY, "{video_id}.chord")
         if url is not None and not url.is_placeholder and dataset.has_path(key, url):

@@ -127,9 +127,24 @@ def analyse_beat_transformer(audio: Audio | None = None,
                              backend_url: str | None = None,
                              do_normalization: bool = False,
                              model_path: str = "./resources/ckpts/beat_transformer.pt",
+                             use_cache: bool = True,
                              use_loaded_model: bool = True) -> BeatAnalysisResult:
-    """Beat transformer but runs locally using Demucs and some uh workarounds"""
-    if dataset is not None:
+    """Beat transformer but runs locally using Demucs and some uh workarounds
+
+    Args:
+
+        audio (Audio | None): The audio to analyse. If parts is not None, this is ignored. Defaults to None.
+        dataset (SongDataset | None): The dataset to use for caching. Defaults to None.
+        url (YouTubeURL | None): The URL of the audio to analyse. Defaults to None.
+        parts (DemucsCollection | None): The parts of the audio to analyse. Defaults to None.
+        backend (typing.Literal["demucs", "spleeter"]): The backend to use. Defaults to "demucs".
+        backend_url (str | None): The URL of the beat transformer backend. Defaults to None.
+        do_normalization (bool): Whether to normalize the downbeats to the closest beat. Defaults to False.
+        model_path (str): The path to the beat transformer model. Defaults to "./resources/ckpts/beat_transformer.pt".
+        use_cache (bool): Whether to use the cache - if False, will not save to or load from cache. Defaults to True.
+        use_loaded_model (bool): Whether to use the loaded model. Defaults to True.
+        """
+    if use_cache and dataset is not None:
         dataset.register("beats", "{video_id}.beats")
         if url is not None and not url.is_placeholder and dataset.has_path("beats", url):
             return BeatAnalysisResult.load(dataset.get_path("beats", url))
@@ -197,7 +212,8 @@ def analyse_beat_transformer(audio: Audio | None = None,
                 backend_url=None,
                 do_normalization=do_normalization,
                 model_path=model_path,
-                use_loaded_model=use_loaded_model
+                use_loaded_model=use_loaded_model,
+                use_cache=use_cache
             )
 
         r = requests.post(backend_url + "/beat", data=wav_bytes)
@@ -212,7 +228,8 @@ def analyse_beat_transformer(audio: Audio | None = None,
                 backend_url=None,
                 do_normalization=do_normalization,
                 model_path=model_path,
-                use_loaded_model=use_loaded_model
+                use_loaded_model=use_loaded_model,
+                use_cache=use_cache
             )
 
         data = r.json()
@@ -231,4 +248,6 @@ def analyse_beat_transformer(audio: Audio | None = None,
     downbeat_frames = [x for x in downbeat_frames if x < duration]
 
     result = BeatAnalysisResult.from_data(duration, beat_frames, downbeat_frames)
+    if use_cache and dataset is not None:
+        result.save(dataset.get_path("beats", url))
     return result

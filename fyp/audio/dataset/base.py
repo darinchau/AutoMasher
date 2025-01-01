@@ -612,6 +612,8 @@ def create_entry(url: YouTubeURL, *,
                  beat_backend: typing.Literal["demucs", "spleeter"] = "demucs",
                  beat_backend_url: str | None = None,
                  use_simplified_chord: bool = False,
+                 use_chord_cache: bool = True,
+                 use_beat_cache: bool = True,
                  strict: bool = False) -> DatasetEntry:
     """Creates the dataset entry from the data - performs normalization and music duration postprocessing
 
@@ -651,7 +653,8 @@ def create_entry(url: YouTubeURL, *,
                 url=url,
                 regularizer=chord_regularizer,
                 model_path=chord_model_path,
-                use_large_voca=not use_simplified_chord
+                use_large_voca=not use_simplified_chord,
+                use_cache=use_chord_cache
             )
         else:
             chords = analyse_chord_transformer(
@@ -659,7 +662,8 @@ def create_entry(url: YouTubeURL, *,
                 dataset=dataset,
                 url=url,
                 regularizer=chord_regularizer,
-                use_large_voca=not use_simplified_chord
+                use_large_voca=not use_simplified_chord,
+                use_cache=use_chord_cache
             )
     elif chords is None:
         assert chord_times is not None and chord_labels is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
@@ -685,7 +689,8 @@ def create_entry(url: YouTubeURL, *,
                 parts=parts,
                 backend=beat_backend,
                 backend_url=beat_backend_url,
-                model_path=beat_model_path
+                model_path=beat_model_path,
+                use_cache=use_beat_cache
             )
         else:
             bt = analyse_beat_transformer(
@@ -694,7 +699,8 @@ def create_entry(url: YouTubeURL, *,
                 url=url,
                 parts=parts,
                 backend=beat_backend,
-                backend_url=beat_backend_url
+                backend_url=beat_backend_url,
+                use_cache=use_beat_cache
             )
         beats = bt._beats
         downbeats = bt._downbeats
