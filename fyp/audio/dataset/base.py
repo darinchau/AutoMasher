@@ -675,6 +675,8 @@ def create_entry(url: YouTubeURL, *,
         assert audio is not None, "Either beats or downbeats or audio must be provided"
         if beat_backend == "demucs":
             parts = dataset.get_parts(url) if dataset is not None else get_demucs().separate(audio)
+        else:
+            parts = None
         if beat_model_path is not None:
             bt = analyse_beat_transformer(
                 audio,
