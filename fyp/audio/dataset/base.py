@@ -152,25 +152,16 @@ class SongDataset:
 
         # There may be extra data in the dataset in places other than the packed db - but that shouldnt matter
         if not self.load_on_the_fly:
-            if os.path.exists(self.pickle_path):
-                with open(self.pickle_path, "rb") as f:
+            if os.path.exists(self.get_path("pickle")):
+                with open(self.get_path("pickle"), "rb") as f:
                     self._data = pickle.load(f)
-            elif os.path.exists(self.pack_path):
-                self._data = SongDatasetEncoder().read_from_path(self.pack_path)
-                self.pickle()
+            elif os.path.exists(self.get_path("pack")):
+                self._data = SongDatasetEncoder().read_from_path(self.get_path("pack"))
             else:
                 self.load_from_directory()
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
-        if not os.path.exists(self.error_logs_path):
-            with open(self.error_logs_path, "w") as f:
-                f.write("")
-
-        if not os.path.exists(self.info_path):
-            with open(self.info_path, "w") as f:
-                json.dump({}, f)
-
         if not os.path.exists(self.metadata_path):
             with open(self.metadata_path, "w") as f:
                 json.dump({}, f)
@@ -178,13 +169,17 @@ class SongDataset:
         self.register("audio", "{video_id}.wav")
         self.register("parts", "{video_id}.wav.demucs")
         self.register("datafiles", "{video_id}.dat3")
+        self.register("info", "info.json")
+        self.register("error", "error_logs.txt")
+        self.register("pack", "pack.data")
+        self.register("pickle", "dataset.pkl")
+
 
     def register(self, key: str, file_format: str):
         """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
 
-        The file format should contain the string "{video_id}" which will be replaced by the video id of the url"""
-        if "{video_id}" not in file_format:
-            raise ValueError("File format must contain {video_id}")
+        The file format should contain the string "{video_id}" which will be replaced by the video id of the url
+        If it does not, then a file is created in the root directory"""
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         if not "file_structure" in metadata:
@@ -264,15 +259,19 @@ class SongDataset:
 
         return
 
-    def get_path(self, key: str, url: YouTubeURL) -> str:
+    def get_path(self, key: str, url: YouTubeURL | None = None) -> str:
         """Get the file path for the given key and url"""
-        if url.is_placeholder:
+        if url is not None and url.is_placeholder:
             raise ValueError("Cannot get data path for placeholder url")
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         if key not in metadata["file_structure"]:
             raise ValueError(f"Key {key} not registered")
         file_format: str = metadata["file_structure"][key]
+        if "{video_id}" in file_format and url is None:
+            raise ValueError(f"Invalid file format for {key}: {file_format} - a URL is expected")
+        if url is None:
+            return os.path.join(self.root, key)
         return os.path.join(self.root, key, file_format.format(video_id=url.video_id))
 
     def has_path(self, key: str, url: YouTubeURL) -> bool:
@@ -296,7 +295,7 @@ class SongDataset:
                 continue
             self._data[entry.url] = entry
 
-        if not os.path.isfile(self.pack_path):
+        if not os.path.isfile(self.get_path("pack")):
             self.pack()
 
     def write_error(self, error: str, e: Exception | None = None):
@@ -323,19 +322,7 @@ class SongDataset:
 
     @property
     def error_logs_path(self):
-        return os.path.join(self.root, "error_logs.txt")
-
-    @property
-    def info_path(self):
-        return os.path.join(self.root, "log.json")
-
-    @property
-    def pack_path(self):
-        return os.path.join(self.root, "pack.db")
-
-    @property
-    def pickle_path(self):
-        return os.path.join(self.root, "dataset.pkl")
+        return self.get_path("error")
 
     @property
     def encoder(self):
@@ -407,14 +394,16 @@ class SongDataset:
     def __repr__(self):
         return f"LocalSongDataset(at: {self.root}, {len(self)} entries)"
 
-    def write_info(self, key: str, value: YouTubeURL, desc: str | None = None, *, indent: int | str | None = None):
-        with open(self.info_path, "r") as f:
+    def write_info(self, key: str, value: YouTubeURL, desc = None, *, indent: int | str | None = None):
+        with open(self.get_path("info"), "r") as f:
             info = json.load(f)
-        if key not in info:
+        if key not in info and desc is None:
             info[key] = []
+        elif key not in info:
+            info[key] = {}
 
         if desc is not None:
-            assert all(isinstance(x, list) and len(x) == 2 for x in info[key]), f"Invalid info format: key: {key} should contain description and url"
+            assert all(isinstance(x, dict) for x in info[key]), f"Invalid info format: key: {key} should contain description and url"
             if value.video_id in [x[1] for x in info[key]]:
                 return
             info[key].append([desc, value.video_id])
@@ -424,11 +413,11 @@ class SongDataset:
                 return
             info[key].append(value.video_id)
 
-        with open(self.info_path, "w") as f:
+        with open(self.get_path("info"), "w") as f:
             json.dump(info, f, indent=indent)
 
     def read_info(self, key: str) -> list[YouTubeURL] | dict[YouTubeURL, str] | None:
-        with open(self.info_path, "r") as f:
+        with open(self.get_path("info"), "r") as f:
             info = json.load(f)
         if not key in info:
             return None
@@ -488,11 +477,11 @@ class SongDataset:
                 data[entry.url] = entry
         else:
             data = self._data
-        SongDatasetEncoder().write_to_path(data, self.pack_path)
+        SongDatasetEncoder().write_to_path(data, self.get_path("pack"))
 
     def pickle(self):
         """Pickle the dataset into a single file"""
-        with open(self.pickle_path, "wb") as f:
+        with open(self.get_path("pickle"), "wb") as f:
             pickle.dump(self._data, f)
 
 def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatures) -> NDArray[np.float64]:
