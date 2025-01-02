@@ -85,7 +85,6 @@ def get_chord_time_label_codebook(resolution: float = 10.8):
     # The distribution of chord time diffs roughly follows a power law
     # So use that to build a huffman tree and then we have a context free codebook
     counter = {n: int(exp(-0.05* n) * max_time) + 1 for n in range (1, max_time)}
-    counter[0] = 0
     tree, table = make_huffman_tree(counter)
     return tree, table
 
