@@ -553,6 +553,11 @@ def verify_chord_result(cr: ChordAnalysisResult, audio_duration: float, video_ur
     if no_chord_duration > 0.5 * audio_duration:
         return f"Too much no chord: {video_url} ({no_chord_duration}) (Proportion: {no_chord_duration / audio_duration}) - probably this is not a song"
 
+    chord_times = np.round(chord_times * 10.8).astype(int)
+    diffs = np.diff(chord_times)
+    if np.any(diffs < 1):
+        return f"Chord times too close: {video_url} ({diffs})"
+
     return None
 
 def verify_parts_result(parts: DemucsCollection, mean_vocal_threshold: float, video_url: YouTubeURL | None = None) -> str | None:
