@@ -8,7 +8,7 @@ import json
 from typing import Callable
 import numpy as np
 from .. import DemucsCollection
-from ..separation import DemucsAudioSeparator
+from ..separation import demucs_separate
 from ...model import beats_inference as inference
 import warnings
 import requests
@@ -154,8 +154,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
         raise ValueError("Either audio or parts must be provided")
 
     if parts is None and audio is not None and backend == "demucs":
-        demucs = DemucsAudioSeparator()
-        parts = demucs.separate(audio)
+        parts = demucs_separate(audio)
         duration = audio.duration
 
     if parts is not None:

@@ -14,7 +14,7 @@ from ..audio.analysis import (
 )
 from ..audio.dataset import SongDataset, DatasetEntry, create_entry
 from ..audio.mix import create_mashup, MashabilityResult, calculate_mashability, MashupMode
-from ..audio.separation import DemucsAudioSeparator
+from ..audio.separation import demucs_separate
 from ..util import YouTubeURL, get_url
 from numpy.typing import NDArray
 import librosa
@@ -626,7 +626,7 @@ def mashup_from_audio(audio: Audio, config: MashupConfig):
         dataset,
         a_audio,
         song_a_entry,
-        DemucsAudioSeparator().separate(a_audio),
+        demucs_separate(a_audio),
         best_result.url,
         best_result.start_bar,
         best_result.transpose,

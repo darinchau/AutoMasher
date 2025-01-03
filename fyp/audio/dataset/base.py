@@ -9,7 +9,7 @@ from ..base import Audio
 from ...util import get_url
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, OnsetFeatures
-from ..separation import DemucsAudioSeparator, DemucsCollection
+from ..separation import DemucsCollection, demucs_separate
 from ..analysis import BeatAnalysisResult, ChordAnalysisResult, analyse_beat_transformer, analyse_chord_transformer
 from ...util import get_inv_voca_map
 from enum import Enum
@@ -458,7 +458,7 @@ class SongDataset:
         if os.path.isfile(path):
             return DemucsCollection.load(path)
         # Save and reload to ensure consistency
-        parts = get_demucs().separate(self.get_audio(url))
+        parts = demucs_separate(self.get_audio(url))
         parts.save(path)
         self._purge_files([path])
         return parts
@@ -521,13 +521,6 @@ def _get_music_duration(times: NDArray[np.float64], features: NDArray[np.uint32]
     if new_features[-1] != no_chord_idx:
         music_duration += duration - new_times[-1]
     return music_duration
-
-_DEMUCS = None
-def get_demucs():
-    global _DEMUCS
-    if not _DEMUCS:
-        _DEMUCS = DemucsAudioSeparator()
-    return _DEMUCS
 
 # Returns None if the chord result is valid, otherwise returns an error message
 def verify_chord_result(cr: ChordAnalysisResult, audio_duration: float, video_url: YouTubeURL | None = None) -> str | None:
@@ -685,7 +678,7 @@ def create_entry(url: YouTubeURL, *,
     if (beats is None and beats_list is None) or (downbeats is None and downbeats_list is None):
         assert audio is not None, "Either beats or downbeats or audio must be provided"
         if beat_backend == "demucs":
-            parts = dataset.get_parts(url) if dataset is not None else get_demucs().separate(audio)
+            parts = dataset.get_parts(url) if dataset is not None else demucs_separate(audio)
         else:
             parts = None
         if beat_model_path is not None:
