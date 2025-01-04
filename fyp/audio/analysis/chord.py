@@ -272,6 +272,7 @@ def analyse_chord_transformer(audio: Audio, *,
     use_large_voca (bool): Whether to use the large voca chord system. Defaults to True
     use_cache (bool): Whether to use the cache. Defaults to True
     """
+    duration = audio.duration
     results = get_chord_result(audio, dataset, url, model_path, use_large_voca, use_cache)
 
     time_idx = int(audio.duration * results.time_resolution)
@@ -307,7 +308,7 @@ def analyse_chord_transformer(audio: Audio, *,
     times = np.arange(T) / results.time_resolution
 
     cr = ChordAnalysisResult(
-        duration=audio.duration,
+        duration=duration,
         features=max_indices,
         times=times.astype(np.float64)
     ).group()

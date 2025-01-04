@@ -665,6 +665,7 @@ def create_entry(url: YouTubeURL, *,
                 use_large_voca=not use_simplified_chord,
                 use_cache=use_chord_cache
             )
+        assert audio.duration == chords.duration, f"Duration mismatch: {audio.duration} != {chords.duration}"
     elif chords is None:
         assert chord_times is not None and chord_labels is not None, "Either chords or audio or (chord_times, chord_labels) must be provided"
         chords = ChordAnalysisResult.from_data(duration, chord_labels, chord_times)
@@ -704,6 +705,8 @@ def create_entry(url: YouTubeURL, *,
             )
         beats = bt._beats
         downbeats = bt._downbeats
+        assert audio.duration == beats.duration, f"Duration mismatch: {audio.duration} != {beats.duration}"
+        assert audio.duration == downbeats.duration, f"Duration mismatch: {audio.duration} != {downbeats.duration}"
 
     if beats is None:
         assert beats_list is not None, "Either beats or beats_list must be provided"
