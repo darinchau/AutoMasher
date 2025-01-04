@@ -289,6 +289,19 @@ class SongDataset:
             raise ValueError(f"Key {key} not registered")
         return os.listdir(os.path.join(self.root, key))
 
+    def list_urls(self, key: str) -> list[YouTubeURL]:
+        """List all the urls in the given key"""
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        if key not in metadata["file_structure"]:
+            raise ValueError(f"Key {key} not registered")
+        file_format: str = metadata["file_structure"][key]
+        if "{video_id}" not in file_format:
+            raise ValueError(f"Invalid file format for {key}: {file_format} - a video_id is expected")
+        len_prepend = len(file_format.split("{video_id}")[0])
+        len_append = len(file_format.split("{video_id}")[1])
+        return [get_url(file[len_prepend:-len_append]) for file in self.list_files(key)]
+
     def load_from_directory(self, verbose: bool = True):
         """Reloads the dataset from the directory into memory"""
         for file in tqdm(self.list_files("datafiles"), desc="Loading dataset", disable=not verbose):
