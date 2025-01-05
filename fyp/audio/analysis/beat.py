@@ -131,6 +131,8 @@ def analyse_beat_transformer(audio: Audio | None = None,
                              use_loaded_model: bool = True) -> BeatAnalysisResult:
     """Beat transformer but runs locally using Demucs and some uh workarounds
 
+    The duration will be the duration of the audio if audio is provided, otherwise the duration of the parts.
+
     Args:
 
         audio (Audio | None): The audio to analyse. If parts is not None, this is ignored. Defaults to None.
@@ -149,16 +151,18 @@ def analyse_beat_transformer(audio: Audio | None = None,
         if url is not None and not url.is_placeholder and dataset.has_path("beats", url):
             return BeatAnalysisResult.load(dataset.get_path("beats", url))
 
-    duration = -1.
     if audio is None and parts is None:
         raise ValueError("Either audio or parts must be provided")
 
-    if parts is None and audio is not None and backend == "demucs":
-        parts = demucs_separate(audio)
+    if audio is not None:
         duration = audio.duration
 
+    if parts is None and audio is not None and backend == "demucs":
+        parts = demucs_separate(audio)
+
     if parts is not None:
-        duration = parts.get_duration()
+        if audio is None:
+            duration = parts.get_duration()
         parts_dict = {
             "vocals": parts.vocals,
             "drums": parts.drums,
@@ -178,8 +182,6 @@ def analyse_beat_transformer(audio: Audio | None = None,
         assert backend == "spleeter"
         assert audio is not None, "Audio must be provided if using spleeter"
         assert backend_url is not None, "Backend URL must be provided if using spleeter"
-
-        duration = audio.duration
         audio_ = audio.resample(44100).to_nchannels(AudioMode.STEREO)
 
         with get_temp_file("wav") as fn:
