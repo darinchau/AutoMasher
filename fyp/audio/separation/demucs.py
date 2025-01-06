@@ -27,13 +27,21 @@ def demucs_separate(
         if result.stderr:
             print("stderr:", result.stderr)
         out_dir = os.path.join(tempdir, model, "audio")
+
+        def pad_or_raise(audio: Audio, target_length: int, part_name: str) -> Audio:
+            current_length = audio.nframes
+            if abs(current_length - target_length) > 100:
+                raise RuntimeError(
+                    f"Expected {target_length} frames ({part_name}), got {current_length}."
+                )
+            return audio.pad(target_length)
         drums = Audio.load(os.path.join(out_dir, "drums.wav"))
         bass = Audio.load(os.path.join(out_dir, "bass.wav"))
         other = Audio.load(os.path.join(out_dir, "other.wav"))
         vocals = Audio.load(os.path.join(out_dir, "vocals.wav"))
         return DemucsCollection(
-            drums=drums,
-            bass=bass,
-            other=other,
-            vocals=vocals,
+            drums=pad_or_raise(drums, audio.nframes, "drums"),
+            bass=pad_or_raise(bass, audio.nframes, "bass"),
+            other=pad_or_raise(other, audio.nframes, "other"),
+            vocals=pad_or_raise(vocals, audio.nframes, "vocals"),
         )
