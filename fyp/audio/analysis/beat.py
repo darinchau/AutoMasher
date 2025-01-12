@@ -27,6 +27,10 @@ if typing.TYPE_CHECKING:
 
 BEAT_DATASET_KEY = "beats"
 
+class DeadBeatKernel(RuntimeError):
+    """Raised when the beat kernel is dead"""
+    pass
+
 @dataclass(frozen=True)
 class BeatAnalysisResult:
     """A class that represents the result of a beat analysis."""
@@ -195,7 +199,11 @@ def analyse_beat_transformer(audio: Audio | None = None,
         if backend_url[-1] == "/":
             backend_url = backend_url[:-1]
 
-        preflight = requests.get(backend_url + "/alive")
+        try:
+            preflight = requests.get(backend_url + "/alive")
+        except requests.exceptions.ConnectionError:
+            raise DeadBeatKernel("Beat transformer backend is dead")
+
         fail_reason = None
         if preflight.status_code != 200:
             fail_reason = f"Beat transformer preflight failed with status code {preflight.status_code}. Have you forgot to activate the backer end API? Falling back to demucs for now"
@@ -203,35 +211,15 @@ def analyse_beat_transformer(audio: Audio | None = None,
             fail_reason = "Wrong response from beat transformer. Falling back to demucs for now"
 
         if fail_reason is not None:
-            warnings.warn(fail_reason)
-            return analyse_beat_transformer(
-                audio=audio,
-                dataset=dataset,
-                url=url,
-                parts=None,
-                backend="demucs",
-                backend_url=None,
-                do_normalization=do_normalization,
-                model_path=model_path,
-                use_loaded_model=use_loaded_model,
-                use_cache=use_cache
-            )
+            raise DeadBeatKernel(fail_reason)
 
-        r = requests.post(backend_url + "/beat", data=wav_bytes)
+        try:
+            r = requests.post(backend_url + "/beat", data=wav_bytes)
+        except requests.exceptions.ConnectionError:
+            raise DeadBeatKernel("Beat transformer backend is dead")
+
         if r.status_code != 200:
-            warnings.warn(f"Beat transformer failed with status code {r.status_code}. Have you forgot to activate the backer end API?")
-            return analyse_beat_transformer(
-                audio=audio,
-                dataset=dataset,
-                url=url,
-                parts=None,
-                backend="demucs",
-                backend_url=None,
-                do_normalization=do_normalization,
-                model_path=model_path,
-                use_loaded_model=use_loaded_model,
-                use_cache=use_cache
-            )
+            raise DeadBeatKernel(f"Beat transformer failed with status code {r.status_code}. Have you forgot to activate the backer end API?")
 
         data = r.json()
         downbeat_frames: list[float] = [int(x) / 44100 for x in data["downbeat_frames"]]

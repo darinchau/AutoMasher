@@ -22,5 +22,5 @@ from .base import (
     dist_continuous_latent_features,
 )
 
-from .beat import BeatAnalysisResult
+from .beat import BeatAnalysisResult, DeadBeatKernel
 from .chord import ChordAnalysisResult, SimpleChordAnalysisResult
