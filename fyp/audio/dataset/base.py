@@ -211,6 +211,9 @@ class SongDataset:
         return None
 
     def _purge_files(self, exclusion: list[str] | set[str] | None = None):
+        if self.max_dir_size == float('inf'):
+            return
+
         # Purge the largest files
         if exclusion is None:
             exclusion = []
