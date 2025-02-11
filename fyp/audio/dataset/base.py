@@ -119,7 +119,7 @@ class SongDataset:
     def __init__(self, root: str, *,
                  load_on_the_fly: bool = False,
                  assert_audio_exists: bool = False,
-                 max_dir_size: str | None = "16GB"
+                 max_dir_size: str | None = None
                  ):
         from .compress import DatasetEntryEncoder, SongDatasetEncoder
 
