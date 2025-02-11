@@ -19,6 +19,7 @@ import soundfile as sf
 import random
 from contextlib import contextmanager
 import json
+import torch
 from ...util import YouTubeURL
 import typing
 
@@ -137,6 +138,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
                              do_normalization: bool = False,
                              model_path: str = "./resources/ckpts/beat_transformer.pt",
                              use_cache: bool = True,
+                             device: torch.device | None = None,
                              use_loaded_model: bool = True) -> BeatAnalysisResult:
     """Beat transformer but runs locally using Demucs and some uh workarounds
 
@@ -185,7 +187,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
         parts_dict['piano'] = np.zeros_like(parts_dict['vocals'])
 
         with warnings.catch_warnings():
-            beat_frames, downbeat_frames = inference(parts_dict, model_path=model_path, use_loaded_model=use_loaded_model)
+            beat_frames, downbeat_frames = inference(parts_dict, model_path=model_path, use_loaded_model=use_loaded_model, device=device)
     else:
         assert backend == "spleeter"
         assert audio is not None, "Audio must be provided if using spleeter"

@@ -44,7 +44,7 @@ def get_model(model_path: str, device: torch.device, use_loaded_model: bool = Tr
     return model
 
 
-def inference(parts: dict[str, np.ndarray], model_path: str, use_loaded_model: bool = True) -> tuple[list[float], list[float]]:
+def inference(parts: dict[str, np.ndarray], model_path: str, use_loaded_model: bool = True, device: torch.device | None = None) -> tuple[list[float], list[float]]:
     """Beat transformer inference code copied from backer-end"""
     require_madmom()
     assert set(parts.keys()) == {'vocals', 'piano', 'drums', 'bass', 'other'}
@@ -59,7 +59,8 @@ def inference(parts: dict[str, np.ndarray], model_path: str, use_loaded_model: b
     x = np.stack([librosa.power_to_db(x[i], ref=np.max) for i in range(len(x))])
     x = np.transpose(x, (0, 2, 1))
 
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = get_model(model_path, device, use_loaded_model)
 
     with torch.no_grad():
