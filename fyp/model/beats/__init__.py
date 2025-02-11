@@ -10,18 +10,17 @@ from typing import Iterable
 from .modules import DemixedDilatedTransformerModel
 from .tracker import unpack_beats, unpack_downbeats, require_madmom
 
-_SEPARATOR_STFT_WINDOW = hann(4096, sym=False)
-
 
 def separator_stft(data: np.ndarray) -> np.ndarray:
     data = np.asfortranarray(data)
     N = 4096
     H = 1024
+    win = hann(4096, sym=False)
     n_channels = data.shape[-1]
     out = []
     for c in range(n_channels):
         d = np.concatenate((np.zeros((N,)), data[:, c], np.zeros((N,))))
-        s = stft(d, hop_length=H, window=_SEPARATOR_STFT_WINDOW, center=False, n_fft=N)
+        s = stft(d, hop_length=H, window=win, center=False, n_fft=N)
         s = np.expand_dims(s.T, 2)
         out.append(s)
     if len(out) == 1:
