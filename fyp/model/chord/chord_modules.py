@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
+
 def _gen_bias_mask(max_length):
     """
     Generates bias values (-Inf) to mask future timesteps during attention
@@ -11,6 +12,7 @@ def _gen_bias_mask(max_length):
     np_mask = np.triu(np.full([max_length, max_length], -np.inf), 1)
     torch_mask = torch.from_numpy(np_mask).type(torch.FloatTensor)
     return torch_mask.unsqueeze(0).unsqueeze(1)
+
 
 def _gen_timing_signal(length, channels, min_timescale=1.0, max_timescale=1.0e4):
     """
@@ -21,8 +23,8 @@ def _gen_timing_signal(length, channels, min_timescale=1.0, max_timescale=1.0e4)
     position = np.arange(length)
     num_timescales = channels // 2
     log_timescale_increment = (
-            math.log(float(max_timescale) / float(min_timescale)) /
-            (float(num_timescales) - 1))
+        math.log(float(max_timescale) / float(min_timescale)) /
+        (float(num_timescales) - 1))
     inv_timescales = min_timescale * np.exp(
         np.arange(num_timescales).astype(float) * -log_timescale_increment)
     scaled_time = np.expand_dims(position, 1) * np.expand_dims(inv_timescales, 0)
@@ -33,6 +35,7 @@ def _gen_timing_signal(length, channels, min_timescale=1.0, max_timescale=1.0e4)
     signal = signal.reshape([1, length, channels])
 
     return torch.from_numpy(signal).type(torch.FloatTensor)
+
 
 class LayerNorm(nn.Module):
     # Borrowed from jekbradbury
@@ -48,11 +51,13 @@ class LayerNorm(nn.Module):
         std = x.std(-1, keepdim=True)
         return self.gamma * (x - mean) / (std + self.eps) + self.beta
 
+
 class OutputLayer(nn.Module):
     """
     Abstract base class for output layer.
     Handles projection to output labels
     """
+
     def __init__(self, hidden_size, output_size, probs_out=False):
         super(OutputLayer, self).__init__()
         self.output_size = output_size
@@ -64,10 +69,12 @@ class OutputLayer(nn.Module):
     def loss(self, hidden, labels):
         raise NotImplementedError('Must implement {}.loss'.format(self.__class__.__name__))
 
+
 class SoftmaxOutputLayer(OutputLayer):
     """
     Implements a softmax based output layer
     """
+
     def forward(self, hidden):
         logits = self.output_projection(hidden)
         probs = F.softmax(logits, -1)
@@ -78,6 +85,7 @@ class SoftmaxOutputLayer(OutputLayer):
         logits = self.output_projection(hidden)
         log_probs = F.log_softmax(logits, -1)
         return F.nll_loss(log_probs.view(-1, self.output_size), labels.view(-1))
+
 
 class MultiHeadAttention(nn.Module):
     """
@@ -264,13 +272,14 @@ class PositionwiseFeedForward(nn.Module):
 
         return x
 
+
 class SelfAttentionBlock(nn.Module):
     def __init__(self, hidden_size, total_key_depth, total_value_depth, filter_size, num_heads,
                  bias_mask=None, layer_dropout=0.0, attention_dropout=0.0, relu_dropout=0.0, attention_map=False):
         super(SelfAttentionBlock, self).__init__()
 
         self.attention_map = attention_map
-        self.multi_head_attention = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth,hidden_size, num_heads, bias_mask, attention_dropout, attention_map)
+        self.multi_head_attention = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth, hidden_size, num_heads, bias_mask, attention_dropout, attention_map)
         self.positionwise_convolution = PositionwiseFeedForward(hidden_size, filter_size, hidden_size, layer_config='cc', padding='both', dropout=relu_dropout)
         self.dropout = nn.Dropout(layer_dropout)
         self.layer_norm_mha = LayerNorm(hidden_size)
@@ -303,6 +312,7 @@ class SelfAttentionBlock(nn.Module):
         if self.attention_map is True:
             return y, weights
         return y
+
 
 class BidirectionalSelfAttention(nn.Module):
     def __init__(self, hidden_size, total_key_depth, total_value_depth, filter_size, num_heads, max_length,
@@ -357,6 +367,7 @@ class BidirectionalSelfAttention(nn.Module):
         self.weights_list.append(reverse_weights)
         return y, self.weights_list
 
+
 class BidirectionalSelfAttentionLayers(nn.Module):
     def __init__(self, embedding_size, hidden_size, num_layers, num_heads, total_key_depth, total_value_depth,
                  filter_size, max_length=100, input_dropout=0.0, layer_dropout=0.0,
@@ -395,6 +406,7 @@ class BidirectionalSelfAttentionLayers(nn.Module):
         y = self.layer_norm(y)
         return y, weights_list
 
+
 class BTCModel(nn.Module):
     def __init__(self, config):
         super(BTCModel, self).__init__()
@@ -429,7 +441,7 @@ class BTCModel(nn.Module):
             return logits
 
         # Output layer and Soft-max
-        prediction,second = self.output_layer(self_attn_output)
+        prediction, second = self.output_layer(self_attn_output)
         prediction = prediction.view(-1)
         second = second.view(-1)
 

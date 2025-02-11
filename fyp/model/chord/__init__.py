@@ -9,26 +9,28 @@ from typing import Any
 from ...audio import Audio
 from .chord_modules import *
 
+
 @dataclass
 class Hyperparameters:
     mp3: dict[str, float]
     feature: dict[str, Any]
     model: dict[str, Any]
 
+
 def get_default_config() -> Hyperparameters:
     return Hyperparameters(
-        mp3 = {
+        mp3={
             'song_hz': 22050,
             'inst_len': 10.0,
             'skip_interval': 5.0
         },
-        feature = {
+        feature={
             'n_bins': 144,
             'bins_per_octave': 24,
             'hop_length': 2048,
             'large_voca': False
         },
-        model = {
+        model={
             'feature_size': 144,
             'timestep': 108,
             'num_chords': 25,
@@ -47,6 +49,7 @@ def get_default_config() -> Hyperparameters:
         },
     )
 
+
 def get_model(model_path: str, device: torch.device, use_voca: bool) -> tuple[BTCModel, Hyperparameters, Any, Any]:
     # Init config
     config = get_default_config()
@@ -58,7 +61,7 @@ def get_model(model_path: str, device: torch.device, use_voca: bool) -> tuple[BT
             model_path = model_path.replace("model.pt", "model_large_voca.pt")
 
     # Load the model
-    model = BTCModel(config = config.model).to(device)
+    model = BTCModel(config=config.model).to(device)
     checkpoint = torch.load(model_path, map_location=device)
     mean = checkpoint['mean']
     std = checkpoint['std']
@@ -69,11 +72,12 @@ def get_model(model_path: str, device: torch.device, use_voca: bool) -> tuple[BT
     del model.output_layer.lstm
     return model, config, mean, std
 
+
 @dataclass
 class ChordModelOutput:
     logits: torch.Tensor
     features: torch.Tensor
-    time_resolution: float = 10.8 # how many timesteps per second
+    time_resolution: float = 10.8  # how many timesteps per second
 
     def save(self, path: str):
         torch.save({
@@ -86,10 +90,11 @@ class ChordModelOutput:
     def load(path: str) -> 'ChordModelOutput':
         file = torch.load(path)
         return ChordModelOutput(
-            logits = file['logits'],
-            features = file['features'],
-            time_resolution = file['time_resolution']
+            logits=file['logits'],
+            features=file['features'],
+            time_resolution=file['time_resolution']
         )
+
 
 def inference(audio: Audio, model_path: str, *, use_voca: bool = True) -> ChordModelOutput:
     """Main entry point. We will give you back list of triplets: (start, chord)"""
@@ -145,10 +150,10 @@ def inference(audio: Audio, model_path: str, *, use_voca: bool = True) -> ChordM
             prediction, logit = model.output_layer(self_attn_output)
             prediction = prediction.squeeze()
             logits.append(logit)
-    features = torch.cat(features, dim = 1)[0].cpu().numpy()
-    logits = torch.cat(logits, dim = 1)[0].cpu().numpy()
+    features = torch.cat(features, dim=1)[0].cpu().numpy()
+    logits = torch.cat(logits, dim=1)[0].cpu().numpy()
     return ChordModelOutput(
-        logits = torch.tensor(logits),
-        features = torch.tensor(features),
-        time_resolution = feature_per_second
+        logits=torch.tensor(logits),
+        features=torch.tensor(features),
+        time_resolution=feature_per_second
     )

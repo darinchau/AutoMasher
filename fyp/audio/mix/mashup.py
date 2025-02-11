@@ -14,6 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 import librosa
 
+
 class MashupMode(Enum):
     """The swap algorithm to use for the mashup
 
@@ -42,11 +43,13 @@ class MashupMode(Enum):
     RANDOM = "random"
     """Randomly swaps the parts. The 'Suprise me' mode"""
 
+
 def get_volume(audio: Audio, hop: int = 512) -> NDArray[np.float32]:
     y = audio.numpy()
     spec = librosa.amplitude_to_db(np.abs(librosa.stft(y, hop_length=hop)), ref=np.max).astype(np.float32)
-    volume = spec.mean(axis = 0)
+    volume = spec.mean(axis=0)
     return volume
+
 
 def cross_fade(song1: Audio, song2: Audio, fade_duration: float, cross_fade_mode: str = "linear"):
     """Joins two songs with a cross fade effect with the given fade duration
@@ -74,11 +77,12 @@ def cross_fade(song1: Audio, song2: Audio, fade_duration: float, cross_fade_mode
 
     song1_fade_out = song1.data[:, -fade_duration_frames:] * fade_out
     song2_fade_in = song2.data[:, :fade_duration_frames] * fade_in
-    cross_fade = Audio(data = song1_fade_out + song2_fade_in, sample_rate = song1.sample_rate)
+    cross_fade = Audio(data=song1_fade_out + song2_fade_in, sample_rate=song1.sample_rate)
 
     song1_normal = song1.slice_frames(0, song1.nframes - fade_duration_frames)
     song2_normal = song2.slice_frames(fade_duration_frames, song2.nframes)
     return song1_normal.join(cross_fade).join(song2_normal)
+
 
 def create_mashup_component(song_a_submitted_bt: OnsetFeatures, song_b_submitted_bt: OnsetFeatures,
                             transpose: int, song_b_submitted_parts: DemucsCollection, song_a_nframes: int, song_a_sr: int, song_b_nframes: int):
@@ -104,16 +108,18 @@ def create_mashup_component(song_a_submitted_bt: OnsetFeatures, song_b_submitted
 
     trimmed_portion = trimmed_portion.align_from_boundaries(factors, boundaries) \
         .map(lambda x: x.resample(song_a_sr)) \
-            .map(lambda x: x.pad(song_a_nframes))
+        .map(lambda x: x.pad(song_a_nframes))
 
     return trimmed_portion
+
 
 def calculate_average_volume(audio: Audio, window_size: int, hop: int = 512) -> NDArray[np.float32]:
     vol = get_volume(audio, hop)
     pad_length = window_size - vol.shape[0] % window_size
-    vol = np.pad(vol, (0, pad_length), mode = "constant", constant_values=0)
+    vol = np.pad(vol, (0, pad_length), mode="constant", constant_values=0)
     vol = vol.reshape(-1, window_size)
-    return vol.mean(axis = 1)
+    return vol.mean(axis=1)
+
 
 def create_mashup(submitted_audio_a: Audio,
                   submitted_audio_b: Audio,
@@ -133,7 +139,7 @@ def create_mashup(submitted_audio_a: Audio,
                   verbose: bool = False) -> tuple[Audio, MashupMode]:
     """Creates a basic mashup with the given components"""
     if mode == MashupMode.RANDOM:
-        raise NotImplementedError # TODO: Should be easy to implement
+        raise NotImplementedError  # TODO: Should be easy to implement
 
     vocal_a_proportions: float | None = None
     vocal_b_proportions: float | None = None

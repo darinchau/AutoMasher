@@ -4,12 +4,14 @@
 import numpy as np
 import itertools
 
+
 def require_madmom():
     try:
         from madmom.features.beats import DBNBeatTrackingProcessor
         from madmom.features.downbeats import DBNDownBeatTrackingProcessor
     except ImportError:
         raise ImportError("Please install madmom to use this function. Install madmom from `pip install git+https://github.com/darinchau/madmom`")
+
 
 def unpack_beats(activations: np.ndarray, *,
                  min_bpm: float, max_bpm: float, fps: float, threshold: float,
@@ -21,6 +23,7 @@ def unpack_beats(activations: np.ndarray, *,
     beat = DBNBeatTrackingProcessor(min_bpm=min_bpm, max_bpm=max_bpm, fps=fps, threshold=threshold,
                                     num_tempi=num_tempi, transition_lambda=transition_lambda, observation_lambda=observation_lambda)
     return beat(activations)
+
 
 def unpack_downbeats(activations: np.ndarray, beats_per_bar: list[int], *,
                      min_bpm: float, max_bpm: float, fps: float, threshold: float,

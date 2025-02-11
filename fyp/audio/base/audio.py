@@ -1,8 +1,8 @@
-## Contains the definition for the Audio class
-## Note: We try to make it such that audio is only an interface thing.
-## The actual implementations will switch back to tensors whereever necessary
-## Its just safer to have runtime sanity checks for stuff
-## Also we enforce a rule: resample and process the audio outside model objects (nn.Module objects)
+# Contains the definition for the Audio class
+# Note: We try to make it such that audio is only an interface thing.
+# The actual implementations will switch back to tensors whereever necessary
+# Its just safer to have runtime sanity checks for stuff
+# Also we enforce a rule: resample and process the audio outside model objects (nn.Module objects)
 
 from __future__ import annotations
 import os
@@ -27,6 +27,7 @@ from typing import Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
+
 def get_sounddevice():
     try:
         import sounddevice as sd
@@ -34,13 +35,16 @@ def get_sounddevice():
     except ImportError:
         raise RuntimeError("You need to install sounddevice to use the play function")
 
+
 class AudioMode(Enum):
     """The number of channels of an audio"""
     MONO = 1
     STEREO = 2
 
+
 class Audio:
     """An audio has a special type of tensor with shape=(nchannels, T) and dtype=float32. We have checks and special methods for audios to facilitate audio processing."""
+
     def sanity_check(self):
         assert self._sample_rate > 0
         assert isinstance(self._sample_rate, int)
@@ -150,7 +154,7 @@ class Audio:
                 return self.mix_to_stereo(left_mix=0.)
 
             case (AudioMode.STEREO, AudioMode.MONO):
-                return Audio(self._data.mean(dim = 0, keepdim=True), self._sample_rate)
+                return Audio(self._data.mean(dim=0, keepdim=True), self._sample_rate)
 
         assert False, "Unreachable"
 
@@ -250,7 +254,7 @@ class Audio:
             wav = torch.tensor(wav).float()
 
         if wav.dtype != torch.float32:
-            wav = wav.to(dtype = torch.float32)
+            wav = wav.to(dtype=torch.float32)
         return cls(wav, sr)
 
     def play(self, blocking: bool = False, info: list[tuple[str, float]] | None = None):
@@ -258,6 +262,7 @@ class Audio:
         info is a list of stuff you want to print. Each element is a tuple of (str, float) where the float is the time in seconds
         if progress is true, then display a nice little bar that shows the progress of the audio"""
         sd = get_sounddevice()
+
         def _play(sound, sr, nc, stop_event):
             event = threading.Event()
             x = 0
@@ -290,16 +295,16 @@ class Audio:
                 self._stop_audio = True
 
         if info is not None:
-            blocking = True # Otherwise jupyter notebook will behave weirdly
+            blocking = True  # Otherwise jupyter notebook will behave weirdly
         else:
             if is_ipython():
                 from IPython.display import Audio as IPAudio
-                return IPAudio(self.numpy(), rate = self.sample_rate)
+                return IPAudio(self.numpy(), rate=self.sample_rate)
             info = []
-        info = sorted(info, key = lambda x: x[1])
+        info = sorted(info, key=lambda x: x[1])
         longest_info = max([len(x[0]) for x in info]) if info else 0
-        sound = self._data.mean(dim = 0).unsqueeze(1).detach().cpu().numpy()
-        self._thread = threading.Thread(target=_play, args=(sound, self.sample_rate, self.nchannels.value, lambda :self._stop_audio))
+        sound = self._data.mean(dim=0).unsqueeze(1).detach().cpu().numpy()
+        self._thread = threading.Thread(target=_play, args=(sound, self.sample_rate, self.nchannels.value, lambda: self._stop_audio))
         self._stop_audio = False
         self._thread.start()
         if blocking:
@@ -320,7 +325,7 @@ class Audio:
 
         self._thread.join()
         self._thread = None
-        self._stop_audio = False # Reset the state
+        self._stop_audio = False  # Reset the state
 
     def save(self, fpath: str):
         """Saves the audio at the provided file path. WAV is (almost certainly) guaranteed to work"""
@@ -333,14 +338,14 @@ class Audio:
                 raise RuntimeError("You need to install pydub to save the audio as mp3")
             with tempfile.TemporaryDirectory() as tempdir:
                 temp_fpath = os.path.join(tempdir, "temp.wav")
-                torchaudio.save(temp_fpath, data, sample_rate = int(self._sample_rate))
+                torchaudio.save(temp_fpath, data, sample_rate=int(self._sample_rate))
                 song = AudioSegment.from_wav(temp_fpath)
                 song.export(fpath, format="mp3")
             return
         try:
-            torchaudio.save(fpath, data, sample_rate = int(self._sample_rate))
+            torchaudio.save(fpath, data, sample_rate=int(self._sample_rate))
             return
-        except (ValueError, RuntimeError) as e: # Seems like torchaudio changed the error type to runtime error in 2.2?
+        except (ValueError, RuntimeError) as e:  # Seems like torchaudio changed the error type to runtime error in 2.2?
             # or the file path is invalid
             raise RuntimeError(f"Error saving the audio: {e} - {fpath}")
 
@@ -389,7 +394,7 @@ class Audio:
             return self._data.detach().cpu().numpy()
         data = self._data
         if self._data.size(0) == 2:
-            data = data.mean(dim = 0)
+            data = data.mean(dim=0)
         else:
             data = data[0]
         try:
@@ -417,14 +422,14 @@ class Audio:
 
         left_mix = left_mix / 2 + 0.5
         right_mix = 1 - left_mix
-        mixer = torch.tensor([[left_mix], [right_mix]], device = audio._data.device)
+        mixer = torch.tensor([[left_mix], [right_mix]], device=audio._data.device)
         return Audio(audio._data * mixer, audio.sample_rate)
 
     def change_speed(self, speed: float, n_fft: int = 512, win_length: int | None = None, hop_length: int | None = None, window: Tensor | None = None) -> Audio:
         if speed == 1:
             return self.clone()
         if speed < 0:
-            data = torch.flip(self._data, dims = [1])
+            data = torch.flip(self._data, dims=[1])
             speed = -speed
         else:
             data = self._data
@@ -437,20 +442,20 @@ class Audio:
         if win_length is None:
             win_length = n_fft
         if window is None:
-            window = torch.hann_window(window_length = win_length, device = audio.device)
+            window = torch.hann_window(window_length=win_length, device=audio.device)
 
         # Apply stft
         spectrogram = torch.stft(
-            input = audio,
-            n_fft = n_fft,
-            hop_length = hop_length,
-            win_length = win_length,
-            window = window,
-            center = True,
-            pad_mode = "reflect",
-            normalized = False,
-            onesided = True,
-            return_complex = True,
+            input=audio,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            window=window,
+            center=True,
+            pad_mode="reflect",
+            normalized=False,
+            onesided=True,
+            return_complex=True,
         )
 
         # Stretch the audio without modifying pitch - phase vocoder
@@ -461,11 +466,11 @@ class Audio:
         # Inverse the stft
         waveform_stretch = torch.istft(
             stretched_spectrogram,
-            n_fft = n_fft,
-            hop_length = hop_length,
-            win_length = win_length,
-            window = window,
-            length = len_stretch
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            window=window,
+            length=len_stretch
         )
 
         return Audio(waveform_stretch, self.sample_rate)
@@ -475,5 +480,5 @@ class Audio:
         audios = [self] + others
         for audio in audios:
             assert audio.sample_rate == self.sample_rate, "All audios must have the same sample rate"
-        data = torch.stack([audio._data for audio in audios], dim = 0).mean(dim = 0)
+        data = torch.stack([audio._data for audio in audios], dim=0).mean(dim=0)
         return Audio(data, self.sample_rate)

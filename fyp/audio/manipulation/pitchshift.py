@@ -6,6 +6,7 @@ from typing import Callable
 from enum import Enum
 from typing import Any
 
+
 class PitchShift(AudioTransform):
     def __init__(self, nsteps: int):
         self.nsteps = nsteps

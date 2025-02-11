@@ -10,6 +10,7 @@ from typing import Iterable
 from .modules import DemixedDilatedTransformerModel
 from .tracker import unpack_beats, unpack_downbeats, require_madmom
 
+
 def separator_stft(data: np.ndarray) -> np.ndarray:
     data = np.asfortranarray(data)
     N = 4096
@@ -19,14 +20,17 @@ def separator_stft(data: np.ndarray) -> np.ndarray:
     out = []
     for c in range(n_channels):
         d = np.concatenate((np.zeros((N,)), data[:, c], np.zeros((N,))))
-        s = stft(d, hop_length=H, window=win, center=False, n_fft = N)
+        s = stft(d, hop_length=H, window=win, center=False, n_fft=N)
         s = np.expand_dims(s.T, 2)
         out.append(s)
     if len(out) == 1:
         return out[0]
     return np.concatenate(out, axis=2)
 
+
 _BEAT_MODEL = None
+
+
 def get_model(model_path: str, device: torch.device, use_loaded_model: bool = True):
     global _BEAT_MODEL
     if _BEAT_MODEL is not None and use_loaded_model:
@@ -37,6 +41,7 @@ def get_model(model_path: str, device: torch.device, use_loaded_model: bool = Tr
     model.eval()
     _BEAT_MODEL = model
     return model
+
 
 def inference(parts: dict[str, np.ndarray], model_path: str, use_loaded_model: bool = True) -> tuple[list[float], list[float]]:
     """Beat transformer inference code copied from backer-end"""
@@ -65,10 +70,10 @@ def inference(parts: dict[str, np.ndarray], model_path: str, use_loaded_model: b
     dbn_beat_pred = unpack_beats(beat_activation, min_bpm=55.0, max_bpm=215.0, fps=44100/1024, threshold=0.2)
 
     combined_act = np.concatenate((np.maximum(beat_activation - downbeat_activation,
-                                            np.zeros(beat_activation.shape)
-                                            )[:, np.newaxis],
-                                downbeat_activation[:, np.newaxis]
-                                ), axis=-1)   #(T, 2)
+                                              np.zeros(beat_activation.shape)
+                                              )[:, np.newaxis],
+                                   downbeat_activation[:, np.newaxis]
+                                   ), axis=-1)  # (T, 2)
     dbn_downbeat_pred = unpack_downbeats(combined_act, beats_per_bar=[3, 4], min_bpm=55.0, max_bpm=215.0, fps=44100/1024, threshold=0.2)
     dbn_downbeat_pred = dbn_downbeat_pred[dbn_downbeat_pred[:, 1] == 1][:, 0]
     return dbn_beat_pred.tolist(), dbn_downbeat_pred.tolist()

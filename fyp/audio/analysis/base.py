@@ -14,6 +14,7 @@ import json
 from abc import ABC, abstractmethod
 import typing
 
+
 @dataclass(frozen=True)
 class OnsetFeatures:
     """A class of features that represents segmentations over the song. The onsets are in seconds and marks the start of each segment"""
@@ -60,7 +61,10 @@ class OnsetFeatures:
         beats = self.onsets / speed
         return OnsetFeatures(self.duration / speed, beats)
 
+
 T = TypeVar("T")
+
+
 @dataclass(frozen=True)
 class DiscreteLatentFeatures(ABC, Generic[T]):
     """A class that represents the latent features of a song"""
@@ -96,7 +100,7 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
 
     @classmethod
     @abstractmethod
-    def distance(cls, a: int, b: int) -> float:
+    def distance(cls, x: int, y: int) -> float:
         """The distance between two latent features. The inputs should be two latent feature indices"""
         raise NotImplementedError
 
@@ -152,6 +156,7 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
                 dist_array[i, j] = dist
         return dist_array
 
+
 @dataclass(frozen=True)
 class ContinuousLatentFeatures(ABC):
     """A class that represents the continuous latent features of a song"""
@@ -200,6 +205,7 @@ class ContinuousLatentFeatures(ABC):
 
         return self.__class__(end - start, new_features, new_times)
 
+
 @numba.jit(nopython=True)
 def _slice_features(times: NDArray[np.float64], features: NDArray, start: float, end: float):
     start_idx = np.searchsorted(times, start, side='right') - 1
@@ -209,6 +215,7 @@ def _slice_features(times: NDArray[np.float64], features: NDArray, start: float,
     new_times[0] = 0.
     new_features = features[start_idx:end_idx]
     return new_times, new_features
+
 
 @numba.jit(nopython=True)
 def _dist_discrete_latent(times1, times2, chords1, chords2, distances, duration) -> float:
@@ -242,12 +249,18 @@ def _dist_discrete_latent(times1, times2, chords1, chords2, distances, duration)
     score += distances[chords1[idx1]][chords2[idx2]] * (duration - cumulative_duration)
     return score
 
+
 F = typing.TypeVar('F', bound=DiscreteLatentFeatures)
+
+
 def dist_discrete_latent_features(a: F, b: F, dist_array: NDArray[np.float64] | None = None) -> float:
     """Calculate the distance between two discrete latent features"""
     raise NotImplementedError("This function is not implemented yet")
 
+
 G = typing.TypeVar('G', bound=ContinuousLatentFeatures)
+
+
 def dist_continuous_latent_features(a: G, b: G) -> float:
     """Calculate the distance between two discrete latent features"""
     score = 0.

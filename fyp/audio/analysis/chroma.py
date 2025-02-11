@@ -12,19 +12,22 @@ from typing import Callable
 # where T = audio.nframes // hop + 1 is the number of time frames
 ChromaFunction = Callable[[Audio, int], NDArray[np.float32]]
 
-def chroma_cqt(audio: Audio, hop: int = 512, *, bins_per_octave = 24, fmin = 27.5, **kwargs):
+
+def chroma_cqt(audio: Audio, hop: int = 512, *, bins_per_octave=24, fmin=27.5, **kwargs):
     """Calculates the chroma features of the audio signal. The input must be an audio and output a numpy array of shape (12, T)"""
     audio_array = audio.numpy()
-    chroma = librosa.feature.chroma_cqt(y=audio_array, sr=audio.sample_rate, hop_length = hop, bins_per_octave=bins_per_octave, fmin = fmin, **kwargs)
+    chroma = librosa.feature.chroma_cqt(y=audio_array, sr=audio.sample_rate, hop_length=hop, bins_per_octave=bins_per_octave, fmin=fmin, **kwargs)
     assert chroma.shape[0] == 12
     return chroma.astype(np.float32)
+
 
 def chroma_stft(audio: Audio, hop: int = 512, **kwargs):
     """Calculates the chroma features of the audio signal. The input must be an audio and output a numpy array of shape (12, T)"""
     audio_array = audio.numpy()
-    chroma = librosa.feature.chroma_stft(y=audio_array, sr=audio.sample_rate, hop_length = hop, **kwargs)
+    chroma = librosa.feature.chroma_stft(y=audio_array, sr=audio.sample_rate, hop_length=hop, **kwargs)
     assert chroma.shape[0] == 12
     return chroma.astype(np.float32)
+
 
 def chroma_stft_nfft(audio: Audio, n_fft: int, hop: int = 512, **kwargs):
     audio_array = audio.numpy()
@@ -33,9 +36,10 @@ def chroma_stft_nfft(audio: Audio, n_fft: int, hop: int = 512, **kwargs):
     assert chroma.shape[0] == 12
     return chroma.astype(np.float32)
 
-def chroma_cens(audio: Audio, hop: int = 512, *, bins_per_octave = 24, fmin = 27.5, **kwargs):
+
+def chroma_cens(audio: Audio, hop: int = 512, *, bins_per_octave=24, fmin=27.5, **kwargs):
     """Calculates the chroma features of the audio signal. The input must be an audio and output a numpy array of shape (12, T)"""
     audio_array = audio.numpy()
-    chroma = librosa.feature.chroma_cens(y=audio_array, sr=audio.sample_rate, hop_length = hop, bins_per_octave=bins_per_octave, fmin = fmin, **kwargs)
+    chroma = librosa.feature.chroma_cens(y=audio_array, sr=audio.sample_rate, hop_length=hop, bins_per_octave=bins_per_octave, fmin=fmin, **kwargs)
     assert chroma.shape[0] == 12
     return chroma.astype(np.float32)

@@ -12,6 +12,7 @@ from enum import Enum
 import torchaudio.functional as F
 from .. import Audio, AudioMode, DemucsCollection
 
+
 class DemucsAudioSeparator:
     def __init__(self, model_name: str = "htdemucs", repo: Path | None = None, segment: float | None = None, compile: bool = False):
         """ Preloads the model
@@ -59,12 +60,12 @@ class DemucsAudioSeparator:
         return self.model.audio_channels
 
     def pipeline(self,
-            audio: Tensor,
-            shifts: int = 1,
-            split: bool = True,
-            jobs: int = 0,
-            overlap: float = 0.25,
-            show_progress: bool = False):
+                 audio: Tensor,
+                 shifts: int = 1,
+                 split: bool = True,
+                 jobs: int = 0,
+                 overlap: float = 0.25,
+                 show_progress: bool = False):
         """Performs the demucs audio separation pipeline.
 
         Feel free to play around with different hyperparameters
@@ -121,11 +122,11 @@ class DemucsAudioSeparator:
 
 
 def demucs_separate(
-        audio: Audio, *,
-        use_gpu: bool | None = None,
-        model: str = "htdemucs",
-        verbose: bool = False,
-    ) -> DemucsCollection:
+    audio: Audio, *,
+    use_gpu: bool | None = None,
+    model: str = "htdemucs",
+    verbose: bool = False,
+) -> DemucsCollection:
     with tempfile.TemporaryDirectory() as tempdir:
         audio_path = os.path.join(tempdir, "audio.wav")
         audio.save(audio_path)

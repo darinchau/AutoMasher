@@ -25,7 +25,8 @@ import numba
 import warnings
 import typing
 
-PURGE_ERROR_LIMIT_BYTES = 1 << 32 # 4GB
+PURGE_ERROR_LIMIT_BYTES = 1 << 32  # 4GB
+
 
 @dataclass(frozen=True)
 class DatasetEntry:
@@ -56,6 +57,8 @@ class DatasetEntry:
         return f"DatasetEntry([{self.url.video_id}])"
 
 # Provides a unified directory structure and API that defines a AutoMasher v3 dataset
+
+
 class SongDataset:
     """New in v3
 
@@ -112,11 +115,12 @@ class SongDataset:
     - pack: None: Packs the dataset into a single file
     - pickle: None: Pickles the dataset into a single file
     """
+
     def __init__(self, root: str, *,
                  load_on_the_fly: bool = False,
                  assert_audio_exists: bool = False,
                  max_dir_size: str | None = "16GB"
-        ):
+                 ):
         from .compress import DatasetEntryEncoder, SongDatasetEncoder
 
         if not os.path.exists(root):
@@ -173,7 +177,6 @@ class SongDataset:
         self.register("error", "error_logs.txt")
         self.register("pack", "pack.data", create=False)
         self.register("pickle", "dataset.pkl", create=False)
-
 
     def register(self, key: str, file_format: str, *, create: bool = True, initial_data: str | None = None):
         """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
@@ -237,7 +240,7 @@ class SongDataset:
             self.max_dir_size = float('inf')
             return
 
-        #TODO implement a LRU system in the future
+        # TODO implement a LRU system in the future
         # First consider parts, then consider audios
         # key is file directory and values are file size in bytes
         for key in self.purge_list:
@@ -251,7 +254,7 @@ class SongDataset:
             }
 
             while nbytes_to_purge > 0 and len(files) > 0:
-                file = max(files, key=files.get) # type: ignore
+                file = max(files, key=files.get)  # type: ignore
                 file_size = files.pop(file)
                 try:
                     os.remove(file)
@@ -319,7 +322,7 @@ class SongDataset:
 
     def write_error(self, error: str, e: Exception | None = None, print_fn: Callable[[str], Any] | None = print):
         if print_fn is None:
-            print_fn = lambda x: None
+            def print_fn(x): return None
         print_fn(f"Error: {error}")
         if e:
             print_fn(f"Error: {e}")
@@ -415,7 +418,7 @@ class SongDataset:
     def __repr__(self):
         return f"LocalSongDataset(at: {self.root}, {len(self)} entries)"
 
-    def write_info(self, key: str, value: YouTubeURL, desc = None, *, indent: int | str | None = None):
+    def write_info(self, key: str, value: YouTubeURL, desc=None, *, indent: int | str | None = None):
         with open(self.get_path("info"), "r") as f:
             info = json.load(f)
         if key not in info and desc is None:
@@ -505,6 +508,7 @@ class SongDataset:
         with open(self.get_path("pickle"), "wb") as f:
             pickle.dump(self._data, f)
 
+
 def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatures) -> NDArray[np.float64]:
     """Normalize the chord result with the beat result. This is done by retime the chord result as the number of downbeats."""
     # For every time stamp in the chord result, retime it as the number of downbeats.
@@ -523,6 +527,7 @@ def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatu
         new_chord_times.append(normalized_time)
     return np.array(new_chord_times, dtype=np.float64)
 
+
 @numba.njit
 def _get_music_duration(times: NDArray[np.float64], features: NDArray[np.uint32], duration: float, no_chord_idx: int, bar_idx: int) -> float:
     start_idx = np.searchsorted(times, bar_idx, side='right') - 1
@@ -539,6 +544,8 @@ def _get_music_duration(times: NDArray[np.float64], features: NDArray[np.uint32]
     return music_duration
 
 # Returns None if the chord result is valid, otherwise returns an error message
+
+
 def verify_chord_result(cr: ChordAnalysisResult, audio_duration: float, video_url: YouTubeURL | None = None) -> str | None:
     labels = cr.features
     chord_times = cr.times
@@ -569,12 +576,14 @@ def verify_chord_result(cr: ChordAnalysisResult, audio_duration: float, video_ur
 
     return None
 
+
 def verify_parts_result(parts: DemucsCollection, mean_vocal_threshold: float, video_url: YouTubeURL | None = None) -> str | None:
     # New in v3: Check if there are enough vocals
     mean_vocal_volume = parts.vocals.volume
     if mean_vocal_volume < mean_vocal_threshold:
         return f"Too few vocals: {video_url} ({mean_vocal_volume})"
     return None
+
 
 def verify_beats_result(br: BeatAnalysisResult, audio_duration: float, video_url: YouTubeURL | None = None, reject_weird_meter: bool = True, bad_alignment_threshold: float = 0.1) -> str | None:
     """Verify the beat result. If strict is True, then it will reject songs with weird meters."""
@@ -585,13 +594,13 @@ def verify_beats_result(br: BeatAnalysisResult, audio_duration: float, video_url
     # New in v3: Reject songs with weird meters
     # Remove all songs with 3/4 meter as well because 96% of the songs are 4/4
     # This is rejecting way too many songs. Making this optional
-    beat_align_idx = np.abs(br.beats[:, None] - br.downbeats[None, :]).argmin(axis = 0)
+    beat_align_idx = np.abs(br.beats[:, None] - br.downbeats[None, :]).argmin(axis=0)
     nbeat_in_bar = beat_align_idx[1:] - beat_align_idx[:-1]
     if reject_weird_meter and not np.all(nbeat_in_bar == 4):
         return f"Weird meter: {video_url} ({nbeat_in_bar})"
 
     # New in v3: Reject songs with a bad alignment
-    beat_alignment = np.abs(br.beats[:, None] - br.downbeats[None, :]).min(axis = 0)
+    beat_alignment = np.abs(br.beats[:, None] - br.downbeats[None, :]).min(axis=0)
     if np.max(beat_alignment) > bad_alignment_threshold:
         return f"Bad alignment: {video_url} ({np.max(beat_alignment)})"
 
@@ -611,6 +620,8 @@ def verify_beats_result(br: BeatAnalysisResult, audio_duration: float, video_url
     return None
 
 # Create a dataset entry from the given data
+
+
 def create_entry(url: YouTubeURL, *,
                  dataset: SongDataset | None = None,
                  audio: Audio | None = None,

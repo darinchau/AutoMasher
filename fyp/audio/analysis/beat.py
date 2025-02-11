@@ -1,4 +1,4 @@
-### Provides an algorithm for bpm detection from librosa.
+# Provides an algorithm for bpm detection from librosa.
 from __future__ import annotations
 import os
 from typing import Any
@@ -27,9 +27,11 @@ if typing.TYPE_CHECKING:
 
 BEAT_DATASET_KEY = "beats"
 
+
 class DeadBeatKernel(RuntimeError):
     """Raised when the beat kernel is dead"""
     pass
+
 
 @dataclass(frozen=True)
 class BeatAnalysisResult:
@@ -94,6 +96,7 @@ class BeatAnalysisResult:
             data = json.load(f)
         return cls.from_data(data["duration"], data["beats"], data["downbeats"])
 
+
 @contextmanager
 # This creates a temp file with a temp file name and cleans it up at the end
 def get_temp_file(extension: str):
@@ -102,6 +105,7 @@ def get_temp_file(extension: str):
         for _ in range(6):
             s += "qwertyuiopasdfghjklzxcvbnm"[random.randint(0, 25)]
         return s
+
     def get_unique_filename(name):
         # Check if the file already exists
         if not os.path.isfile(f"{name}.{extension}"):
@@ -123,10 +127,11 @@ def get_temp_file(extension: str):
         if os.path.isfile(fn):
             os.remove(fn)
 
+
 def analyse_beat_transformer(audio: Audio | None = None,
                              dataset: SongDataset | None = None,
                              url: YouTubeURL | None = None,
-                             parts: DemucsCollection| None = None,
+                             parts: DemucsCollection | None = None,
                              backend: typing.Literal["demucs", "spleeter"] = "demucs",
                              backend_url: str | None = None,
                              do_normalization: bool = False,
@@ -158,15 +163,14 @@ def analyse_beat_transformer(audio: Audio | None = None,
     if audio is None and parts is None:
         raise ValueError("Either audio or parts must be provided")
 
-    if audio is not None:
-        duration = audio.duration
-
     if parts is None and audio is not None and backend == "demucs":
         parts = demucs_separate(audio)
 
     if parts is not None:
         if audio is None:
             duration = parts.get_duration()
+        else:
+            duration = audio.duration  # Unnecessary line of code but here to apease the linter
         parts_dict = {
             "vocals": parts.vocals,
             "drums": parts.drums,
@@ -186,6 +190,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
         assert backend == "spleeter"
         assert audio is not None, "Audio must be provided if using spleeter"
         assert backend_url is not None, "Backend URL must be provided if using spleeter"
+        duration = audio.duration
         audio_ = audio.resample(44100).to_nchannels(AudioMode.STEREO)
 
         with get_temp_file("wav") as fn:

@@ -23,6 +23,7 @@ from ..analysis.base import (
 from ..analysis.chord import ChordAnalysisResult
 from ...util import simplify_chord
 
+
 @dataclass(frozen=True)
 class MashabilityResult:
     """A class to store the result of the mashability of the songs.
@@ -44,7 +45,9 @@ class MashabilityResult:
     def __repr__(self):
         return f"MashabilityResult({self.url}/{self.start_bar}/{self.transpose})"
 
-MashabilityResultType = tuple[int, int, float, DatasetEntry] # (start_bar, transpose, starting_downbeat, entry)
+
+MashabilityResultType = tuple[int, int, float, DatasetEntry]  # (start_bar, transpose, starting_downbeat, entry)
+
 
 class MashabilityList:
     def __init__(self):
@@ -63,7 +66,7 @@ class MashabilityList:
 
         # Separate into few cases to make this efficient
         if keep_first_k > 0 and not filter_top_scores:
-            results = heapq.nsmallest(keep_first_k, results, key=lambda x: x[0]) # This is sorted
+            results = heapq.nsmallest(keep_first_k, results, key=lambda x: x[0])  # This is sorted
 
         elif filter_top_scores:
             results_ = sorted(results, key=lambda x: x[0])
@@ -76,6 +79,7 @@ class MashabilityList:
                 if len(results) == keep_first_k:
                     break
         return results
+
 
 def calculate_onset_boundaries(submitted_onset_result: OnsetFeatures, sample_onset_result: OnsetFeatures) -> tuple[list[float], list[float]]:
     """Aligns sample_onset_result to submitted_onset_result, and returns the boundaries and factors
@@ -107,6 +111,7 @@ def calculate_onset_boundaries(submitted_onset_result: OnsetFeatures, sample_ons
 
     return factors.tolist(), boundaries.tolist()
 
+
 def get_valid_starting_points(music_duration: NDArray[np.float64],
                               sample_downbeats: NDArray[np.float64],
                               sample_beats: NDArray[np.float64],
@@ -120,9 +125,9 @@ def get_valid_starting_points(music_duration: NDArray[np.float64],
 
     # Make sure all the nbars of indices have 4 beats and a good alignment
     beat_alignment_arr = np.abs(sample_beats[:, None] - sample_downbeats[None, :])
-    beat_align_idx = beat_alignment_arr.argmin(axis = 0)
+    beat_align_idx = beat_alignment_arr.argmin(axis=0)
     is_4_beats = (beat_align_idx[1:] - beat_align_idx[:-1]) == 4
-    beat_alignment = beat_alignment_arr.min(axis = 0)
+    beat_alignment = beat_alignment_arr.min(axis=0)
     is_alignment_within_tolerance = (beat_alignment < 0.1)[:-1]
     good_alignment = np.convolve(is_4_beats & is_alignment_within_tolerance, np.ones(nbars, dtype=int), mode='valid') == nbars
 
@@ -131,21 +136,22 @@ def get_valid_starting_points(music_duration: NDArray[np.float64],
     valid_indices = np.where(good_music_duration & good_alignment)[0]
     return valid_indices
 
+
 def calculate_mashability(
-        submitted_entry: DatasetEntry,
-        dataset: SongDataset,
-        submitted_features: list[DiscreteLatentFeatures | ContinuousLatentFeatures] | None = None,
-        features_fn: list[typing.Callable[[SongDataset, YouTubeURL, int], DiscreteLatentFeatures | ContinuousLatentFeatures]] | None = None,
-        weights: list[float] | None = None,
-        max_transpose: typing.Union[int, tuple[int, int]] = 3,
-        min_music_percentage: float = 0.5,
-        delta_bpm: tuple[float, float] = (0.9, 1.1),
-        max_distance: float = float("inf"),
-        use_simplified_chord_distance: bool = False,
-        keep_first_k: int = 10,
-        filter_top_scores: bool = True,
-        verbose: bool = True,
-    ) -> list[tuple[float, MashabilityResult]]:
+    submitted_entry: DatasetEntry,
+    dataset: SongDataset,
+    submitted_features: list[DiscreteLatentFeatures | ContinuousLatentFeatures] | None = None,
+    features_fn: list[typing.Callable[[SongDataset, YouTubeURL, int], DiscreteLatentFeatures | ContinuousLatentFeatures]] | None = None,
+    weights: list[float] | None = None,
+    max_transpose: typing.Union[int, tuple[int, int]] = 3,
+    min_music_percentage: float = 0.5,
+    delta_bpm: tuple[float, float] = (0.9, 1.1),
+    max_distance: float = float("inf"),
+    use_simplified_chord_distance: bool = False,
+    keep_first_k: int = 10,
+    filter_top_scores: bool = True,
+    verbose: bool = True,
+) -> list[tuple[float, MashabilityResult]]:
     """Calculate the mashability of the submitted song with the dataset.
 
     Args:
@@ -212,7 +218,7 @@ def calculate_mashability(
     dist_arrays = [x.get_dist_array() if isinstance(x, DiscreteLatentFeatures) and x.latent_size() < 3000 else None for x in submitted_features]
 
     # 3. Calculate the distance between the submitted song and the sample song for each song
-    #TODO - Implement the parallel version of this
+    # TODO - Implement the parallel version of this
     if use_simplified_chord_distance:
         chord_distances_array = SimpleChordAnalysisResult.get_dist_array()
     else:
@@ -282,6 +288,7 @@ def calculate_mashability(
     scores_list = scores.get(keep_first_k, filter_top_scores)
     return scores_list
 
+
 @numba.njit
 def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray, max_delta_bpm: float, min_delta_bpm: float, nbars: int, i: int) -> bool:
     """An optimized version of the calculate_tolerance function that, given the submitted downbeats, finds if the
@@ -293,6 +300,7 @@ def _calculate_tolerance(orig_lengths: np.ndarray, sample_downbeats: np.ndarray,
     new_lengths = downbeats_[1:] - downbeats_[:-1]
     factors = new_lengths / orig_lengths
     return factors.max() <= max_delta_bpm and factors.min() >= min_delta_bpm
+
 
 @numba.jit(nopython=True)
 def _slice_and_group_end(times: NDArray[np.float64], labels: NDArray[np.uint32], start: float, end: float) -> tuple[NDArray[np.float64], NDArray[np.uint32]]:

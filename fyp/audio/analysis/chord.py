@@ -42,6 +42,7 @@ DIFFERENT_QUALITY_PENALTY = 3
 LARGE_VOCA_CHORD_DATASET_KEY = "chord_btc_large_voca"
 SIMPLE_CHORD_DATASET_KEY = "chord_btc"
 
+
 @dataclass(frozen=True)
 class ChordAnalysisResult(DiscreteLatentFeatures[str]):
     """A class with the following attributes:
@@ -76,7 +77,6 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
 
             case (_, "Unknown"):
                 return UNKNOWN_CHORD_PENALTY
-
 
             case ("Unknown", _):
                 return UNKNOWN_CHORD_PENALTY
@@ -169,6 +169,7 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
         simplified_labels = np.array([simplify_chord(label) for label in self.features], dtype=np.uint32)
         return SimpleChordAnalysisResult(self.duration, simplified_labels, self.times)
 
+
 class SimpleChordAnalysisResult(ChordAnalysisResult):
     """A class with the following attributes:
 
@@ -247,6 +248,7 @@ class SimpleChordAnalysisResult(ChordAnalysisResult):
         unsimplified_labels = np.array([small_voca_to_large_voca(label) for label in self.features], dtype=np.uint32)
         return ChordAnalysisResult(self.duration, unsimplified_labels, self.times)
 
+
 class ChordFeatures(ContinuousLatentFeatures):
     @staticmethod
     def latent_dims():
@@ -255,6 +257,7 @@ class ChordFeatures(ContinuousLatentFeatures):
     @staticmethod
     def distance(a: NDArray, b: NDArray) -> float:
         return np.linalg.norm(a - b, 2).item()
+
 
 def analyse_chord_transformer(audio: Audio, *,
                               dataset: SongDataset | None = None,
@@ -301,7 +304,7 @@ def analyse_chord_transformer(audio: Audio, *,
     if use_large_voca:
         chords = get_idx2voca_chord()
         inv_voca = get_inv_voca_map()
-        labels = [inv_voca[chords[r]] for r in labels] # Deduplicate the chords
+        labels = [inv_voca[chords[r]] for r in labels]  # Deduplicate the chords
     else:
         labels = [small_voca_to_large_voca(r) for r in labels]
 
@@ -314,12 +317,13 @@ def analyse_chord_transformer(audio: Audio, *,
     ).group()
     return cr
 
+
 def analyse_chord_features(audio: Audio, *,
-                              dataset: SongDataset | None = None,
-                              url: YouTubeURL | None = None,
-                              model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
-                              use_large_voca: bool = True,
-                              use_cache: bool = True) -> ChordFeatures:
+                           dataset: SongDataset | None = None,
+                           url: YouTubeURL | None = None,
+                           model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
+                           use_large_voca: bool = True,
+                           use_cache: bool = True) -> ChordFeatures:
     """Analyse the chords of an audio file using the transformer model
 
     Parameters:
@@ -340,8 +344,9 @@ def analyse_chord_features(audio: Audio, *,
         times=np.arange(time_idx) / results.time_resolution
     )
 
+
 def get_chord_result(audio: Audio,
-                     dataset: SongDataset | None =  None,
+                     dataset: SongDataset | None = None,
                      url: YouTubeURL | None = None,
                      model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
                      use_large_voca: bool = True,

@@ -19,6 +19,8 @@ from tqdm.auto import tqdm
 import pickle
 
 T = TypeVar('T')
+
+
 class BitsEncoder(ABC, Generic[T]):
     @abstractmethod
     def encode(self, data: T) -> Iterator[int]:
@@ -41,6 +43,7 @@ class BitsEncoder(ABC, Generic[T]):
         with open(path, "wb") as f:
             f.write(bytes(self.encode(obj)))
 
+
 def make_huffman_tree(counter: dict[int, int]) -> tuple:
     # Reserve 0xF for padding and EOS
     # So we want the 0xF least common elements
@@ -48,7 +51,7 @@ def make_huffman_tree(counter: dict[int, int]) -> tuple:
     # To ensure each level has exactly 15 elements, the first merge
     # should operate on len(counter) % 14 elements
     def merge(counter: dict, n_elems: int):
-        least_common = sorted([(k, v) for k, v in counter.items()], key = lambda x: x[1])[:n_elems]
+        least_common = sorted([(k, v) for k, v in counter.items()], key=lambda x: x[1])[:n_elems]
         cumulative = 0
         elems = []
         for k, v in least_common:
@@ -70,6 +73,7 @@ def make_huffman_tree(counter: dict[int, int]) -> tuple:
 
     # Turn the tree into a table
     table = {}
+
     def traverse(tree, path):
         if isinstance(tree, int):
             table[tree] = path
@@ -79,14 +83,16 @@ def make_huffman_tree(counter: dict[int, int]) -> tuple:
     traverse(tree, [])
     return tree, table
 
+
 @lru_cache(maxsize=1)
 def get_chord_time_label_codebook(resolution: float = 10.8):
     max_time = ceil(600 * resolution) + 1
     # The distribution of chord time diffs roughly follows a power law
     # So use that to build a huffman tree and then we have a context free codebook
-    counter = {n: int(exp(-0.05* n) * max_time) + 1 for n in range (1, max_time)}
+    counter = {n: int(exp(-0.05 * n) * max_time) + 1 for n in range(1, max_time)}
     tree, table = make_huffman_tree(counter)
     return tree, table
+
 
 @lru_cache(maxsize=1)
 def get_beat_time_label_codebook(resolution: float = 44100/1024):
@@ -104,6 +110,7 @@ def get_beat_time_label_codebook(resolution: float = 44100/1024):
     tree, table = make_huffman_tree(counter)
     return tree, table
 
+
 class Int32Encoder(BitsEncoder[int]):
     def encode(self, data: int) -> Iterator[int]:
         assert 0 <= data < 2**32
@@ -115,13 +122,14 @@ class Int32Encoder(BitsEncoder[int]):
             b.append(next(data))
         return struct.unpack('I', bytes(b))[0]
 
+
 class FourBitEncoder(BitsEncoder[list[int]]):
     def __init__(self):
         self.i32encoder = Int32Encoder()
 
-    def encode(self, bits: list[int]) -> Iterator[int]:
-        yield from self.i32encoder.encode(len(bits))
-        elems = [b for b in bits]
+    def encode(self, data: list[int]) -> Iterator[int]:
+        yield from self.i32encoder.encode(len(data))
+        elems = [b for b in data]
         if len(elems) % 2 != 0:
             elems.append(0)
         for i in range(0, len(elems), 2):
@@ -137,6 +145,7 @@ class FourBitEncoder(BitsEncoder[list[int]]):
             b.append(byte & 0xF)
         b = b[:length]
         return b
+
 
 class ChordTimesEncoder(BitsEncoder[list[float]]):
     def __init__(self, resolution: float = 10.8):
@@ -174,6 +183,7 @@ class ChordTimesEncoder(BitsEncoder[list[float]]):
             chord_times.append(chord_times[-1] + diff)
         return (np.array(chord_times) / self.resolution).tolist()
 
+
 class BeatTimesEncoder(BitsEncoder[list[float]]):
     def __init__(self, resolution: float = 44100/1024):
         self.fourbitencoder = FourBitEncoder()
@@ -188,6 +198,7 @@ class BeatTimesEncoder(BitsEncoder[list[float]]):
     def decode(self, data: Iterator[int]) -> list[float]:
         new_data = self.timestamp_encoder.decode(data)
         return new_data[1:]
+
 
 class ChordLabelsEncoder(BitsEncoder[list[int]]):
     def encode(self, data: list[int]) -> Iterator[int]:
@@ -209,6 +220,7 @@ class ChordLabelsEncoder(BitsEncoder[list[int]]):
         else:
             raise ValueError("Too many chord labels")
         return chord_labels
+
 
 class StringEncoder(BitsEncoder[str]):
     def __init__(self, limit: int = 1000):
@@ -233,6 +245,7 @@ class StringEncoder(BitsEncoder[str]):
 
         return bytes(b).decode('utf-8')
 
+
 class Float32Encoder(BitsEncoder[float]):
     def encode(self, data: float) -> Iterator[int]:
         yield from struct.pack('f', data)
@@ -242,6 +255,7 @@ class Float32Encoder(BitsEncoder[float]):
         for i in range(4):
             b.append(next(data))
         return struct.unpack('f', bytes(b))[0]
+
 
 class Int64Encoder(BitsEncoder[int]):
     def encode(self, data: int) -> Iterator[int]:
@@ -254,6 +268,7 @@ class Int64Encoder(BitsEncoder[int]):
             b.append(next(data))
         return struct.unpack('Q', bytes(b))[0]
 
+
 class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
     """Format (bytes, in order):
     - Chord labels: a list of bytes, each byte is a chord label (0-170)
@@ -265,6 +280,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
     - Song Genre: There are only 8 genres but lets use one byte for it
     - Length: Signed 32 bit floating point number
     """
+
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024):
         self.chord_time_encoder = ChordTimesEncoder(chord_time_resolution)
         self.beat_time_encoder = BeatTimesEncoder(beat_time_resolution)
@@ -300,6 +316,7 @@ class DatasetEntryEncoder(BitsEncoder[DatasetEntry]):
 
         return entry
 
+
 class SongDatasetEncoder(BitsEncoder[dict[YouTubeURL, DatasetEntry]]):
     def __init__(self, chord_time_resolution: float = 10.8, beat_time_resolution: float = 44100/1024, progress_bar: bool = True, old: bool = False):
         """If old is True, the encoder will use the old format which includes the views and genre of the song"""
@@ -325,7 +342,7 @@ class SongDatasetEncoder(BitsEncoder[dict[YouTubeURL, DatasetEntry]]):
         if checksum != zlib.adler32(data_compressed):
             raise ValueError("Checksum mismatch")
         data_binary = zlib.decompress(data_compressed)
-        data_binary = iter(tqdm(data_binary, desc="Decompressing", unit="B", leave=False, disable = not self.progress_bar))
+        data_binary = iter(tqdm(data_binary, desc="Decompressing", unit="B", leave=False, disable=not self.progress_bar))
         dataset: dict[YouTubeURL, DatasetEntry] = {}
         length = self.int64_encoder.decode(data_binary)
         for _ in range(length):
