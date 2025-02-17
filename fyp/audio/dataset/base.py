@@ -23,6 +23,8 @@ from typing import Iterable
 import pickle
 import numba
 import warnings
+import tempfile
+import shutil
 import typing
 
 PURGE_ERROR_LIMIT_BYTES = 1 << 32  # 4GB
@@ -167,8 +169,7 @@ class SongDataset:
         # Make backup of infos
         with open(self.get_path("info"), "r") as f:
             _info = json.load(f)
-        with open(self.get_path("info") + ".bak", "w") as f:
-            json.dump(_info, f)
+        _safe_write_json(_info, self.get_path("info") + ".bak")
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
@@ -327,12 +328,11 @@ class SongDataset:
             self.pack()
 
     def write_error(self, error: str, e: Exception | None = None, print_fn: Callable[[str], Any] | None = print):
-        if print_fn is None:
-            def print_fn(x): return None
-        print_fn(f"Error: {error}")
+        def print_fn_(x): return print_fn_(x) if print_fn_ is not None else None
+        print_fn_(f"Error: {error}")
         if e:
-            print_fn(f"Error: {e}")
-            print_fn(f"Error: {traceback.format_exc()}")
+            print_fn_(f"Error: {e}")
+            print_fn_(f"Error: {traceback.format_exc()}")
         try:
             with open(self.error_logs_path, "a") as f:
                 f.write(error + "\n")
@@ -341,10 +341,10 @@ class SongDataset:
                     f.write(traceback.format_exc() + "\n")
                     f.write("\n")
         except Exception as e2:
-            print_fn(f"Error : {e2}")
-            print_fn(f"Error writing error: {error}")
-            print_fn(f"Error writing error: {e}")
-            print_fn(f"Error writing error: {traceback.format_exc()}")
+            print_fn_(f"Error : {e2}")
+            print_fn_(f"Error writing error: {error}")
+            print_fn_(f"Error writing error: {e}")
+            print_fn_(f"Error writing error: {traceback.format_exc()}")
 
     @property
     def metadata_path(self):
@@ -443,8 +443,7 @@ class SongDataset:
                 return
             info[key].append(value.video_id)
 
-        with open(self.get_path("info"), "w") as f:
-            json.dump(info, f, indent=indent)
+        _safe_write_json(info, self.get_path("info"))
 
     def read_info(self, key: str) -> list[YouTubeURL] | dict[YouTubeURL, str] | None:
         with open(self.get_path("info"), "r") as f:
@@ -513,6 +512,18 @@ class SongDataset:
         """Pickle the dataset into a single file"""
         with open(self.get_path("pickle"), "wb") as f:
             pickle.dump(self._data, f)
+
+
+def _safe_write_json(data, filename):
+    temp_fd, temp_path = tempfile.mkstemp()
+
+    try:
+        with os.fdopen(temp_fd, 'w') as temp_file:
+            json.dump(data, temp_file)
+        shutil.move(temp_path, filename)
+    except Exception as e:
+        print(f"Failed to write data: {e}")
+        os.unlink(temp_path)
 
 
 def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatures) -> NDArray[np.float64]:
