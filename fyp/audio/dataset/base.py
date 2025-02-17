@@ -164,6 +164,12 @@ class SongDataset:
             else:
                 self.load_from_directory()
 
+        # Make backup of infos
+        with open(self.get_path("info"), "r") as f:
+            _info = json.load(f)
+        with open(self.get_path("info") + ".bak", "w") as f:
+            json.dump(_info, f)
+
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
         if not os.path.exists(self.metadata_path):
