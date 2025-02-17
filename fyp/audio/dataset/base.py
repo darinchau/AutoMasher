@@ -195,8 +195,7 @@ class SongDataset:
         if not "file_structure" in metadata:
             metadata["file_structure"] = {}
         metadata["file_structure"][key] = file_format
-        with open(self.metadata_path, "w") as f:
-            json.dump(metadata, f)
+        _safe_write_json(metadata, self.metadata_path)
         if "{video_id}" in file_format and not os.path.exists(self.root + "/" + key):
             os.makedirs(self.root + "/" + key)
         elif create and "{video_id}" not in file_format and not os.path.isfile(self.root + "/" + file_format):
