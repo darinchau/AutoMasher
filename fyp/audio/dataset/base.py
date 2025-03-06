@@ -327,7 +327,7 @@ class SongDataset:
             self.pack()
 
     def write_error(self, error: str, e: Exception | None = None, print_fn: Callable[[str], Any] | None = print):
-        def print_fn_(x): return print_fn_(x) if print_fn_ is not None else None
+        def print_fn_(x): return print_fn(x) if print_fn is not None else None
         print_fn_(f"Error: {error}")
         if e:
             print_fn_(f"Error: {e}")
