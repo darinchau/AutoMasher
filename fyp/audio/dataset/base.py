@@ -518,7 +518,7 @@ def _safe_write_json(data, filename):
 
     try:
         with os.fdopen(temp_fd, 'w') as temp_file:
-            json.dump(data, temp_file)
+            json.dump(data, temp_file, indent=4)
         shutil.move(temp_path, filename)
     except Exception as e:
         print(f"Failed to write data: {e}")
