@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 from ...util import YouTubeURL
-from ..analysis import ChordAnalysisResult, BeatAnalysisResult, SimpleChordAnalysisResult
+from ..analysis import ChordAnalysisResult, BeatAnalysisResult
 from tqdm.auto import tqdm
 import numpy as np
 from numpy.typing import NDArray

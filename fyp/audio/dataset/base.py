@@ -362,7 +362,7 @@ class SongDataset:
         """Reloads the dataset from the directory into memory"""
         for file in tqdm(self.list_files("datafiles"), desc="Loading dataset", disable=not verbose):
             url = get_url(file[:-5])
-            entry = self.get_entry(url)
+            entry = self.get_entry(url, _skip_filecheck=True)
             if entry is None:
                 continue
             self._data[entry.url] = entry
@@ -398,7 +398,7 @@ class SongDataset:
         return self.get_path("error")
 
     @profile
-    def get_entry(self, url: YouTubeURL) -> DatasetEntry | None:
+    def get_entry(self, url: YouTubeURL, *, _skip_filecheck: bool = False) -> DatasetEntry | None:
         """Try to get the entry by url. If it does not exist, return None"""
         if url.is_placeholder:
             return None
@@ -406,7 +406,7 @@ class SongDataset:
             return self._data[url]
         file = self.get_path("datafiles", url)
         file_url = get_url(file[-16:-5])
-        if not os.path.isfile(file):
+        if not _skip_filecheck and not os.path.isfile(file):
             return None
         if self.assert_audio_exists:
             audio_path = self.get_path("audio", file_url)
@@ -590,6 +590,7 @@ def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatu
     # For example, if the time stamp is half way between downbeat[1] and downbeat[2], then it should be 1.5
     # If the time stamp is before the first downbeat, then it should be 0.
     # If the time stamp is after the last downbeat, then it should be the number of downbeats.
+    # Note: This is somehow faster than jitting the function because we are not using computation-intensive functions like np.searchsorted
     downbeats = br.onsets.tolist() + [br.duration]
     new_chord_times = []
     curr_downbeat, curr_downbeat_idx, next_downbeat = 0, 0, downbeats[1]
@@ -604,19 +605,24 @@ def get_normalized_times(unnormalized_times: NDArray[np.float64], br: OnsetFeatu
 
 
 @numba.njit
-def _get_music_duration(times: NDArray[np.float64], features: NDArray[np.uint32], duration: float, no_chord_idx: int, bar_idx: int) -> float:
-    start_idx = np.searchsorted(times, bar_idx, side='right') - 1
-    end_idx = np.searchsorted(times, bar_idx + 1, side='right')
-    new_times = times[start_idx:end_idx] - bar_idx
-    new_times[0] = 0.
-    music_duration = 0.
-    new_features = features[start_idx:end_idx]
-    for i in range(len(new_times) - 1):
-        if new_features[i] != no_chord_idx:
-            music_duration += new_times[i + 1] - new_times[i]
-    if new_features[-1] != no_chord_idx:
-        music_duration += duration - new_times[-1]
-    return music_duration
+def _get_music_durations(times: NDArray[np.float64], features: NDArray[np.uint32], duration: float, no_chord_idx: int, total_nbars: int) -> NDArray[np.float64]:
+    music_durations = np.zeros((total_nbars,), dtype=np.float64)
+    start_idx = 0
+    for i in range(total_nbars):
+        end_idx = np.searchsorted(times, i + 1, side='right')
+        new_times = times[start_idx:end_idx] - i
+        new_times[0] = 0.
+        music_duration = 0.
+        new_features = features[start_idx:end_idx]
+        for j in range(len(new_times) - 1):
+            if new_features[j] != no_chord_idx:
+                music_duration += new_times[j + 1] - new_times[j]
+        if new_features[-1] != no_chord_idx:
+            music_duration += duration - new_times[-1]
+        music_durations[i] = music_duration
+        start_idx = end_idx - 1
+    return music_durations
+
 
 # Returns None if the chord result is valid, otherwise returns an error message
 
@@ -631,6 +637,9 @@ def verify_chord_result(cr: ChordAnalysisResult, audio_duration: float, video_ur
     # Check if the chord times are sorted monotonically
     if len(chord_times) == 0 or chord_times[-1] > audio_duration:
         return f"Chord times error: {video_url}"
+
+    if len(chord_times) < 12:
+        return f"Too few chords: {video_url} ({len(chord_times)})"
 
     # Check if the chord times are sorted monotonically
     if not all([t1 < t2 for t1, t2 in zip(chord_times, chord_times[1:])]):
@@ -835,18 +844,14 @@ def create_entry(url: YouTubeURL, *,
     )
 
     # For each bar, calculate its music duration
-    music_duration: list[float] = []
     no_chord_idx = get_inv_voca_map()["No chord"]
-    for i in range(len(downbeats)):
-        bar_music_duration = _get_music_duration(normalized_cr.times, normalized_cr.features, normalized_cr.duration, no_chord_idx, i)
-        music_duration.append(bar_music_duration)
-
+    music_duration = _get_music_durations(normalized_cr.times, normalized_cr.features, normalized_cr.duration, no_chord_idx, len(downbeats))
     return DatasetEntry(
         chords=chords,
         downbeats=downbeats,
         beats=beats,
         url=url,
         normalized_times=normalized_times,
-        music_duration=np.array(music_duration, dtype=np.float64),
+        music_duration=music_duration,
         source=source
     )
