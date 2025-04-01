@@ -7,8 +7,3 @@ from .base import (
     verify_chord_result,
     create_entry
 )
-
-from .compress import (
-    DatasetEntryEncoder,
-    SongDatasetEncoder
-)

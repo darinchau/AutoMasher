@@ -361,7 +361,7 @@ def create_mash(dataset: SongDataset,
     b_audio = dataset.get_audio(best_result_url)
     write(f"Got audio with duration {b_audio.duration} seconds.")
 
-    entry = dataset.get_by_url(best_result_url)
+    entry = dataset.get_entry(best_result_url)
     if entry is None:
         raise ValueError(f"Song B ({best_result_url}) is not in the dataset.")
     b_downbeats = entry.downbeats.onsets
@@ -485,7 +485,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
 
     song_a_entry = None
     if link in dataset:
-        song_a_entry = dataset.get_by_url(link)
+        song_a_entry = dataset.get_entry(link)
         dataset = dataset.filter(lambda x: x.url != link)
 
     assert isinstance(dataset, SongDataset), f"Expected SongDataset, got {type(dataset)}"
