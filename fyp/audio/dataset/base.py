@@ -1,7 +1,6 @@
 # Provides a function to load our dataset as a list of dataset entries
 # This additional data structure facilitates getting by url
 from __future__ import annotations
-from line_profiler import profile
 import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
@@ -75,7 +74,6 @@ class DatasetEntry:
         }
 
     @staticmethod
-    @profile
     def _from_dict(data: dict[str, Any]):
         chords = ChordAnalysisResult(
             features=np.array(data["chords"]["labels"], dtype=np.uint32),
@@ -397,7 +395,6 @@ class SongDataset:
     def error_logs_path(self):
         return self.get_path("error")
 
-    @profile
     def get_entry(self, url: YouTubeURL, *, _skip_filecheck: bool = False) -> DatasetEntry | None:
         """Try to get the entry by url. If it does not exist, return None"""
         if url.is_placeholder:
@@ -551,7 +548,8 @@ class SongDataset:
             data = json.load(f)
         assert isinstance(data, dict), f"Invalid packed data format: {type(data)}"
         for k, v in data.items():
-            entry = DatasetEntry(
+            entry = create_entry(
+                get_url(k),
                 chords=ChordAnalysisResult(
                     features=np.array(v["chords"]["labels"], dtype=np.uint32),
                     times=np.array(v["chords"]["times"]),
@@ -559,15 +557,13 @@ class SongDataset:
                 ),
                 downbeats=OnsetFeatures(
                     duration=v["duration"],
-                    onsets=np.array(v["downbeats"], dtype=np.float64),
+                    onsets=np.array(v["downbeats"]),
                 ),
                 beats=OnsetFeatures(
                     duration=v["duration"],
-                    onsets=np.array(v["beats"], dtype=np.float64),
+                    onsets=np.array(v["beats"]),
                 ),
-                url=k,
-                normalized_times=np.array(v["normalized_times"], dtype=np.float64),
-                music_duration=np.array(v["music_duration"], dtype=np.float64),
+                source=v.get("source", ""),
             )
             self._data[k] = entry
 
@@ -703,10 +699,7 @@ def verify_beats_result(br: BeatAnalysisResult, audio_duration: float, video_url
 
     return None
 
-# Create a dataset entry from the given data
 
-
-@profile
 def create_entry(url: YouTubeURL, *,
                  dataset: SongDataset | None = None,
                  audio: Audio | None = None,
