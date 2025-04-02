@@ -538,7 +538,6 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         keep_first_k=config.keep_first_k_results,
         filter_top_scores=config.filter_first,
         verbose=config._verbose,
-        use_simplified_chord_distance=config.use_simplified_chord,
     )
 
     if len(scores) == 0:
@@ -621,7 +620,6 @@ def mashup_from_audio(audio: Audio, config: MashupConfig):
         keep_first_k=config.keep_first_k_results,
         filter_top_scores=config.filter_first,
         verbose=config._verbose,
-        use_simplified_chord_distance=config.use_simplified_chord,
     )
 
     if len(scores) == 0:

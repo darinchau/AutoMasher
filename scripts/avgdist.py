@@ -69,7 +69,7 @@ def main(path: str):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 2:
-        print("Usage: python avgdist.py <path_to_audio_files>")
+        print("Usage: python -m scripts.avgdist <path_to_audio_files>")
         sys.exit(1)
     path = sys.argv[1]
     if not os.path.exists(path):
