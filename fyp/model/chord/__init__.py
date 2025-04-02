@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 from ...audio import Audio
 from .chord_modules import *
+import warnings
 
 
 @dataclass
@@ -77,28 +78,36 @@ def get_model(model_path: str, device: torch.device, use_voca: bool) -> tuple[BT
 class ChordModelOutput:
     logits: torch.Tensor
     features: torch.Tensor
-    time_resolution: float = 10.8  # how many timesteps per second
+    duration: float
+    time_resolution: float  # In Hz (number of features per second)
 
     def save(self, path: str):
         torch.save({
             'logits': self.logits,
             'features': self.features,
-            'time_resolution': self.time_resolution
+            'time_resolution': self.time_resolution,
+            'duration': self.duration
         }, path)
 
     @staticmethod
     def load(path: str) -> 'ChordModelOutput':
         file = torch.load(path)
         return ChordModelOutput(
+            duration=file['duration'],
             logits=file['logits'],
             features=file['features'],
             time_resolution=file['time_resolution']
         )
 
+    def __post_init__(self):
+        if self.time_resolution >= 1:
+            warnings.warn(f"Time resolution is greater than 1 Hz (found {self.time_resolution}). This is likely a bug.")
+
 
 def inference(audio: Audio, model_path: str, *, use_voca: bool = True) -> ChordModelOutput:
     """Main entry point. We will give you back list of triplets: (start, chord)"""
     # Handle audio and resample to the requied sr
+    audio_duration = audio.duration
     original_wav: np.ndarray = audio.resample(22050).numpy()
     sr = 22050
 
@@ -153,6 +162,7 @@ def inference(audio: Audio, model_path: str, *, use_voca: bool = True) -> ChordM
     features = torch.cat(features, dim=1)[0].cpu().numpy()
     logits = torch.cat(logits, dim=1)[0].cpu().numpy()
     return ChordModelOutput(
+        duration=audio_duration,
         logits=torch.tensor(logits),
         features=torch.tensor(features),
         time_resolution=feature_per_second

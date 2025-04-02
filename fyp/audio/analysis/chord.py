@@ -26,6 +26,7 @@ from numpy.typing import NDArray
 from dataclasses import dataclass
 from math import log
 import typing
+import warnings
 
 if typing.TYPE_CHECKING:
     from ..dataset import SongDataset
@@ -175,26 +176,36 @@ class ChordFeatures(ContinuousLatentFeatures):
         return np.linalg.norm(a - b, 2).item()
 
 
-def analyse_chord_transformer(audio: Audio, *,
-                              dataset: SongDataset | None = None,
-                              url: YouTubeURL | None = None,
-                              regularizer: float = 0.5,
-                              model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
-                              use_large_voca: bool = True,
-                              use_cache: bool = True) -> ChordAnalysisResult:
+def analyse_chord_transformer(
+    audio: Audio | None = None, *,
+    results: ChordModelOutput | None = None,
+    dataset: SongDataset | None = None,
+    url: YouTubeURL | None = None,
+    regularizer: float = 0.5,
+    model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
+    use_large_voca: bool = True,
+    use_cache: bool = True
+) -> ChordAnalysisResult:
     """Analyse the chords of an audio file using the transformer model
 
     Parameters:
     audio (Audio): The audio file to analyse
+    results (ChordModelOutput): The results of the model - if the results is somehow precomputed, this will be used instead of the model
     regularizer (float): The regularizer to use. This value penalizes the model for changing chords too often. Defaults to 0.5
     model_path (str): The path to the model checkpoint. Defaults to "./resources/ckpts/btc_model_large_voca.pt"
     use_large_voca (bool): Whether to use the large voca chord system. Defaults to True
     use_cache (bool): Whether to use the cache. Defaults to True
     """
-    duration = audio.duration
-    results = get_chord_result(audio, dataset, url, model_path, use_large_voca, use_cache)
+    if results is None:
+        assert audio is not None, f"Audio must be provided if results is None"
+        duration = audio.duration
+        results = get_chord_result(audio, dataset, url, model_path, use_large_voca, use_cache)
+    else:
+        if audio is not None:
+            warnings.warn("Audio is not None, but results is provided. Audio will be ignored.")
+        duration = results.duration
 
-    time_idx = int(audio.duration * results.time_resolution)
+    time_idx = int(duration / results.time_resolution)
 
     logit_tensor = results.logits[:time_idx].numpy()
     T, K = logit_tensor.shape
@@ -224,7 +235,7 @@ def analyse_chord_transformer(audio: Audio, *,
     else:
         labels = [small_voca_to_large_voca(r) for r in labels]
 
-    times = np.arange(T) / results.time_resolution
+    times = np.arange(T) * results.time_resolution
 
     cr = ChordAnalysisResult(
         duration=duration,
@@ -234,30 +245,41 @@ def analyse_chord_transformer(audio: Audio, *,
     return cr
 
 
-def analyse_chord_features(audio: Audio, *,
-                           dataset: SongDataset | None = None,
-                           url: YouTubeURL | None = None,
-                           model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
-                           use_large_voca: bool = True,
-                           use_cache: bool = True) -> ChordFeatures:
+def analyse_chord_features(
+    audio: Audio | None = None, *,
+    results: ChordModelOutput | None = None,
+    dataset: SongDataset | None = None,
+    url: YouTubeURL | None = None,
+    model_path: str = "./resources/ckpts/btc_model_large_voca.pt",
+    use_large_voca: bool = True,
+    use_cache: bool = True
+) -> ChordFeatures:
     """Analyse the chords of an audio file using the transformer model
 
     Parameters:
     audio (Audio): The audio file to analyse
+    results (ChordModelOutput): The results of the model - if the results is somehow precomputed, this will be used instead of the model
     regularizer (float): The regularizer to use. This value penalizes the model for changing chords too often. Defaults to 0.5
     model_path (str): The path to the model checkpoint. Defaults to "./resources/ckpts/btc_model_large_voca.pt"
     use_large_voca (bool): Whether to use the large voca chord system. Defaults to True
     use_cache (bool): Whether to use the cache. Defaults to True
     """
-    results = get_chord_result(audio, dataset, url, model_path, use_large_voca, use_cache)
+    if results is None:
+        assert audio is not None, "Audio must be provided if results is None"
+        results = get_chord_result(audio, dataset, url, model_path, use_large_voca, use_cache)
+        duration = audio.duration
+    else:
+        if audio is not None:
+            warnings.warn("Audio is not None, but results is provided. Audio will be ignored.")
+        duration = results.duration
 
-    time_idx = int(audio.duration * results.time_resolution)
+    time_idx = int(duration / results.time_resolution)
     latent = results.features[:time_idx].float().numpy()
 
     return ChordFeatures(
-        duration=audio.duration,
+        duration=duration,
         features=latent,
-        times=np.arange(time_idx) / results.time_resolution
+        times=np.arange(time_idx) * results.time_resolution
     )
 
 

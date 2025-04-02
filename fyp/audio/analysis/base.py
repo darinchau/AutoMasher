@@ -147,7 +147,11 @@ class DiscreteLatentFeatures(ABC, Generic[T]):
     @classmethod
     @lru_cache(maxsize=1)
     def get_dist_array(cls):
-        """Get the distance array between all latent features"""
+        """Get the distance array between all latent features
+
+        The distance array is a square matrix of size latent_size x latent_size, where the element at (i, j) is the distance between the i-th and j-th latent features.
+        The distance is defined as the distance between the two latent features in the latent space. The distance function should be
+         defined in a way such that the final result is symmetric and positive definite but this restriction is currently not necessarily"""
         dist_array = np.zeros((cls.latent_size(), cls.latent_size()), dtype=np.float64)
         for i in range(cls.latent_size()):
             for j in range(cls.latent_size()):
