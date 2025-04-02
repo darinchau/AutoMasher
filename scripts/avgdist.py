@@ -62,8 +62,12 @@ def main(path: str):
             tqdm.write(f"Error loading audio file {path}: {e}")
             continue
 
-        result = get_chord_result(audio, use_cache=False)
-        dist_calc.update(result.features, result.logits)
+        try:
+            result = get_chord_result(audio, use_cache=False)
+            dist_calc.update(result.features, result.logits)
+        except Exception as e:
+            tqdm.write(f"Error processing audio file {path}: {e}")
+            continue
 
 
 if __name__ == "__main__":
