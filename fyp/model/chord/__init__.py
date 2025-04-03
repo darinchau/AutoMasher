@@ -9,6 +9,7 @@ from typing import Any
 from ...audio import Audio
 from .chord_modules import *
 import warnings
+import numpy as np
 
 
 @dataclass
@@ -82,21 +83,22 @@ class ChordModelOutput:
     time_resolution: float  # In Hz (number of features per second)
 
     def save(self, path: str):
-        torch.save({
-            'logits': self.logits,
-            'features': self.features,
-            'time_resolution': self.time_resolution,
-            'duration': self.duration
-        }, path)
+        np.savez_compressed(
+            path,
+            logits=self.logits.numpy(),
+            features=self.features.numpy(),
+            time_resolution=self.time_resolution,
+            duration=self.duration
+        )
 
     @staticmethod
     def load(path: str) -> 'ChordModelOutput':
-        file = torch.load(path)
+        file = np.load(path)
         return ChordModelOutput(
-            duration=file['duration'],
-            logits=file['logits'],
-            features=file['features'],
-            time_resolution=file['time_resolution']
+            duration=float(file['duration']),
+            logits=torch.tensor(file['logits']),
+            features=torch.tensor(file['features']),
+            time_resolution=float(file['time_resolution'])
         )
 
     def __post_init__(self):

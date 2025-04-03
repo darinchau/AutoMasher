@@ -6,6 +6,7 @@ import time
 import numpy as np
 import numba
 import torch
+import traceback
 from tqdm import tqdm, trange
 from fyp import YouTubeURL, get_url, Audio
 from fyp.audio.analysis.chord import get_chord_result, analyse_chord_features, analyse_chord_transformer
@@ -52,7 +53,7 @@ class DistanceCalculator:
 
 def main(path: str):
     sd = SongDataset(path, load_on_the_fly=True)
-    sd.register("chords", "{video_id}.json")
+    sd.register("chords", "{video_id}.npz")
     dist_calc = DistanceCalculator(num_classes=170)
     audios = sd.list_urls("audio")
     for url in tqdm(audios, desc="Processing audio files"):
@@ -69,6 +70,7 @@ def main(path: str):
             dist_calc.update(result.features, result.logits)
         except Exception as e:
             tqdm.write(f"Error processing audio file {path}: {e}")
+            tqdm.write(traceback.format_exc())
             continue
 
 
