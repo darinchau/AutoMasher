@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from math import log
 import typing
 import warnings
+from functools import cache
 
 if typing.TYPE_CHECKING:
     from ..dataset import SongDataset
@@ -52,13 +53,13 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
     chords: list[str] - The chord names. `chords[labels[i]]` is the chord name for the ith frame
     times: list[float] - The times of each frame
 
-    This uses the large voca chord system."""
+    This uses the large voca chord system. Override ChordAnalysisResult to use a different chord metric"""
     @classmethod
     def latent_size(cls):
         return len(get_idx2voca_chord())
 
     @classmethod
-    def distance(cls, x: int, y: int):
+    def distance(cls, x: int, y: int) -> float:
         x_idx = cls.map_feature_index(x)
         y_idx = cls.map_feature_index(y)
         chord_notes_map = get_chord_notes()
@@ -164,6 +165,25 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
         with open(path, "r") as f:
             data = json.load(f)
         return cls.from_data(data["duration"], data["labels"], data["times"])
+
+
+class ChordDeepDistance(ChordAnalysisResult):
+    """Use the deep learning distance matrix to calculate the distance between two chords
+    This matrix is symmetric, but not positive definite and also does not satisfy the triangle inequality."""
+
+    # lmk if there is a better way to do this
+    _DIST_MATRIX = np.load("resources/distance_calculator.npz")['distances_sum'][:, :, 0] / np.load("resources/distance_calculator.npz")['count'].clip(min=1)
+
+    @classmethod
+    def distance(cls, x: int, y: int) -> float:
+        if cls._DIST_MATRIX is None:
+            raise ValueError("Distance matrix not initialized")
+        return cls._DIST_MATRIX[x, y]
+
+    @staticmethod
+    def from_cr(cr: ChordAnalysisResult) -> ChordDeepDistance:
+        """Construct a ChordDeepDistance from a ChordAnalysisResult"""
+        return ChordDeepDistance(cr.duration, cr.features, cr.times)
 
 
 class ChordFeatures(ContinuousLatentFeatures):
