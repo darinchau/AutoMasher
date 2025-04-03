@@ -79,6 +79,7 @@ nohup.out
 !resources/ckpts
 resources/dataset/*
 resources/dataset/*/
+!resources/deep_dist.npz
 !resources/dataset/pack.db
 
 *.ipynb

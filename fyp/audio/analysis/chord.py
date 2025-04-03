@@ -57,7 +57,7 @@ class ChordMetric(Enum):
         if self == ChordMetric.DEFAULT:
             return ChordAnalysisResult.get_dist_array()
         elif self == ChordMetric.DEEP_LEARNING:
-            return np.load("resources/distance_calculator.npz")['distances_sum'][:, :, 0] / np.load("resources/distance_calculator.npz")['count'].clip(min=1)
+            return np.load("resources/deep_dist.npz")['distances_sum'][:, :, 0] / np.load("resources/deep_dist.npz")['count'].clip(min=1)
         else:
             raise ValueError(f"Invalid chord metric: {self}")
 

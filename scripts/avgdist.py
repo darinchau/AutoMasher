@@ -52,10 +52,11 @@ class DistanceCalculator:
 
 def main(path: str):
     sd = SongDataset(path, load_on_the_fly=True)
+    sd.register("chords", "{video_id}.json")
     dist_calc = DistanceCalculator(num_classes=170)
-    audios = sd.list_files("audio")
-    for path in tqdm(audios, desc="Processing audio files"):
-        path = os.path.join(sd.root, "audio", path)
+    audios = sd.list_urls("audio")
+    for url in tqdm(audios, desc="Processing audio files"):
+        path = sd.get_path("audio", url)
         try:
             audio = Audio.load(path)
         except Exception as e:
@@ -64,6 +65,7 @@ def main(path: str):
 
         try:
             result = get_chord_result(audio, use_cache=False)
+            result.save(sd.get_path("chords", url))
             dist_calc.update(result.features, result.logits)
         except Exception as e:
             tqdm.write(f"Error processing audio file {path}: {e}")
