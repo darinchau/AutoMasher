@@ -1,6 +1,7 @@
 # Searches the database using Rick Astley's "Never Gonna Give You Up" as an example
 
 from fyp import YouTubeURL, MashupConfig, mashup_song, MashupMode
+from fyp.audio.analysis.chord import ChordMetric
 
 
 def main():
@@ -72,6 +73,8 @@ def main():
         natural_vocal_activity_threshold=1,
         natural_vocal_proportion_threshold=0.8,
         natural_window_size=10,
+
+        chord_metric=ChordMetric.DEEP_LEARNING,
 
         save_original=True,
         _skip_mashup=False,

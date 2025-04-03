@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from ...util import YouTubeURL
 from ..analysis import ChordAnalysisResult, BeatAnalysisResult
+from ..analysis.chord import ChordMetric
 from tqdm.auto import tqdm
 import numpy as np
 from numpy.typing import NDArray
@@ -140,6 +141,7 @@ def get_valid_starting_points(music_duration: NDArray[np.float64],
 def calculate_mashability(
     submitted_entry: DatasetEntry,
     dataset: SongDataset,
+    chord_metric: ChordMetric = ChordMetric.DEFAULT,
     submitted_features: list[DiscreteLatentFeatures | ContinuousLatentFeatures] | None = None,
     features_fn: list[typing.Callable[[SongDataset, YouTubeURL, int], DiscreteLatentFeatures | ContinuousLatentFeatures]] | None = None,
     weights: list[float] | None = None,
@@ -214,8 +216,8 @@ def calculate_mashability(
     dist_arrays = [x.get_dist_array() if isinstance(x, DiscreteLatentFeatures) and x.latent_size() < 3000 else None for x in submitted_features]
 
     # 3. Calculate the distance between the submitted song and the sample song for each song
-    # TODO - Implement the parallel version of this
-    chord_distances_array = ChordAnalysisResult.get_dist_array()
+    chord_distances_array = chord_metric.get_dist_array()
+
     for entry in tqdm(dataset, desc="Searching database", disable=not verbose):
         valid_start_points = get_valid_starting_points(
             music_duration=entry.music_duration,

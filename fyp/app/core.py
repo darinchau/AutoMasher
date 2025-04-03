@@ -20,6 +20,7 @@ from numpy.typing import NDArray
 import librosa
 import base64
 import copy
+from ..audio.analysis.chord import ChordMetric
 
 
 class InvalidMashup(Exception):
@@ -64,6 +65,8 @@ class MashupConfig:
 
         filter_short_song_bar_threshold: The minimum number of bars for a song to be considered long enough. Default is 12.
 
+        filter_short_song_bar_threshold: The minimum number of chord progressions for a song to be considered long enough. Default is 12.
+
         filter_uncached: Whether to filter out songs that are not cached. Default is False.
 
         mashup_mode: The mode to use for the mashup. Default is MashupMode.NATURAL.
@@ -106,6 +109,7 @@ class MashupConfig:
     filter_uneven_bars_min_threshold: float = 0.9
     filter_uneven_bars_max_threshold: float = 1.1
     filter_short_song_bar_threshold: int = 12
+    filter_short_song_chord_threshold: int = 12
 
     mashup_mode: MashupMode = MashupMode.NATURAL
     natural_drum_activity_threshold: float = 1
@@ -116,6 +120,8 @@ class MashupConfig:
     left_pan: float = 0.15
     save_original: bool = False  # If true, save the original audio in resources/mashups/<mashup_id>
 
+    chord_metric: ChordMetric = ChordMetric.DEFAULT  # The chord metric to use for the mashup
+
     append_song_to_dataset: bool = False  # If true, append the song to the dataset after the search
     load_on_the_fly: bool = False  # If true, load the entries on the fly instead of loading everything at once
     assert_audio_exists: bool = False  # If true, assert that the audio exists in the dataset
@@ -123,7 +129,7 @@ class MashupConfig:
 
     # The path of stuff should not be exposed to the user
     dataset_path: str = "resources/dataset"
-    max_dataset_size: str = "16GB"
+    max_dataset_size: str | None = None
     _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
     _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
     _simple_chord_model_path: str = "resources/ckpts/btc_model.pt"
@@ -267,6 +273,9 @@ def load_dataset(config: MashupConfig) -> SongDataset:
 
     if config.filter_short_song_bar_threshold > 0:
         dataset = dataset.filter(lambda x: len(x.downbeats) >= config.filter_short_song_bar_threshold)
+
+    if config.filter_short_song_chord_threshold > 0:
+        dataset = dataset.filter(lambda x: len(x.chords.features) >= config.filter_short_song_chord_threshold)
 
     if config.filter_uneven_bars:
         def filter_func(x: DatasetEntry):
@@ -531,6 +540,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
     scores = calculate_mashability(
         submitted_entry,
         dataset,
+        chord_metric=config.chord_metric,
         max_transpose=config.max_transpose,
         min_music_percentage=config.min_music_percentage,
         delta_bpm=(config.min_delta_bpm, config.max_delta_bpm),

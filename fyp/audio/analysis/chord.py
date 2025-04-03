@@ -29,6 +29,8 @@ import typing
 import warnings
 from functools import cache
 
+from enum import Enum
+
 if typing.TYPE_CHECKING:
     from ..dataset import SongDataset
 
@@ -43,6 +45,21 @@ DIFFERENT_QUALITY_PENALTY = 3
 
 LARGE_VOCA_CHORD_DATASET_KEY = "chord_btc_large_voca"
 SIMPLE_CHORD_DATASET_KEY = "chord_btc"
+
+
+class ChordMetric(Enum):
+    """The chord metric to use for the analysis"""
+    DEFAULT = "symmetric_diff"
+    DEEP_LEARNING = "deep_learning"
+
+    def get_dist_array(self) -> NDArray:
+        """Get the distance matrix for the chord metric"""
+        if self == ChordMetric.DEFAULT:
+            return ChordAnalysisResult.get_dist_array()
+        elif self == ChordMetric.DEEP_LEARNING:
+            return np.load("resources/distance_calculator.npz")['distances_sum'][:, :, 0] / np.load("resources/distance_calculator.npz")['count'].clip(min=1)
+        else:
+            raise ValueError(f"Invalid chord metric: {self}")
 
 
 @dataclass(frozen=True)
@@ -165,25 +182,6 @@ class ChordAnalysisResult(DiscreteLatentFeatures[str]):
         with open(path, "r") as f:
             data = json.load(f)
         return cls.from_data(data["duration"], data["labels"], data["times"])
-
-
-class ChordDeepDistance(ChordAnalysisResult):
-    """Use the deep learning distance matrix to calculate the distance between two chords
-    This matrix is symmetric, but not positive definite and also does not satisfy the triangle inequality."""
-
-    # lmk if there is a better way to do this
-    _DIST_MATRIX = np.load("resources/distance_calculator.npz")['distances_sum'][:, :, 0] / np.load("resources/distance_calculator.npz")['count'].clip(min=1)
-
-    @classmethod
-    def distance(cls, x: int, y: int) -> float:
-        if cls._DIST_MATRIX is None:
-            raise ValueError("Distance matrix not initialized")
-        return cls._DIST_MATRIX[x, y]
-
-    @staticmethod
-    def from_cr(cr: ChordAnalysisResult) -> ChordDeepDistance:
-        """Construct a ChordDeepDistance from a ChordAnalysisResult"""
-        return ChordDeepDistance(cr.duration, cr.features, cr.times)
 
 
 class ChordFeatures(ContinuousLatentFeatures):
