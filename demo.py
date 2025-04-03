@@ -19,6 +19,7 @@ from fyp import mashup_song, MashupConfig, MashupMode, get_url, InvalidMashup, A
 # Set to None to disable caching
 CACHE_DIR: str | None = "./resources/cache"
 
+
 def get_mashup_mode_desc_map():
     return {
         MashupMode.VOCAL_A: "Vocal A",
@@ -30,11 +31,13 @@ def get_mashup_mode_desc_map():
         MashupMode.NATURAL: "Let the system decide",
     }
 
+
 def pack_audio(audio: Audio):
     return gr.Audio((
         int(audio.sample_rate),
         audio.numpy()
     ))
+
 
 def mashup(
     input_yt_link: str,
@@ -106,6 +109,7 @@ def mashup(
         print(traceback.format_exc())
         return gr.Textbox(f"Error: {e}"), None
 
+
 def get_audio_from_link(input_yt_link: str, starting_point: float, dataset_path: str):
     try:
         link = get_url(input_yt_link)
@@ -114,7 +118,7 @@ def get_audio_from_link(input_yt_link: str, starting_point: float, dataset_path:
 
     title = link.title
     # Set load_on_the_fly to True to avoid loading the entire dataset into memory
-    dataset = load_dataset(MashupConfig(1, dataset_path = dataset_path, load_on_the_fly=True))
+    dataset = load_dataset(MashupConfig(1, dataset_path=dataset_path, load_on_the_fly=True))
 
     try:
         audio = dataset.get_audio(link)
@@ -126,9 +130,11 @@ def get_audio_from_link(input_yt_link: str, starting_point: float, dataset_path:
 
     return gr.Textbox(title), pack_audio(audio)
 
+
 def get_base64_logo():
     with open("resources/assets/auto_mashup.png", "rb") as f:
         return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
+
 
 def app():
     with gr.Blocks(title="AutoMasher", css=".center-logo{margin: auto}") as app:
@@ -179,7 +185,7 @@ def app():
             with gr.Accordion("Advanced Settings"):
                 with gr.Group():
                     with gr.Row(variant="panel"):
-                        with gr.Column(scale=1.3): # type: ignore
+                        with gr.Column(scale=1.3):  # type: ignore
                             with gr.Row():
                                 min_transpose_slider = gr.Slider(
                                     label="Min Transpose",
@@ -223,12 +229,12 @@ def app():
                                 ),
                                 value="Let the system decide",
                                 interactive=True,
-                                info="The mode to use when mashing up the songs. " \
-                                    "Vocals A will keep the vocals of song A and the music of song B. Vocals B will keep the vocals of song B and the music of song A" \
-                                    "DRUMS_A will keep the drums of song A and the music of song B. DRUMS_B will keep the drums of song B and the music of song A. " \
-                                    "VOCALS_NATURAL will pick between VOCALS_A and VOCALS_B based on the activity of the vocals using some heuristics" \
-                                    "DRUMS_NATURAL will pick between DRUMS_A and DRUMS_B based on the activity of the drums using heuristics below."  \
-                                    "NATURAL will pick between VOCALS_NATURAL and DRUMS_NATURAL based on the activity of the vocals and drums using some heuristics"
+                                info="The mode to use when mashing up the songs. "
+                                "Vocals A will keep the vocals of song A and the music of song B. Vocals B will keep the vocals of song B and the music of song A"
+                                "DRUMS_A will keep the drums of song A and the music of song B. DRUMS_B will keep the drums of song B and the music of song A. "
+                                "VOCALS_NATURAL will pick between VOCALS_A and VOCALS_B based on the activity of the vocals using some heuristics"
+                                "DRUMS_NATURAL will pick between DRUMS_A and DRUMS_B based on the activity of the drums using heuristics below."
+                                "NATURAL will pick between VOCALS_NATURAL and DRUMS_NATURAL based on the activity of the vocals and drums using some heuristics"
                             )
                             mashup_id = gr.Textbox(
                                 label="Mashup ID",
@@ -272,7 +278,7 @@ def app():
                                     interactive=True,
                                     value=5,
                                     minimum=-1,
-                                    info = "Keep only the top k results from the pipeline instead of returning all results. This will make some parts slightly more efficient but mostly it's for debugging purposes. Set to -1 to keep all results"
+                                    info="Keep only the top k results from the pipeline instead of returning all results. This will make some parts slightly more efficient but mostly it's for debugging purposes. Set to -1 to keep all results"
                                 )
                             with gr.Row():
                                 filter_first = gr.Checkbox(

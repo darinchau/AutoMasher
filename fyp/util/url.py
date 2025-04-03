@@ -10,6 +10,7 @@ import re
 _VIDEO_ID = re.compile(r"[A-Za-z0-9-_]{11}")
 _URL = re.compile(r"^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9-_]{11}$")
 
+
 class YouTubeURL(str):
     URL_PREPEND = "https://www.youtube.com/watch?v="
 
@@ -42,7 +43,11 @@ class YouTubeURL(str):
     @property
     def title(self):
         """Gets the title of the video."""
-        return to_youtube(self).title
+        try:
+            return to_youtube(self).title
+        except Exception as e:
+            print(f"Error getting title: {e}")
+            return "*Could not get title*"
 
     def get_length(self):
         """Gets the length of the video in seconds."""
@@ -68,17 +73,20 @@ class YouTubeURL(str):
         views = video_details.get("viewCount")
         return int(views) if views is not None else None
 
+
 def to_youtube(link_or_video_id: str):
     link_or_video_id = link_or_video_id.strip()
     if _VIDEO_ID.match(link_or_video_id):
         return YouTube(f"https://www.youtube.com/watch?v={link_or_video_id}")
     return YouTube(link_or_video_id)
 
+
 def get_video_id(link_or_video_id: str):
     """Gets the video id. Example: dQw4w9WgXcQ"""
     url_id = to_youtube(link_or_video_id).video_id
     assert url_id is not None and len(url_id) == 11
     return url_id
+
 
 def get_url(link_or_video_id: str) -> YouTubeURL:
     """Gets the url in the form of https://www.youtube.com/watch?v=dQw4w9WgXcQ
@@ -95,30 +103,21 @@ def get_url(link_or_video_id: str) -> YouTubeURL:
     return YouTubeURL(url)
 
 # A little function to clear cuda cache. Put the import inside just in case we do not need torch, because torch import takes too long
+
+
 def clear_cuda():
     import torch
     gc.collect()
     torch.cuda.empty_cache()
 
-def is_ipython():
-    try:
-        __IPYTHON__
-        return True
-    except NameError:
-        return False
-
-def is_colab():
-    try:
-        import google.colab
-        return True
-    except ImportError:
-        return False
 
 def is_posix():
     return os.name == 'posix'
 
 # Convert video file to .wav format with 48kHz sample rate
-def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose = True):
+
+
+def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose=True):
     try:
         video = VideoFileClip(video_path)
         audio = video.audio
@@ -135,6 +134,8 @@ def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose = Tru
         return "Error converting to wav", e
 
 # Download video from YouTube given a URL and an output path
+
+
 def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
     def progress_callback(stream, chunk, bytes_remaining):
         nonlocal progress_bar
@@ -152,6 +153,7 @@ def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
         return os.path.join(output_path, video.default_filename)
     except Exception as e:
         return "Error downloading video", e
+
 
 def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True):
     try:
@@ -181,18 +183,21 @@ def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True):
             return os.path.join(output_dir, file)
     raise FileNotFoundError(f"Could not find downloaded file for {link}: {retcode}")
 
+
 def download_audio_with_pytube(link: str, output_dir: str, verbose=True, timeout=120) -> str:
     yt = YouTube(link)
     video_path = download_video(yt, output_dir, verbose=verbose, timeout=timeout)
     if isinstance(video_path, tuple):
         raise RuntimeError(f"Error downloading video: {video_path[1]}")
 
-    audio_path = convert_to_wav(video_path, output_dir, verbose = False)
+    audio_path = convert_to_wav(video_path, output_dir, verbose=False)
     if isinstance(audio_path, tuple):
         raise RuntimeError(f"Error converting to wav: {audio_path[1]}")
     return audio_path
 
 # More often than not we only want the audio so here is one combined function
+
+
 def download_audio(link: str, output_dir: str, verbose=True, timeout=120):
     try:
         return download_audio_with_pytube(link, output_dir, verbose=verbose, timeout=timeout)

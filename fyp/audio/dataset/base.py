@@ -164,6 +164,9 @@ class SongDataset:
     - get_or_create_entry: DatasetEntry: Gets or creates the entry for the given url
     - pack: None: Packs the dataset into a single file
     - pickle: None: Pickles the dataset into a single file
+
+    The dataset can be loaded from hugging face. Make sure to have hf datasets installed. Then put "hf://<dataset_name>" as the root directory.
+    The dataset will be downloaded and unpacked into the directory: './resources/dataset'.
     """
 
     def __init__(self, root: str, *,
@@ -171,13 +174,21 @@ class SongDataset:
                  assert_audio_exists: bool = False,
                  max_dir_size: str | None = None
                  ):
-        if not os.path.exists(root):
-            raise FileNotFoundError(f"Directory {root} does not exist")
-
+        self._data: dict[YouTubeURL, DatasetEntry] = {}
         self.root = root
         self.load_on_the_fly = load_on_the_fly
         self.assert_audio_exists = assert_audio_exists
         self.filters: list[Callable[[DatasetEntry], bool]] = []
+
+        if root.startswith("hf://"):
+            hf_dataset_name = root[5:]
+            self._maybe_load_from_hf(hf_dataset_name)
+            loaded_from_hf = True
+        else:
+            loaded_from_hf = False
+
+        if not os.path.exists(self.root):
+            raise FileNotFoundError(f"Directory {self.root} does not exist")
 
         # Interpret max_dir_size
         if max_dir_size is not None:
@@ -200,7 +211,11 @@ class SongDataset:
         self.purge_list = ["parts", "audio"]
         self._purge_files()
 
-        self._data: dict[YouTubeURL, DatasetEntry] = {}
+        if not self.list_files("datafiles") and not loaded_from_hf:
+            response = input("No datafiles found. Do you want to load the dataset from the directory? (y/n)")
+            if response.lower() == "y":
+                self._maybe_load_from_hf("HKUST-FYPHO2/audio-infos-filtered")
+                loaded_from_hf = True
 
         # There may be extra data in the dataset in places other than the packed db - but that shouldnt matter
         if not self.load_on_the_fly:
@@ -209,10 +224,52 @@ class SongDataset:
             else:
                 self.load_from_directory()
 
+        # If loaded from hf, we definitely want to save the dataset for future use
+        if loaded_from_hf:
+            self.pack()
+
         # Make backup of infos
         with open(self.get_path("info"), "r") as f:
             _info = json.load(f)
         _safe_write_json(_info, self.get_path("info") + ".bak")
+
+    def _maybe_load_from_hf(self, dataset_name: str):
+        """Load the dataset from hugging face"""
+        try:
+            import datasets
+            from datasets import load_dataset
+        except ImportError:
+            raise ImportError("Please install datasets to load from hugging face: pip install datasets")
+
+        if not os.path.exists("./resources/dataset"):
+            os.makedirs("./resources/dataset")
+        dataset = load_dataset(dataset_name, split="train")
+        self.root = "./resources/dataset"
+
+        for entry in tqdm(dataset, desc="Loading dataset from hf...", disable=False):
+            url = get_url(entry["url"])
+            try:
+                entry = create_entry(
+                    url,
+                    chords=ChordAnalysisResult(
+                        features=np.array(entry["chords"], dtype=np.uint32),
+                        times=np.array(entry["chord_times"]),
+                        duration=entry["length"],
+                    ),
+                    downbeats=OnsetFeatures(
+                        duration=entry["length"],
+                        onsets=np.array(entry["downbeats"]),
+                    ),
+                    beats=OnsetFeatures(
+                        duration=entry["length"],
+                        onsets=np.array(entry["beats"]),
+                    ),
+                    source="fyp",
+                )
+            except Exception as e:
+                tqdm.write(f"Error loading {url}: {e}")
+                continue
+            self._data[url] = entry
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""

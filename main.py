@@ -2,6 +2,7 @@
 
 from fyp import YouTubeURL, MashupConfig, mashup_song, MashupMode
 
+
 def main():
     link = YouTubeURL("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     config = MashupConfig(
@@ -74,7 +75,7 @@ def main():
 
         save_original=True,
         _skip_mashup=False,
-        dataset_path="./resources/dataset",
+        dataset_path="hf://HKUST-FYPHO2/audio-infos-filtered",
         _verbose=True
     )
 
@@ -82,6 +83,7 @@ def main():
     audio, scores, msg = mashup_song(link, config)
     print(msg)
     audio.save("output.wav")
+
 
 if __name__ == "__main__":
     main()
