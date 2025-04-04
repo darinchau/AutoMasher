@@ -55,8 +55,13 @@ class FatalError(Exception):
 def download_audio(ds: SongDataset, urls: list[YouTubeURL]):
     """Downloads the audio from the URLs. Yields the audio and the URL."""
     def download_audio_single(url: YouTubeURL) -> Audio:
-        # Wait for a random amount of time to avoid getting blacklisted
+        path = ds.get_path("audio", url)
+        if os.path.exists(path):
+            # No need to wait if we are loading from cache
+            return Audio.load(path)
+
         audio = Audio.load(url)
+        # Wait for a random amount of time to avoid getting blacklisted
         time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
         return audio
 
@@ -129,6 +134,7 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL]):
                 beat_backend_url="http://localhost:8123",
                 use_beat_cache=False,
                 use_chord_cache=False,
+                source="laion-12m"
             )
         except DeadBeatKernel as e:
             raise FatalError(f"Beat kernel is unresponsive: {url}") from e
@@ -152,6 +158,13 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL]):
 
 
 def get_candidate_urls(ds: SongDataset) -> list[YouTubeURL]:
+    # TODO remove this - temporarily only use the audios that we already have around
+    candidates = set(ds.list_urls("audio"))
+    processed = set(ds.list_urls("datafiles"))
+    return sorted(
+        (url for url in candidates if url not in processed),
+        key=lambda x: x.video_id
+    )
     candidates = ds.read_info(CANDIDATE_URLS)
     assert candidates is not None
     finished = ds.read_info_urls(PROCESSED_URLS) | ds.read_info_urls(REJECTED_URLS)

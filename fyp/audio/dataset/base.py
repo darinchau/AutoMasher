@@ -374,7 +374,7 @@ class SongDataset:
         return
 
     def get_path(self, key: str, url: YouTubeURL | None = None) -> str:
-        """Get the file path for the given key and url"""
+        """Get the (absolute) file path for the given key and url"""
         if url is not None and url.is_placeholder:
             raise ValueError("Cannot get data path for placeholder url")
         with open(self.metadata_path, "r") as f:
@@ -393,7 +393,7 @@ class SongDataset:
         return os.path.isfile(self.get_path(key, url))
 
     def list_files(self, key: str) -> list[str]:
-        """List all the files in the given key"""
+        """List all the files in the given key. Returns a list of filenames (not full paths)"""
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         if key not in metadata["file_structure"]:
