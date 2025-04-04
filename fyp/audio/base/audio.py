@@ -16,7 +16,7 @@ import threading
 import torch
 import torchaudio
 import torchaudio.functional as F
-from ...util import download_audio, is_ipython, YouTubeURL
+from ...util import is_ipython, YouTubeURL, get_url
 from abc import ABC, abstractmethod
 from enum import Enum
 from math import pi as PI
@@ -198,7 +198,7 @@ class Audio:
         return self.slice_frames(start_frame, end_frame)
 
     @classmethod
-    def load(cls, fpath: str, *, cache_dir: str | None = None) -> Audio:
+    def load(cls, fpath: str) -> Audio:
         """
         Loads an audio file from a given file path, and returns the audio as a tensor.
         Output shape: (channels, N) where N = duration (seconds) x sample rate (hz)
@@ -206,40 +206,16 @@ class Audio:
         if channels == 1, then take the mean across the audio
         if channels == audio channels, then leave it alone
         otherwise we will take the mean and duplicate the tensor until we get the desired number of channels
-
-        Cache Path will be ignored if the file path is not a youtube url
         """
         try:
-            fpath = YouTubeURL(fpath)
+            fpath = get_url(fpath)
         except Exception as e:
             pass
 
-        cache_path = None
-        if isinstance(fpath, YouTubeURL) and cache_dir is not None:
-            cache_path = os.path.join(cache_dir, fpath.video_id + ".wav")
-            if os.path.isfile(cache_path):
-                try:
-                    return cls.load(cache_path)
-                except Exception as e:
-                    logger.warning(f"Error loading the cache file: {e}")
-                    logger.warning("Loading from youtube instead")
-            os.makedirs(cache_dir, exist_ok=True)
-
         # Load from youtube if the file path is a youtube url
         if isinstance(fpath, YouTubeURL):
-            tempdir = tempfile.gettempdir()
-            tmp_audio_path = download_audio(fpath, tempdir, verbose=False)
-            a = cls.load(tmp_audio_path)
-
-            # Attempt to delete the temporary file created
-            try:
-                os.remove(tmp_audio_path)
-            except Exception as e:
-                pass
-
-            if cache_path is not None:
-                a.save(cache_path)
-            return a
+            from .download import get_audio
+            return get_audio(fpath)
 
         try:
             wav, sr = torchaudio.load(fpath)
