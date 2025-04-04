@@ -90,3 +90,4 @@ scripts/*
 !scripts/*.ipynb
 *.lprof
 wandb
+output.wav

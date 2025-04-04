@@ -50,14 +50,20 @@ SIMPLE_CHORD_DATASET_KEY = "chord_btc"
 class ChordMetric(Enum):
     """The chord metric to use for the analysis"""
     DEFAULT = "symmetric_diff"
-    DEEP_LEARNING = "deep_learning"
+    MONTE_CARLO = "monte_carlo"
+    KL_DIVERGENCE = "kl_divergence"
+    JENSEN_SHANNON = "jensen_shannon"
 
     def get_dist_array(self) -> NDArray:
         """Get the distance matrix for the chord metric"""
         if self == ChordMetric.DEFAULT:
             return ChordAnalysisResult.get_dist_array()
-        elif self == ChordMetric.DEEP_LEARNING:
+        elif self == ChordMetric.MONTE_CARLO:
             return np.load("resources/deep_dist.npz")['distances_sum'][:, :, 0] / np.load("resources/deep_dist.npz")['count'].clip(min=1)
+        elif self == ChordMetric.KL_DIVERGENCE:
+            return np.load("resources/kl_divergence_matrix.npz")['kl_matrix']
+        elif self == ChordMetric.JENSEN_SHANNON:
+            return np.load("resources/jensen_shannon_matrix.npz")['js_matrix']
         else:
             raise ValueError(f"Invalid chord metric: {self}")
 

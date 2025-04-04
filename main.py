@@ -74,12 +74,12 @@ def main():
         natural_vocal_proportion_threshold=0.8,
         natural_window_size=10,
 
-        chord_metric=ChordMetric.DEEP_LEARNING,
+        chord_metric=ChordMetric.KL_DIVERGENCE,
 
         save_original=True,
         _skip_mashup=False,
         dataset_path="hf://HKUST-FYPHO2/audio-infos-filtered",
-        _verbose=True
+        _verbose=True,
     )
 
     # Search the song
