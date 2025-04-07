@@ -5,3 +5,7 @@ class DeadBeatKernel(Exception):
 class InvalidMashup(Exception):
     """Raised when the mashup is invalid. The user should check the mashup config and try again"""
     pass
+
+class BadMashup(Exception):
+    """An internal error that indicates that the mashup is very likely bad."""
+    pass
