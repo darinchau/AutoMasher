@@ -21,10 +21,7 @@ import librosa
 import base64
 import copy
 from ..audio.analysis.chord import ChordMetric
-
-
-class InvalidMashup(Exception):
-    pass
+from ..util.exception import InvalidMashup
 
 
 @dataclass(frozen=True)
