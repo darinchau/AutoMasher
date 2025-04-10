@@ -21,18 +21,13 @@ from contextlib import contextmanager
 import json
 import torch
 from ...util import YouTubeURL
+from ...util.exception import DeadBeatKernel
 import typing
 
 if typing.TYPE_CHECKING:
     from ..dataset import SongDataset
 
 BEAT_DATASET_KEY = "beats"
-
-
-class DeadBeatKernel(RuntimeError):
-    """Raised when the beat kernel is dead"""
-    pass
-
 
 @dataclass(frozen=True)
 class BeatAnalysisResult:

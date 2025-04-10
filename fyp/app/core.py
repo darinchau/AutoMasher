@@ -21,10 +21,7 @@ import librosa
 import base64
 import copy
 from ..audio.analysis.chord import ChordMetric
-
-
-class InvalidMashup(Exception):
-    pass
+from ..util.exception import InvalidMashup, BadMashup
 
 
 @dataclass(frozen=True)
@@ -331,9 +328,9 @@ def get_search_result_log(link: YouTubeURL,
                           config: MashupConfig,
                           slice_start_a: float,
                           scores: list[tuple[float, MashabilityResult]],
-                          best_result_idx: int,
-                          best_result: MashabilityResult,
-                          verbose: bool) -> str:
+                          best_result: MashabilityResult | None = None,
+                          best_result_idx: int = -1,
+                          verbose: bool = False) -> str:
     write = print if verbose else lambda x: None
     system_messages: list[str] = ["Here are some other mashups you can consider:"]
 
@@ -347,7 +344,9 @@ def get_search_result_log(link: YouTubeURL,
             transpose=result.transpose,
         )
         write(f"Result {i + 1}: {result.url} with score {score}. ID: {mashup_id.to_string()}")
-        if i == best_result_idx and i < config._max_show_results:
+        show_best_result = best_result is not None and best_result_idx == i and i < config._max_show_results
+        if show_best_result:
+            assert best_result is not None # To satisfy the type checker
             system_messages = [f"Created mashup with {best_result.title} ({best_result.url}) with score {scores[0][0]} (ID: {mashup_id.to_string()})"] + system_messages
         elif i < config._max_show_results:
             system_messages.append(f"> {result.title} {result.url} with score {score}. ID: {mashup_id.to_string()}")
@@ -432,7 +431,7 @@ def mashup_from_id(mashup_id_str: str, config: MashupConfig | None = None, datas
         config = MashupConfig(starting_point=mashup_id.song_a_start_time)
 
     validate_config(config)
-    def write(x): return print(x, flush=True) if config._verbose else lambda x: None
+    write = print if config._verbose else lambda x: None
     write(f"Creating mashup from ID {mashup_id_str}")
 
     dataset = load_dataset(config) if dataset is None else dataset
@@ -486,7 +485,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
     Mashup the given audio with the dataset.
     """
     validate_config(config)
-    def write(x): return print(x, flush=True) if config._verbose else lambda x: None
+    write = print if config._verbose else lambda x: None
     write(f"Creating mashup for {link}")
 
     if dataset is None:
@@ -554,31 +553,54 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         raise InvalidMashup("No suitable songs found in the dataset.")
     write(f"Got {len(scores)} results.")
 
-    best_result_idx = 0
-    best_result = scores[best_result_idx][1]
-    system_messages = get_search_result_log(link, config, slice_start_a, scores, best_result_idx, best_result, verbose=config._verbose)
-
     if config._skip_mashup:
+        system_messages = get_search_result_log(link, config, slice_start_a, scores, verbose=config._verbose)
         return a_audio.slice_seconds(slice_start_a, slice_end_a), scores, system_messages
 
-    # Create mashup
-    mashup_id = MashupID(
-        song_a=link,
-        song_a_start_time=config.starting_point,
-        song_b=best_result.url,
-        song_b_start_bar=best_result.start_bar,
-        transpose=best_result.transpose,
-    )
+    best_result_idx = -1
+    mashup: Audio | None = None
+    submitted_audio_a: Audio | None = None
+    submitted_audio_b: Audio | None = None
+    mashup_id: MashupID | None = None
+    best_result: MashabilityResult | None = None
+    for i in range(len(scores)):
+        best_result = scores[i][1]
+        best_result_idx = i
+        try:
+            # Create mashup
+            mashup_id = MashupID(
+                song_a=link,
+                song_a_start_time=config.starting_point,
+                song_b=best_result.url,
+                song_b_start_bar=best_result.start_bar,
+                transpose=best_result.transpose,
+            )
 
-    submitted_audio_a, submitted_audio_b, mashup = create_mash(
-        dataset=dataset,
-        submitted_audio_a=a_audio.slice_seconds(slice_start_a, slice_end_a),
-        submitted_entry_a=submitted_entry,
-        submitted_parts_a=dataset.get_parts(link).slice_seconds(slice_start_a, slice_end_a),
-        best_result_url=best_result.url,
-        best_result_start_bar=best_result.start_bar,
-        best_result_transpose=best_result.transpose,
-        config=config,
+            submitted_audio_a, submitted_audio_b, mashup = create_mash(
+                dataset=dataset,
+                submitted_audio_a=a_audio.slice_seconds(slice_start_a, slice_end_a),
+                submitted_entry_a=submitted_entry,
+                submitted_parts_a=dataset.get_parts(link).slice_seconds(slice_start_a, slice_end_a),
+                best_result_url=best_result.url,
+                best_result_start_bar=best_result.start_bar,
+                best_result_transpose=best_result.transpose,
+                config=config,
+            )
+            break
+        except BadMashup as e:
+            write(f">>> Mashup {i} ({best_result.url}) failed: {e}")
+
+    if mashup is None or submitted_audio_a is None or submitted_audio_b is None or mashup_id is None or best_result is None:
+        raise InvalidMashup("No suitable songs to create mashup")
+
+    system_messages = get_search_result_log(
+        link,
+        config,
+        slice_start_a,
+        scores,
+        best_result=best_result,
+        best_result_idx=best_result_idx,
+        verbose=config._verbose
     )
 
     save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
@@ -590,7 +612,7 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
 
 def mashup_from_audio(audio: Audio, config: MashupConfig):
     """Performs a mashup from an audio file."""
-    def write(x): return print(x, flush=True) if config._verbose else lambda x: None
+    write = print if config._verbose else lambda x: None
     write(f"Creating mashup from audio")
 
     write("Analyzing audio...")
@@ -664,7 +686,15 @@ def mashup_from_audio(audio: Audio, config: MashupConfig):
         transpose=best_result.transpose,
     )
 
-    system_messages = get_search_result_log(YouTubeURL.get_placeholder(), config, slice_start_a, scores, best_result_idx, best_result, verbose=config._verbose)
+    system_messages = get_search_result_log(
+        YouTubeURL.get_placeholder(),
+        config,
+        slice_start_a,
+        scores,
+        best_result=best_result,
+        best_result_idx=best_result_idx,
+        verbose=config._verbose
+    )
 
     save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
     if config.append_song_to_dataset:
