@@ -36,7 +36,7 @@ def get_model(model_path: str, device: torch.device, use_loaded_model: bool = Tr
     if _BEAT_MODEL is not None and use_loaded_model:
         return _BEAT_MODEL
     model = DemixedDilatedTransformerModel(attn_len=5, instr=5, ntoken=2, dmodel=256, nhead=8, d_hid=1024, nlayers=9, norm_first=True)
-    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu'))['state_dict'])
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)['state_dict'])
     model.to(device)
     model.eval()
     _BEAT_MODEL = model

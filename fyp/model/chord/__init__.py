@@ -64,7 +64,7 @@ def get_model(model_path: str, device: torch.device, use_voca: bool) -> tuple[BT
 
     # Load the model
     model = BTCModel(config=config.model).to(device)
-    checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     mean = checkpoint['mean']
     std = checkpoint['std']
     try:

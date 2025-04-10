@@ -33,13 +33,17 @@ git clone https://github.com/darinchau/AutoMasher
 ```bash
 cd AutoMasher
 python3.12 -m venv .venv
-sudo chmod 777 .venv/bin/activate
 source .venv/bin/activate
 ```
 
 3. Install the required packages
 ```bash
 pip install -r requirements.txt
+```
+
+4. Install Pytorch
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
 4. Run the Gradio web demo

@@ -54,49 +54,52 @@ class FatalError(Exception):
 
 def download_audio(ds: SongDataset, urls: list[YouTubeURL]):
     """Downloads the audio from the URLs. Yields the audio and the URL."""
-    def download_audio_single(url: YouTubeURL) -> Audio:
+    for url in urls:
         path = ds.get_path("audio", url)
-        if os.path.exists(path):
-            # No need to wait if we are loading from cache
-            return Audio.load(path)
+        yield Audio.load(path), url
+    # def download_audio_single(url: YouTubeURL) -> Audio:
+    #     path = ds.get_path("audio", url)
+    #     if os.path.exists(path):
+    #         # No need to wait if we are loading from cache
+    #         return Audio.load(path)
 
-        audio = Audio.load(url)
-        # Wait for a random amount of time to avoid getting blacklisted
-        time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
-        return audio
+    #     audio = Audio.load(url)
+    #     # Wait for a random amount of time to avoid getting blacklisted
+    #     time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
+    #     return audio
 
     # Downloads the things concurrently and yields them one by one
     # If more than MAX_ERRORS fails in MAX_ERRORS_TIME seconds, then we assume YT has blacklisted our IP or our internet is down or smth and we stop
-    error_logs = []
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        futures = {executor.submit(download_audio_single, url): url for url in urls}
-        for future in as_completed(futures):
-            url = futures[future]
-            try:
-                audio = future.result()
-                tqdm.write(f"Downloaded audio: {url}")
-                yield audio, url
-            except Exception as e:
-                if "This video is not available" in str(e):
-                    ds.write_info(REJECTED_URLS, url)
-                    tqdm.write(f"Rejected URL: {url} (This video is not available.)")
-                    continue
-                if "Sign in to confirm your age" in str(e):
-                    ds.write_info(REJECTED_URLS, url)
-                    tqdm.write(f"Rejected URL: {url} (Sign in to confirm your age)")
-                    continue
-                ds.write_error(f"Failed to download audio: {url}", e, print_fn=tqdm.write)
-                error_logs.append((time.time(), e))
-                if len(error_logs) >= MAX_ERRORS:
-                    if time.time() - error_logs[0][0] < MAX_ERRORS_TIME:
-                        tqdm.write(f"Too many errors in a short time, has YouTube blacklisted us?")
-                        for t, e in error_logs:
-                            tqdm.write(f"Error ({t}): {e}")
-                        # Stop all the other downloads
-                        for future in futures:
-                            future.cancel()
-                        raise FatalError(f"Too many errors in a short time, has YouTube blacklisted us?")
-                    error_logs.pop(0)
+    # error_logs = []
+    # with ThreadPoolExecutor(max_workers=1) as executor:
+    #     futures = {executor.submit(download_audio_single, url): url for url in urls}
+    #     for future in as_completed(futures):
+    #         url = futures[future]
+    #         try:
+    #             audio = future.result()
+    #             tqdm.write(f"Downloaded audio: {url}")
+    #             yield audio, url
+    #         except Exception as e:
+    #             if "This video is not available" in str(e):
+    #                 ds.write_info(REJECTED_URLS, url)
+    #                 tqdm.write(f"Rejected URL: {url} (This video is not available.)")
+    #                 continue
+    #             if "Sign in to confirm your age" in str(e):
+    #                 ds.write_info(REJECTED_URLS, url)
+    #                 tqdm.write(f"Rejected URL: {url} (Sign in to confirm your age)")
+    #                 continue
+    #             ds.write_error(f"Failed to download audio: {url}", e, print_fn=tqdm.write)
+    #             error_logs.append((time.time(), e))
+    #             if len(error_logs) >= MAX_ERRORS:
+    #                 if time.time() - error_logs[0][0] < MAX_ERRORS_TIME:
+    #                     tqdm.write(f"Too many errors in a short time, has YouTube blacklisted us?")
+    #                     for t, e in error_logs:
+    #                         tqdm.write(f"Error ({t}): {e}")
+    #                     # Stop all the other downloads
+    #                     for future in futures:
+    #                         future.cancel()
+    #                     raise FatalError(f"Too many errors in a short time, has YouTube blacklisted us?")
+    #                 error_logs.pop(0)
 
 
 def process_batch(ds: SongDataset, urls: list[YouTubeURL]):
@@ -241,9 +244,10 @@ def main(root_dir: str):
 
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        print(f"Usage: python -m scripts.make_v3_dataset <root_dir>")
-        sys.exit(1)
-    root_dir = sys.argv[1]
+    # import sys
+    # if len(sys.argv) != 2:
+    #     print(f"Usage: python -m scripts.make_v3_dataset <root_dir>")
+    #     sys.exit(1)
+    # root_dir = sys.argv[1]
+    root_dir = r"E:\audio-dataset-v3"
     main(root_dir)
