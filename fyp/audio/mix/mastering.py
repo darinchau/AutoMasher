@@ -3,7 +3,6 @@
 import os
 from typing import Any
 import tempfile
-import matchering as mg
 import torch
 from ..base import Audio, DemucsCollection
 from ..manipulation import HighpassFilter
@@ -12,6 +11,10 @@ import torch.nn.functional as F
 
 def mastering(audio: Audio, reference: Audio) -> Audio:
     """Master the audio using the reference audio"""
+    try:
+        import matchering as mg
+    except ImportError as e:
+        raise ImportError("Please `pip install matchering` to master the audio")
     with tempfile.TemporaryDirectory() as temp_dir:
         mashup_path = os.path.join(temp_dir, "mashup.wav")
         ref_path = os.path.join(temp_dir, "ref.wav")

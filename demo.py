@@ -116,7 +116,7 @@ def get_audio_from_link(input_yt_link: str, starting_point: float, dataset_path:
     except Exception as e:
         return gr.Textbox(f"Error: Invalid YouTube link ({e})"), None
 
-    title = link.title
+    title = link.video_title
     # Set load_on_the_fly to True to avoid loading the entire dataset into memory
     dataset = load_dataset(MashupConfig(1, dataset_path=dataset_path, load_on_the_fly=True))
 

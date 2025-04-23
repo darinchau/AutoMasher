@@ -4,10 +4,7 @@ import subprocess
 import tempfile
 import torch
 from torch import Tensor
-from demucs.pretrained import get_model
-from demucs.repo import ModelLoadingError
 from pathlib import Path
-from demucs.apply import apply_model, BagOfModels
 from enum import Enum
 import torchaudio.functional as F
 from .. import Audio, AudioMode, DemucsCollection
@@ -21,6 +18,13 @@ class DemucsAudioSeparator:
             This is used by `demucs.apply.apply_model`.
 
         compile (bool): whether to compile the model. If set to False, the model will be loaded in eval mode."""
+        try:
+            from demucs.pretrained import get_model
+            from demucs.repo import ModelLoadingError
+            from demucs.apply import apply_model, BagOfModels
+        except ImportError as e:
+            raise ImportError("Please install demucs to use this class") from e
+
         try:
             model = get_model(model_name, repo)
         except ModelLoadingError as error:
@@ -83,6 +87,7 @@ class DemucsAudioSeparator:
         overlap (float): Amount of overlap (seconds) between the splits.
         show_progress (bool) Whether to display the progress bar.
         force_cpu (bool): Force the pipeline to use cpu. If set to false, will use ..device"""
+        from demucs.apply import apply_model
         assert audio.size(0) == self.nchannels
         assert len(audio.shape) == 2
 

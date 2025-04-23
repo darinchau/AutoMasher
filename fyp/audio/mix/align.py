@@ -41,7 +41,7 @@ class MashabilityResult:
 
     @property
     def title(self):
-        return self.url.title
+        return self.url.video_title
 
     def __repr__(self):
         return f"MashabilityResult({self.url}/{self.start_bar}/{self.transpose})"

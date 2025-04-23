@@ -3,7 +3,6 @@
 import torch
 import numpy as np
 import librosa
-from scipy.signal.windows import hann
 from librosa.core import stft
 import torch
 from typing import Iterable
@@ -12,6 +11,7 @@ from .tracker import unpack_beats, unpack_downbeats, require_madmom
 
 
 def separator_stft(data: np.ndarray) -> np.ndarray:
+    from scipy.signal.windows import hann
     data = np.asfortranarray(data)
     N = 4096
     H = 1024

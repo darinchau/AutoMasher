@@ -1,7 +1,5 @@
 import os
-from pytubefix import YouTube
 from tqdm import tqdm
-from moviepy.editor import VideoFileClip
 import random
 from contextlib import contextmanager
 import gc
@@ -41,7 +39,7 @@ class YouTubeURL(str):
         return video_id
 
     @property
-    def title(self):
+    def video_title(self):
         """Gets the title of the video."""
         try:
             return to_youtube(self).title
@@ -75,6 +73,7 @@ class YouTubeURL(str):
 
 
 def to_youtube(link_or_video_id: str):
+    from pytubefix import YouTube
     link_or_video_id = link_or_video_id.strip()
     if _VIDEO_ID.match(link_or_video_id):
         return YouTube(f"https://www.youtube.com/watch?v={link_or_video_id}")
@@ -118,6 +117,7 @@ def is_posix():
 
 
 def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose=True):
+    from moviepy.editor import VideoFileClip
     try:
         video = VideoFileClip(video_path)
         audio = video.audio
@@ -136,7 +136,9 @@ def convert_to_wav(video_path, output_path, sr=48000, timeout=120, verbose=True)
 # Download video from YouTube given a URL and an output path
 
 
-def download_video(yt: YouTube, output_path: str, verbose=True, timeout=120):
+def download_video(yt, output_path: str, verbose=True, timeout=120):
+    from pytubefix import YouTube
+
     def progress_callback(stream, chunk, bytes_remaining):
         nonlocal progress_bar
         progress_bar.update(len(chunk))
@@ -185,6 +187,10 @@ def download_audio_with_yt_dlp(link: str, output_dir: str, verbose=True):
 
 
 def download_audio_with_pytube(link: str, output_dir: str, verbose=True, timeout=120) -> str:
+    try:
+        from pytubefix import YouTube
+    except ImportError:
+        raise ImportError("Please install pytube to use this function")
     yt = YouTube(link)
     video_path = download_video(yt, output_dir, verbose=verbose, timeout=timeout)
     if isinstance(video_path, tuple):
