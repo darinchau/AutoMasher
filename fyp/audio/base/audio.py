@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 import os
+import sys
 import librosa
 import logging
 import matplotlib.pyplot as plt
@@ -244,7 +245,12 @@ class Audio:
         try:
             wav, sr = torchaudio.load(fpath)
         except Exception as e:
-            wav, sr = librosa.load(fpath, mono=False)
+            try:
+                wav, sr = librosa.load(fpath, mono=False)
+            except ImportError:
+                if sys.version_info >= (3, 13):
+                    raise RuntimeError(f"You might need to install aifc from the deadlib repository to make this work: `pip install standard-aifc standard-sunau`") from e
+                raise
             sr = int(sr)
             if len(wav.shape) > 1:
                 wav = wav.reshape(-1, wav.shape[-1])
