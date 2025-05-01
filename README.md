@@ -18,7 +18,7 @@ Auto Masher has been awarded the second-runner up in Best Final Year Project Awa
 # Installation
 
 ## Requirements
-- Python 3.12 (should theoretically work with Python 3.10+. Tested only on Python 3.12)
+- Python 3.12 (Ideal version, should theoretically work with Python 3.10 and 3.11, beyond 3.13 the aifc libraries are removed so librosa kinda doesn't work)
 - A decent GPU with some VRAM (>= 4GB) if possible
 - C++14 compatible compiler (for `madmom` library)
 - `ffmpeg` installed on your system and added to your PATH

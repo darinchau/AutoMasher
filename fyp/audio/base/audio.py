@@ -199,25 +199,11 @@ class Audio:
         return self.slice_frames(start_frame, end_frame)
 
     @classmethod
-    def load(cls, fpath: str, *, cache_dir: str | None = None) -> Audio:
-        """
-        Loads an audio file from a given file path, and returns the audio as a tensor.
-        Output shape: (channels, N) where N = duration (seconds) x sample rate (hz)
-
-        if channels == 1, then take the mean across the audio
-        if channels == audio channels, then leave it alone
-        otherwise we will take the mean and duplicate the tensor until we get the desired number of channels
-
-        Cache Path will be ignored if the file path is not a youtube url
-        """
-        try:
-            fpath = YouTubeURL(fpath)
-        except Exception as e:
-            pass
-
+    def download(cls, link: YouTubeURL, port: int | None = None, *, cache_dir: str | None = None) -> Audio:
+        """Downloads the audio from the given link. Exposes the port option for greater flexibility"""
         cache_path = None
-        if isinstance(fpath, YouTubeURL) and cache_dir is not None:
-            cache_path = os.path.join(cache_dir, fpath.video_id + ".wav")
+        if cache_dir is not None:
+            cache_path = os.path.join(cache_dir, link.video_id + ".wav")
             if os.path.isfile(cache_path):
                 try:
                     return cls.load(cache_path)
@@ -226,21 +212,36 @@ class Audio:
                     logger.warning("Loading from youtube instead")
             os.makedirs(cache_dir, exist_ok=True)
 
-        # Load from youtube if the file path is a youtube url
+        tempdir = tempfile.gettempdir()
+        tmp_audio_path = download_audio(link, tempdir, verbose=False, port=port)
+        a = cls.load(tmp_audio_path)
+
+        # Attempt to delete the temporary file created
+        try:
+            os.remove(tmp_audio_path)
+        except Exception as e:
+            logger.warning(f"Error deleting the temporary file: {e}")
+            logger.warning("You might want to delete the temporary file manually")
+            pass
+
+        if cache_path is not None:
+            a.save(cache_path)
+        return a
+
+    @classmethod
+    def load(cls, fpath: str, *, cache_dir: str | None = None) -> Audio:
+        """
+        Loads an audio file from a given file path, and returns the audio as a tensor. If fpath is a YouTubeURL (a subclass of str),
+        then it will download the audio from youtube and return the audio as a tensor.
+        """
+        try:
+            fpath = YouTubeURL(fpath)
+        except Exception as e:
+            pass
+
         if isinstance(fpath, YouTubeURL):
-            tempdir = tempfile.gettempdir()
-            tmp_audio_path = download_audio(fpath, tempdir, verbose=False)
-            a = cls.load(tmp_audio_path)
-
-            # Attempt to delete the temporary file created
-            try:
-                os.remove(tmp_audio_path)
-            except Exception as e:
-                pass
-
-            if cache_path is not None:
-                a.save(cache_path)
-            return a
+            logger.warning(f"The provided fpath is a YouTube URL. Use Audio.download instead. This will be removed in the future")
+            return cls.download(fpath, cache_dir=cache_dir)
 
         try:
             wav, sr = torchaudio.load(fpath)

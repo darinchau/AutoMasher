@@ -12,6 +12,9 @@ import traceback
 from tqdm.auto import tqdm, trange
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import tempfile
+import argparse
+import shutil
+from dataclasses import dataclass, field
 import random
 import datetime
 from PIL import Image
@@ -52,58 +55,83 @@ class FatalError(Exception):
     pass
 
 
-def download_audio(ds: SongDataset, urls: list[YouTubeURL]):
-    """Downloads the audio from the URLs. Yields the audio and the URL."""
-    for url in urls:
-        path = ds.get_path("audio", url)
-        yield Audio.load(path), url
-    # def download_audio_single(url: YouTubeURL) -> Audio:
-    #     path = ds.get_path("audio", url)
-    #     if os.path.exists(path):
-    #         # No need to wait if we are loading from cache
-    #         return Audio.load(path)
+@dataclass(frozen=True)
+class Config:
+    root: str
+    port: int | None = None
 
-    #     audio = Audio.load(url)
-    #     # Wait for a random amount of time to avoid getting blacklisted
-    #     time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
-    #     return audio
+    @classmethod
+    def parse_args(cls):
+        parser = argparse.ArgumentParser(description="Config for dataset creation")
+        parser.add_argument(
+            "--root",
+            type=str,
+            help="Root directory for the dataset",
+        )
+        parser.add_argument(
+            "--port",
+            type=int,
+            default=None,
+            help="Port to use for downloading audio. If not specified, the default port will be used.",
+        )
+        args = parser.parse_args()
+        return cls(
+            root=args.root,
+            port=args.port,
+        )
+
+
+def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = None):
+    """Downloads the audio from the URLs. Yields the audio and the URL."""
+    def download_audio_single(url: YouTubeURL) -> Audio:
+        path = ds.get_path("audio", url)
+        if os.path.exists(path):
+            # No need to wait if we are loading from cache
+            return Audio.load(path)
+
+        audio = Audio.download(url, port=port)
+        # Wait for a random amount of time to avoid getting blacklisted
+        time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
+        return audio
 
     # Downloads the things concurrently and yields them one by one
     # If more than MAX_ERRORS fails in MAX_ERRORS_TIME seconds, then we assume YT has blacklisted our IP or our internet is down or smth and we stop
-    # error_logs = []
-    # with ThreadPoolExecutor(max_workers=1) as executor:
-    #     futures = {executor.submit(download_audio_single, url): url for url in urls}
-    #     for future in as_completed(futures):
-    #         url = futures[future]
-    #         try:
-    #             audio = future.result()
-    #             tqdm.write(f"Downloaded audio: {url}")
-    #             yield audio, url
-    #         except Exception as e:
-    #             if "This video is not available" in str(e):
-    #                 ds.write_info(REJECTED_URLS, url)
-    #                 tqdm.write(f"Rejected URL: {url} (This video is not available.)")
-    #                 continue
-    #             if "Sign in to confirm your age" in str(e):
-    #                 ds.write_info(REJECTED_URLS, url)
-    #                 tqdm.write(f"Rejected URL: {url} (Sign in to confirm your age)")
-    #                 continue
-    #             ds.write_error(f"Failed to download audio: {url}", e, print_fn=tqdm.write)
-    #             error_logs.append((time.time(), e))
-    #             if len(error_logs) >= MAX_ERRORS:
-    #                 if time.time() - error_logs[0][0] < MAX_ERRORS_TIME:
-    #                     tqdm.write(f"Too many errors in a short time, has YouTube blacklisted us?")
-    #                     for t, e in error_logs:
-    #                         tqdm.write(f"Error ({t}): {e}")
-    #                     # Stop all the other downloads
-    #                     for future in futures:
-    #                         future.cancel()
-    #                     raise FatalError(f"Too many errors in a short time, has YouTube blacklisted us?")
-    #                 error_logs.pop(0)
+    error_logs = []
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        futures = {executor.submit(download_audio_single, url): url for url in urls}
+        for future in as_completed(futures):
+            url = futures[future]
+            try:
+                audio = future.result()
+                tqdm.write(f"Downloaded audio: {url}")
+                yield audio, url
+            except Exception as e:
+                if "This video is not available" in str(e):
+                    ds.write_info(REJECTED_URLS, url)
+                    tqdm.write(f"Rejected URL: {url} (This video is not available.)")
+                    continue
+                if "Sign in to confirm your age" in str(e):
+                    ds.write_info(REJECTED_URLS, url)
+                    tqdm.write(f"Rejected URL: {url} (Sign in to confirm your age)")
+                    continue
+                if "Tunnel connection failed: 502 Proxy Error" in str(e):
+                    raise FatalError(f"Proxy error: {url}. Please refresh proxy") from e
+                ds.write_error(f"Failed to download audio: {url}", e, print_fn=tqdm.write)
+                error_logs.append((time.time(), e))
+                if len(error_logs) >= MAX_ERRORS:
+                    if time.time() - error_logs[0][0] < MAX_ERRORS_TIME:
+                        tqdm.write(f"Too many errors in a short time, has YouTube blacklisted us?")
+                        for t, e in error_logs:
+                            tqdm.write(f"Error ({t}): {e}")
+                        # Stop all the other downloads
+                        for future in futures:
+                            future.cancel()
+                        raise FatalError(f"Too many errors in a short time, has YouTube blacklisted us?")
+                    error_logs.pop(0)
 
 
-def process_batch(ds: SongDataset, urls: list[YouTubeURL]):
-    audios = download_audio(ds, urls)
+def process_batch(ds: SongDataset, urls: list[YouTubeURL], port: int | None = None):
+    audios = download_audio(ds, urls, port=port)
     t = time.time()
     last_t = None
 
@@ -162,21 +190,15 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL]):
 
 def get_candidate_urls(ds: SongDataset) -> list[YouTubeURL]:
     # TODO remove this - temporarily only use the audios that we already have around
-    candidates = set(ds.list_urls("audio"))
-    processed = set(ds.list_urls("datafiles"))
-    return sorted(
-        (url for url in candidates if url not in processed),
-        key=lambda x: x.video_id
-    )
     candidates = ds.read_info(CANDIDATE_URLS)
     assert candidates is not None
     finished = ds.read_info_urls(PROCESSED_URLS) | ds.read_info_urls(REJECTED_URLS)
     metadata = ds.get_path("metadata")
-    with open(metadata, "r") as f:
-        metadatas = json.load(f)
     candidates = [c for c in candidates if c not in finished]
 
-    # Sort by views, but intersperse them with language info
+    # Sort by views, but intersperse them according to language info
+    with open(metadata, "r") as f:
+        metadatas = json.load(f)
     language: dict[str, list[YouTubeURL]] = {
         "en": [],
         "ja": [],
@@ -207,9 +229,12 @@ def get_candidate_urls(ds: SongDataset) -> list[YouTubeURL]:
     return result
 
 
-def main(root_dir: str):
+def main(config: Config | None = None):
     """Packs the audio-infos-v3 dataset into a single, compressed dataset file."""
-    ds = SongDataset(root_dir, load_on_the_fly=True, max_dir_size=None)
+    if config is None:
+        config = Config.parse_args()
+
+    ds = SongDataset(config.root, load_on_the_fly=True, max_dir_size=None)
 
     candidate_urls = get_candidate_urls(ds)
     print(f"Loading dataset from {ds} ({len(candidate_urls)} candidate entries)")
@@ -222,7 +247,7 @@ def main(root_dir: str):
         if not url_batch:
             break
         try:
-            process_batch(ds, url_batch)
+            process_batch(ds, url_batch, config.port)
         except FatalError as e:
             print(e)
             break
@@ -244,10 +269,4 @@ def main(root_dir: str):
 
 
 if __name__ == "__main__":
-    # import sys
-    # if len(sys.argv) != 2:
-    #     print(f"Usage: python -m scripts.make_v3_dataset <root_dir>")
-    #     sys.exit(1)
-    # root_dir = sys.argv[1]
-    root_dir = r"E:\audio-dataset-v3"
-    main(root_dir)
+    main()
