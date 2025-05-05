@@ -169,11 +169,11 @@ class SongDataset:
     The dataset will be downloaded and unpacked into the directory: './resources/dataset'.
     """
 
-    def __init__(self, root: str, *,
-                 load_on_the_fly: bool = False,
-                 assert_audio_exists: bool = False,
-                 max_dir_size: str | None = None
-                 ):
+    def __init__(
+        self, root: str, *,
+        load_on_the_fly: bool = False,
+        assert_audio_exists: bool = False,
+    ):
         self._data: dict[YouTubeURL, DatasetEntry] = {}
         self.root = root
         self.load_on_the_fly = load_on_the_fly
@@ -190,26 +190,10 @@ class SongDataset:
         if not os.path.exists(self.root):
             raise FileNotFoundError(f"Directory {self.root} does not exist")
 
-        # Interpret max_dir_size
-        if max_dir_size is not None:
-            if max_dir_size.lower().endswith("gb"):
-                self.max_dir_size = int(max_dir_size[:-2]) * 1024 * 1024 * 1024
-            elif max_dir_size.lower().endswith("mb"):
-                self.max_dir_size = int(max_dir_size[:-2]) * 1024 * 1024
-            elif max_dir_size.lower().endswith("kb"):
-                self.max_dir_size = int(max_dir_size[:-2]) * 1024
-            else:
-                raise ValueError(f"Invalid max_dir_size format: should be in GB, MB or KB: got {max_dir_size}")
-        else:
-            self.max_dir_size = float("inf")
-
         self.init_directory_structure()
         directory_invalid_reason = self._check_directory_structure()
         if directory_invalid_reason is not None:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
-
-        self.purge_list = ["parts", "audio"]
-        self._purge_files()
 
         if not self.list_files("datafiles") and not loaded_from_hf:
             response = input("No datafiles found. Do you want to load the dataset from the directory? (y/n)")
@@ -219,19 +203,48 @@ class SongDataset:
 
         # There may be extra data in the dataset in places other than the packed db - but that shouldnt matter
         if not self.load_on_the_fly:
-            if os.path.exists(self.get_path("pack")):
-                self.load_from_packed()
-            else:
-                self.load_from_directory()
-
-        # If loaded from hf, we definitely want to save the dataset for future use
-        if loaded_from_hf:
-            self.pack()
+            self.load_from_directory()
 
         # Make backup of infos
         with open(self.get_path("info"), "r") as f:
             _info = json.load(f)
         _safe_write_json(_info, self.get_path("info") + ".bak")
+
+    @classmethod
+    def from_packed(cls, root: str):
+        """Load the dataset from a packed file"""
+        # Skip the initial load from the directory but load the packed file instead
+        ds = cls(root, load_on_the_fly=True)
+        ds.load_on_the_fly = False
+        if not os.path.exists(ds.get_path("pack")):
+            raise FileNotFoundError(f"Packed file {ds.get_path('pack')} does not exist")
+        with open(ds.get_path("pack"), "rb") as f:
+            data = json.load(f)
+        assert isinstance(data, dict), f"Invalid packed data format: {type(data)}"
+        for k, v in data.items():
+            try:
+                entry = create_entry(
+                    get_url(k),
+                    chords=ChordAnalysisResult(
+                        features=np.array(v["chords"]["labels"], dtype=np.uint32),
+                        times=np.array(v["chords"]["times"]),
+                        duration=v["duration"],
+                    ),
+                    downbeats=OnsetFeatures(
+                        duration=v["duration"],
+                        onsets=np.array(v["downbeats"]),
+                    ),
+                    beats=OnsetFeatures(
+                        duration=v["duration"],
+                        onsets=np.array(v["beats"]),
+                    ),
+                    source=v.get("source", ""),
+                )
+                ds._data[k] = entry
+            except KeyError as e:
+                ds.write_error(f"Error loading {k}: {e}")
+                continue
+        return ds
 
     def _maybe_load_from_hf(self, dataset_name: str):
         """Load the dataset from hugging face"""
@@ -270,6 +283,11 @@ class SongDataset:
                 tqdm.write(f"Error loading {url}: {e}")
                 continue
             self._data[url] = entry
+            path = self.get_path("datafiles", url)
+            if not os.path.isfile(path):
+                entry.save(path)
+            else:
+                warnings.warn(f"File {path} already exists - skipping")
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
@@ -317,61 +335,6 @@ class SongDataset:
                     if len(file) != expected_file_format_length:
                         return f"Invalid file format for {key}: {file} in {self.root}/{key}"
         return None
-
-    def _purge_files(self, exclusion: list[str] | set[str] | None = None):
-        if self.max_dir_size == float('inf'):
-            return
-
-        # Purge the largest files
-        if exclusion is None:
-            exclusion = []
-
-        exclusion = set(exclusion)
-
-        total_size = 0
-        for dirpath, dirnames, filenames in os.walk(self.root):
-            for f in filenames:
-                fp = os.path.join(dirpath, f)
-                # skip if it is symbolic link
-                if not os.path.islink(fp):
-                    total_size += os.path.getsize(fp)
-        if total_size < self.max_dir_size:
-            return
-
-        nbytes_to_purge = total_size - self.max_dir_size
-
-        if nbytes_to_purge > PURGE_ERROR_LIMIT_BYTES:
-            warnings.warn(f"Dataset exceeds the size limit by more than 4GB - file size limit will not be maintained")
-            self.max_dir_size = float('inf')
-            return
-
-        # TODO implement a LRU system in the future
-        # First consider parts, then consider audios
-        # key is file directory and values are file size in bytes
-        for key in self.purge_list:
-            if nbytes_to_purge <= 0:
-                continue
-
-            files: dict[str, float] = {
-                os.path.join(self.root, key, file): os.path.getsize(os.path.join(self.root, key, file))
-                for file in self.list_files(key)
-                if file not in exclusion
-            }
-
-            while nbytes_to_purge > 0 and len(files) > 0:
-                file = max(files, key=files.get)  # type: ignore
-                file_size = files.pop(file)
-                try:
-                    os.remove(file)
-                    nbytes_to_purge -= file_size
-                except Exception as e:
-                    print("Error removing file", file, e)
-
-        # If we still have not purged enough, then warn the user about it
-        if nbytes_to_purge > 0:
-            warnings.warn(f"Unable to maintain file limit: dataset size still exceeds the limit by {nbytes_to_purge} bytes")
-
-        return
 
     def get_path(self, key: str, url: YouTubeURL | None = None) -> str:
         """Get the (absolute) file path for the given key and url"""
@@ -421,9 +384,6 @@ class SongDataset:
             if entry is None:
                 continue
             self._data[entry.url] = entry
-
-        if not os.path.isfile(self.get_path("pack")):
-            self.pack()
 
     def write_error(self, error: str, e: Exception | None = None, print_fn: Callable[[str], Any] | None = print):
         def print_fn_(x): return print_fn(x) if print_fn is not None else None
@@ -480,7 +440,7 @@ class SongDataset:
 
     def __iter__(self):
         if self.load_on_the_fly:
-            urls = [get_url(x) for x in self.list_urls("datafiles")]
+            urls = self.list_urls("datafiles")
             for url in urls:
                 entry = self.get_entry(url)
                 if entry is not None:
@@ -563,7 +523,6 @@ class SongDataset:
         audio = Audio.load(url)
         audio.save(path)
         audio = Audio.load(path)
-        self._purge_files([path])
         return audio
 
     def get_parts(self, url: YouTubeURL) -> DemucsCollection:
@@ -575,7 +534,6 @@ class SongDataset:
         # Save and reload to ensure consistency
         parts = demucs_separate(self.get_audio(url))
         parts.save(path)
-        self._purge_files([path])
         return parts
 
     def get_or_create_entry(self, url: YouTubeURL, **kwargs) -> DatasetEntry:
@@ -598,31 +556,6 @@ class SongDataset:
             data = self._data
         data_ = {k: v._to_dict() for k, v in data.items()}
         _safe_write_json(data_, self.get_path("pack"))
-
-    def load_from_packed(self):
-        """Loads the dataset from the packed file"""
-        with open(self.get_path("pack"), "rb") as f:
-            data = json.load(f)
-        assert isinstance(data, dict), f"Invalid packed data format: {type(data)}"
-        for k, v in data.items():
-            entry = create_entry(
-                get_url(k),
-                chords=ChordAnalysisResult(
-                    features=np.array(v["chords"]["labels"], dtype=np.uint32),
-                    times=np.array(v["chords"]["times"]),
-                    duration=v["duration"],
-                ),
-                downbeats=OnsetFeatures(
-                    duration=v["duration"],
-                    onsets=np.array(v["downbeats"]),
-                ),
-                beats=OnsetFeatures(
-                    duration=v["duration"],
-                    onsets=np.array(v["beats"]),
-                ),
-                source=v.get("source", ""),
-            )
-            self._data[k] = entry
 
 
 def _safe_write_json(data, filename):

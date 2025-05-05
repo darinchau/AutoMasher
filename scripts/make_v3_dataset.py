@@ -234,7 +234,7 @@ def main(config: Config | None = None):
     if config is None:
         config = Config.parse_args()
 
-    ds = SongDataset(config.root, load_on_the_fly=True, max_dir_size=None)
+    ds = SongDataset(config.root, load_on_the_fly=True)
 
     candidate_urls = get_candidate_urls(ds)
     print(f"Loading dataset from {ds} ({len(candidate_urls)} candidate entries)")
