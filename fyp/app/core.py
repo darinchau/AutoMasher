@@ -265,7 +265,6 @@ def load_dataset(config: MashupConfig) -> SongDataset:
         config.dataset_path,
         load_on_the_fly=config.load_on_the_fly,
         assert_audio_exists=config.assert_audio_exists,
-        max_dir_size=config.max_dataset_size,
     )
 
     if config.filter_short_song_bar_threshold > 0:
@@ -346,7 +345,7 @@ def get_search_result_log(link: YouTubeURL,
         write(f"Result {i + 1}: {result.url} with score {score}. ID: {mashup_id.to_string()}")
         show_best_result = best_result is not None and best_result_idx == i and i < config._max_show_results
         if show_best_result:
-            assert best_result is not None # To satisfy the type checker
+            assert best_result is not None  # To satisfy the type checker
             system_messages = [f"Created mashup with {best_result.title} ({best_result.url}) with score {scores[0][0]} (ID: {mashup_id.to_string()})"] + system_messages
         elif i < config._max_show_results:
             system_messages.append(f"> {result.title} {result.url} with score {score}. ID: {mashup_id.to_string()}")

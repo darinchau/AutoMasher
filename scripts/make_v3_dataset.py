@@ -106,7 +106,7 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
                 tqdm.write(f"Downloaded audio: {url}")
                 yield audio, url
             except Exception as e:
-                if "This video is not available" in str(e):
+                if "Video unavailable" in str(e) or "This video is not available" in str(e):
                     ds.write_info(REJECTED_URLS, url)
                     tqdm.write(f"Rejected URL: {url} (This video is not available.)")
                     continue
@@ -116,6 +116,10 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
                     continue
                 if "Tunnel connection failed: 502 Proxy Error" in str(e):
                     raise FatalError(f"Proxy error: {url}. Please refresh proxy") from e
+                if "Private video" in str(e):
+                    ds.write_info(REJECTED_URLS, url)
+                    tqdm.write(f"Rejected URL: {url} (Private video)")
+                    continue
                 ds.write_error(f"Failed to download audio: {url}", e, print_fn=tqdm.write)
                 error_logs.append((time.time(), e))
                 if len(error_logs) >= MAX_ERRORS:
