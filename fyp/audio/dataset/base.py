@@ -196,10 +196,7 @@ class SongDataset:
             raise ValueError(f"Invalid directory structure: {directory_invalid_reason}")
 
         if not self.list_files("datafiles") and not loaded_from_hf:
-            response = input("No datafiles found. Do you want to load the dataset from the directory? (y/n)")
-            if response.lower() == "y":
-                self._maybe_load_from_hf("HKUST-FYPHO2/audio-infos-filtered")
-                loaded_from_hf = True
+            warnings.warn(f"Dataset {self.root} is empty. This could be an error. If you are sure this is correct, please ignore this warning.")
 
         # There may be extra data in the dataset in places other than the packed db - but that shouldnt matter
         if not self.load_on_the_fly:
