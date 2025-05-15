@@ -23,4 +23,4 @@ from .base import (
 )
 
 from .beat import BeatAnalysisResult, DeadBeatKernel
-from .chord import ChordAnalysisResult
+from .chord import ChordAnalysisResult, ChordMetric

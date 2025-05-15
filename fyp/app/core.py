@@ -267,6 +267,10 @@ def load_dataset(config: MashupConfig) -> SongDataset:
         assert_audio_exists=config.assert_audio_exists,
     )
 
+    if dataset.get_path("pack") is not None:
+        print("Loading dataset from pack...")
+        dataset = SongDataset.from_packed(config.dataset_path)
+
     if config.filter_short_song_bar_threshold > 0:
         dataset = dataset.filter(lambda x: len(x.downbeats) >= config.filter_short_song_bar_threshold)
 

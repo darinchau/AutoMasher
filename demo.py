@@ -15,6 +15,7 @@ import traceback
 from fyp.util import is_ipython, is_colab
 from fyp.app import mashup_from_id, load_dataset
 from fyp import mashup_song, MashupConfig, MashupMode, get_url, InvalidMashup, Audio
+from fyp.audio.analysis import ChordMetric
 
 # Set to None to disable caching
 CACHE_DIR: str | None = "./resources/cache"
@@ -29,6 +30,15 @@ def get_mashup_mode_desc_map():
         MashupMode.VOCALS_NATURAL: "Vocal Auto",
         MashupMode.DRUMS_NATURAL: "Drums Auto",
         MashupMode.NATURAL: "Let the system decide",
+    }
+
+
+def get_chord_metric_desc_map():
+    return {
+        ChordMetric.DEFAULT: "Default",
+        ChordMetric.KL_DIVERGENCE: "KL Divergence",
+        ChordMetric.JENSEN_SHANNON: "Jensen-Shannon",
+        ChordMetric.MONTE_CARLO: "Monte Carlo",
     }
 
 
@@ -59,11 +69,16 @@ def mashup(
     left_pan: float,
     save_original: bool,
     append_song_to_dataset: bool,
+    chord_metric: str,
     dataset_path: str
 ):
     mashup_mode_ = MashupMode.NATURAL if not mashup_mode.strip() else {
         v: k for k, v in get_mashup_mode_desc_map().items()
     }[mashup_mode]
+
+    chord_metric_ = ChordMetric.DEFAULT if not chord_metric.strip() else {
+        v: k for k, v in get_chord_metric_desc_map().items()
+    }[chord_metric]
 
     config = MashupConfig(
         starting_point=starting_point,
@@ -81,10 +96,11 @@ def mashup(
         filter_uneven_bars_max_threshold=filter_uneven_bars_max_threshold_input,
         filter_short_song_bar_threshold=filter_short_song_bar_threshold_input,
         left_pan=left_pan,
+        chord_metric=chord_metric_,
         _verbose=True,
         save_original=save_original,
         append_song_to_dataset=append_song_to_dataset,
-        load_on_the_fly=False,
+        load_on_the_fly=True,
         assert_audio_exists=False,
         dataset_path=dataset_path,
     )
@@ -319,6 +335,12 @@ def app():
                                     value=3,
                                     info="The range to perform beat extrapolation. Keep at 3 unless you know what you're doing"
                                 )
+                            chord_metric = gr.Dropdown(
+                                choices=list(get_chord_metric_desc_map().values()),
+                                label="Chord Metric",
+                                value="Default",
+                                interactive=True,
+                            )
 
             with gr.Group():
                 with gr.Column():
@@ -351,6 +373,7 @@ def app():
                             left_pan,
                             save_original,
                             append_song_to_dataset,
+                            chord_metric,
                             dataset_path
                         ],
                         [output_msg, output_audio],
