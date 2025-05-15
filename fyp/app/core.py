@@ -64,8 +64,6 @@ class MashupConfig:
 
         filter_short_song_bar_threshold: The minimum number of chord progressions for a song to be considered long enough. Default is 12.
 
-        filter_uncached: Whether to filter out songs that are not cached. Default is False.
-
         mashup_mode: The mode to use for the mashup. Default is MashupMode.NATURAL.
 
         natural_drum_activity_threshold: The drum activity threshold for the natural mode. Default is 1.
@@ -267,15 +265,24 @@ def load_dataset(config: MashupConfig) -> SongDataset:
         assert_audio_exists=config.assert_audio_exists,
     )
 
+    write = print if config._verbose else lambda x: None
+
     if dataset.get_path("pack") is not None:
         print("Loading dataset from pack...")
         dataset = SongDataset.from_packed(config.dataset_path)
 
+    original_dataset_length = len(dataset)
+    filter_out_reason = {}
+
     if config.filter_short_song_bar_threshold > 0:
         dataset = dataset.filter(lambda x: len(x.downbeats) >= config.filter_short_song_bar_threshold)
 
+    filter_out_reason["short_song"] = f"Song is too short ({original_dataset_length - len(dataset)} songs filtered, {len(dataset)} songs left)"
+
     if config.filter_short_song_chord_threshold > 0:
         dataset = dataset.filter(lambda x: len(x.chords.features) >= config.filter_short_song_chord_threshold)
+
+    filter_out_reason["short_song_chord"] = f"Song is too short ({original_dataset_length - len(dataset)} songs filtered, {len(dataset)} songs left)"
 
     if config.filter_uneven_bars:
         def filter_func(x: DatasetEntry):
@@ -283,6 +290,13 @@ def load_dataset(config: MashupConfig) -> SongDataset:
             mean_diff = db_diff / np.mean(db_diff)
             return np.all((config.filter_uneven_bars_min_threshold < mean_diff) & (mean_diff < config.filter_uneven_bars_max_threshold)).item()
         dataset = dataset.filter(filter_func)
+
+    filter_out_reason["uneven_bars"] = f"Song has uneven bars ({original_dataset_length - len(dataset)} songs filtered, {len(dataset)} songs left)"
+
+    for _, reason in filter_out_reason.items():
+        if "0 songs filtered" in reason:
+            continue
+        write(reason)
     return dataset
 
 
@@ -445,8 +459,15 @@ def mashup_from_id(mashup_id_str: str, config: MashupConfig | None = None, datas
     write(f"Got audio with duration {a_audio.duration} seconds.")
 
     write("Analyzing beats for song A...")
-    a_entry = dataset.get_or_create_entry(mashup_id.song_a)
-    a_downbeats = a_entry.downbeats
+    song_a_entry = dataset.get_or_create_entry(mashup_id.song_a)
+    if config.append_song_to_dataset:
+        write("Appending song to dataset...")
+        dataset.save_entry(song_a_entry)
+        saved_entry_a_path = dataset.get_path("datafiles", mashup_id.song_a)
+        write(f"Saved song A to {saved_entry_a_path}")
+        del saved_entry_a_path
+
+    a_downbeats = song_a_entry.downbeats
     if len(a_downbeats) < config.nbars:
         raise InvalidMashup("The audio is too short to mashup with the dataset.")
     write(f"Got beat analysis result with {len(a_downbeats)} bars.")
@@ -459,9 +480,9 @@ def mashup_from_id(mashup_id_str: str, config: MashupConfig | None = None, datas
     submitted_audio_a = a_audio.slice_seconds(slice_start_a, slice_end_a)
     submitted_entry_a = create_entry(
         url=mashup_id.song_a,
-        beats=a_entry.beats.slice_seconds(slice_start_a, slice_end_a),
+        beats=song_a_entry.beats.slice_seconds(slice_start_a, slice_end_a),
         downbeats=submitted_downbeats_a,
-        chords=a_entry.chords.slice_seconds(slice_start_a, slice_end_a),
+        chords=song_a_entry.chords.slice_seconds(slice_start_a, slice_end_a),
     )
 
     submitted_audio_a, submitted_audio_b, mashup = create_mash(
@@ -476,10 +497,6 @@ def mashup_from_id(mashup_id_str: str, config: MashupConfig | None = None, datas
     )
 
     save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
-
-    if config.append_song_to_dataset:
-        write("Appending song to dataset...")
-        dataset.save_entry(submitted_entry_a)
     return mashup
 
 
@@ -519,6 +536,13 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         )
 
     assert isinstance(song_a_entry, DatasetEntry), f"Expected DatasetEntry, got {type(song_a_entry)}"
+
+    if config.append_song_to_dataset:
+        write("Appending song to dataset...")
+        dataset.save_entry(song_a_entry)
+        saved_entry_a_path = dataset.get_path("datafiles", link)
+        write(f"Saved song A to {saved_entry_a_path}")
+        del saved_entry_a_path
 
     write("Determining slice results...")
     song_a_downbeats, slice_start_a, slice_end_a = determine_slice_results(song_a_entry.downbeats, config)
@@ -607,9 +631,6 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
     )
 
     save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
-    if config.append_song_to_dataset:
-        write("Appending song to dataset...")
-        dataset.save_entry(song_a_entry)
     return mashup, scores, system_messages
 
 
@@ -700,7 +721,4 @@ def mashup_from_audio(audio: Audio, config: MashupConfig):
     )
 
     save_mashup_result(submitted_audio_a, submitted_audio_b, mashup, mashup_id, config)
-    if config.append_song_to_dataset:
-        write("Appending song to dataset...")
-        dataset.save_entry(song_a_entry)
     return mashup, scores, system_messages
