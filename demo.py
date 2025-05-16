@@ -285,9 +285,9 @@ def app():
                                 max_distance_input = gr.Number(
                                     label="Max Song Distance",
                                     interactive=True,
-                                    value=8,
+                                    value=5,
                                     minimum=0,
-                                    info="The maximum 'song distance' allowed between the two songs. Anything above this value will be filtered out. Typically, a value around 5 will yield good results, and a value around 8 will have a more expansive collection of okayish results. See our paper for more information on song distance"
+                                    info="The maximum compatibility distance allowed between the two songs. Anything above this value will be filtered out."
                                 )
                                 keep_first_k_input = gr.Number(
                                     label="Keep first k results",
@@ -306,21 +306,21 @@ def app():
                                 filter_uneven_bars = gr.Checkbox(
                                     label="Filter Uneven Bars",
                                     interactive=True,
-                                    value=True,
-                                    info="Filter out songs in the dataset that might have a faulty beat detection result which is characterized by uneven bar lengths. This will also filter out songs that have drastic tempo changes"
+                                    value=False,
+                                    info="Filter out songs in the dataset that might have a faulty beat detection result which is characterized by uneven bar lengths. This will decrease the number of candidate songs but could potentially improve the quality of the mashup."
                                 )
                             with gr.Row():
                                 filter_uneven_bars_min_threshold_input = gr.Number(
                                     label="Min Threshold",
                                     interactive=True,
                                     value=0.9,
-                                    info="Filter out songs in the dataset that might have a faulty beat detection result which is characterized by uneven bar lengths. This will also filter out songs that have drastic tempo changes"
+                                    info="Minimum tempo change threshold to the unevenness of bars"
                                 )
                                 filter_uneven_bars_max_threshold_input = gr.Number(
                                     label="Max Threshold",
                                     interactive=True,
                                     value=1.1,
-                                    info="Filter out songs in the dataset that might have a faulty beat detection result which is characterized by uneven bar lengths. This will also filter out songs that have drastic tempo changes"
+                                    info="Maximum tempo change threshold to the unevenness of bars"
                                 )
                             with gr.Row():
                                 filter_short_song_bar_threshold_input = gr.Number(

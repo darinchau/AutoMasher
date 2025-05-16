@@ -460,7 +460,7 @@ def mashup_from_id(mashup_id_str: str, config: MashupConfig | None = None, datas
 
     write("Analyzing beats for song A...")
     song_a_entry = dataset.get_or_create_entry(mashup_id.song_a)
-    if config.append_song_to_dataset:
+    if config.append_song_to_dataset and mashup_id.song_a not in dataset:
         write("Appending song to dataset...")
         dataset.save_entry(song_a_entry)
         saved_entry_a_path = dataset.get_path("datafiles", mashup_id.song_a)
@@ -514,7 +514,6 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
     song_a_entry = None
     if link in dataset:
         song_a_entry = dataset.get_entry(link)
-        dataset = dataset.filter(lambda x: x.url != link)
 
     assert isinstance(dataset, SongDataset), f"Expected SongDataset, got {type(dataset)}"
     if len(dataset) == 0:
@@ -543,6 +542,8 @@ def mashup_song(link: YouTubeURL, config: MashupConfig, dataset: SongDataset | N
         saved_entry_a_path = dataset.get_path("datafiles", link)
         write(f"Saved song A to {saved_entry_a_path}")
         del saved_entry_a_path
+
+    dataset = dataset.filter(lambda x: x.url != link)
 
     write("Determining slice results...")
     song_a_downbeats, slice_start_a, slice_end_a = determine_slice_results(song_a_entry.downbeats, config)
