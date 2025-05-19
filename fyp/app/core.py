@@ -125,6 +125,8 @@ class MashupConfig:
     # The path of stuff should not be exposed to the user
     dataset_path: str = "resources/dataset"
     max_dataset_size: str | None = None
+
+    subsets: str = ""  # The subsets to use for the dataset. This is a comma separated list of strings. If empty, all subsets will be used.
     _beat_model_path: str = "resources/ckpts/beat_transformer.pt"
     _chord_model_path: str = "resources/ckpts/btc_model_large_voca.pt"
     _simple_chord_model_path: str = "resources/ckpts/btc_model.pt"
@@ -274,6 +276,14 @@ def load_dataset(config: MashupConfig) -> SongDataset:
     original_dataset_length = len(dataset)
     filter_out_reason = {}
 
+    print(config.subsets)
+    if config.subsets:
+        write("Filtering dataset by subsets...")
+        write(f"Subsets: {config.subsets}")
+        subsets = config.subsets.split(",")
+        dataset = dataset.filter(lambda x: x.source in subsets)
+        filter_out_reason["subsets"] = f"Song is not in the specified subset ({original_dataset_length - len(dataset)} songs filtered, {len(dataset)} songs left)"
+
     if config.filter_short_song_bar_threshold > 0:
         dataset = dataset.filter(lambda x: len(x.downbeats) >= config.filter_short_song_bar_threshold)
 
@@ -282,7 +292,7 @@ def load_dataset(config: MashupConfig) -> SongDataset:
     if config.filter_short_song_chord_threshold > 0:
         dataset = dataset.filter(lambda x: len(x.chords.features) >= config.filter_short_song_chord_threshold)
 
-    filter_out_reason["short_song_chord"] = f"Song is too short ({original_dataset_length - len(dataset)} songs filtered, {len(dataset)} songs left)"
+    filter_out_reason["short_song_chord"] = f"Song has too few chords ({original_dataset_length - len(dataset)} songs filtered, {len(dataset)} songs left)"
 
     if config.filter_uneven_bars:
         def filter_func(x: DatasetEntry):
@@ -327,7 +337,8 @@ def determine_slice_results(downbeats: OnsetFeatures, config: MashupConfig) -> t
 
         if new_downbeats is not None and new_duration is not None and new_downbeats[0] + new_duration < downbeats.duration:
             downbeats = OnsetFeatures(downbeats.duration, new_downbeats)
-            return downbeats, new_downbeats[0], new_downbeats[0] + new_duration
+            start, end = new_downbeats[0], new_downbeats[0] + new_duration
+            return downbeats.slice_seconds(start, end), start, end
 
         # Unable to extrapolate the result. Fall through and handle later
         pass
@@ -399,6 +410,14 @@ def create_mash(dataset: SongDataset,
     submitted_parts_b = dataset.get_parts(entry.url).slice_seconds(slice_start_b, slice_end_b)
 
     print(submitted_audio_a.duration, submitted_audio_b.duration)
+
+    write("Chords for song A:")
+    for chord_name, timestamp in submitted_entry_a.chords.info:
+        write(f"\t{chord_name} - {timestamp:.2f}")
+
+    write("Chords for song B:")
+    for chord_name, timestamp in entry.chords.slice_seconds(slice_start_b, slice_end_b).info:
+        write(f"\t{chord_name} - {timestamp:.2f}")
 
     write("Creating mashup...")
     mashup, mode_used = create_mashup(

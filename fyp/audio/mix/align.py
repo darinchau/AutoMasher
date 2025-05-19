@@ -211,11 +211,6 @@ def calculate_mashability(
         transposed_normalized_crs.append((transpose_semitone, submitted_entry.normalized_times, transpose_cr.features))
 
     scores = MashabilityList()
-
-    # 2. Precalculate distance arrays
-    dist_arrays = [x.get_dist_array() if isinstance(x, DiscreteLatentFeatures) and x.latent_size() < 3000 else None for x in submitted_features]
-
-    # 3. Calculate the distance between the submitted song and the sample song for each song
     chord_distances_array = chord_metric.get_dist_array()
 
     for entry in tqdm(dataset, desc="Searching database", disable=not verbose):
@@ -249,23 +244,6 @@ def calculate_mashability(
                 new_distance = _dist_discrete_latent(times1, times2, chords1, chords2, chord_distances_array, nbars)
                 if new_distance > best_distance_for_current_song:
                     continue
-
-                # Calculate the distance between the latent features
-                should_break = False
-                if submitted_features is not None:
-                    for i, (fn, feat, da, w) in enumerate(zip(features_fn, submitted_features, dist_arrays, weights)):
-                        feature = fn(dataset, entry.url, transpose_semitone)
-                        assert isinstance(feat, type(feature)) and isinstance(feature, type(feat)), f"Expected {type(feature)} for the {i}-th submitted feature, got {type(feat)}"
-                        if isinstance(feat, DiscreteLatentFeatures) and isinstance(feature, DiscreteLatentFeatures):
-                            new_distance += w * dist_discrete_latent_features(feat, feature, da)
-                        elif isinstance(feat, ContinuousLatentFeatures) and isinstance(feature, ContinuousLatentFeatures):
-                            new_distance += w * dist_continuous_latent_features(feat, feature)
-
-                        if new_distance > best_distance_for_current_song:
-                            should_break = True
-                            break
-                    if should_break:
-                        continue
 
                 # Use a tuple instead of a dataclass for now, will change it back to a dataclass in scores.get
                 # This is because using tuple literal syntax skips the step to find the dataclass constructor name

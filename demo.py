@@ -70,7 +70,8 @@ def mashup(
     save_original: bool,
     append_song_to_dataset: bool,
     chord_metric: str,
-    dataset_path: str
+    dataset_path: str,
+    subsets: str,
 ):
     mashup_mode_ = MashupMode.NATURAL if not mashup_mode.strip() else {
         v: k for k, v in get_mashup_mode_desc_map().items()
@@ -97,6 +98,7 @@ def mashup(
         filter_short_song_bar_threshold=filter_short_song_bar_threshold_input,
         left_pan=left_pan,
         chord_metric=chord_metric_,
+        subsets=subsets,
         _verbose=True,
         save_original=save_original,
         append_song_to_dataset=append_song_to_dataset,
@@ -280,6 +282,13 @@ def app():
                                     maximum=0.5,
                                     info="The left pan of the vocals in the output mashup. Other parts will be panned accordingly"
                                 )
+                            with gr.Row():
+                                subsets = gr.Textbox(
+                                    label="Subsets",
+                                    interactive=True,
+                                    value="",
+                                    info="The data subsets to use. Leave empty to use all songs. Use a comma to separate the subsets. For example: 'fyp,laion:12m'."
+                                )
                         with gr.Column():
                             with gr.Row():
                                 max_distance_input = gr.Number(
@@ -374,7 +383,8 @@ def app():
                             save_original,
                             append_song_to_dataset,
                             chord_metric,
-                            dataset_path
+                            dataset_path,
+                            subsets
                         ],
                         [output_msg, output_audio],
                     )
