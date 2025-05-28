@@ -17,7 +17,7 @@ import threading
 import torch
 import torchaudio
 import torchaudio.functional as F
-from ...util import download_audio, is_ipython, YouTubeURL
+from ...util import download_audio, is_ipython, YouTubeURL, load_audio
 from abc import ABC, abstractmethod
 from enum import Enum
 from math import pi as PI
@@ -47,13 +47,13 @@ class Audio:
     """An audio has a special type of tensor with shape=(nchannels, T) and dtype=float32. We have checks and special methods for audios to facilitate audio processing."""
 
     def sanity_check(self):
-        assert self._sample_rate > 0
-        assert isinstance(self._sample_rate, int)
-        assert len(self._data.shape) == 2
-        assert 1 <= self._data.size(0) <= 2
-        assert isinstance(self._data, torch.Tensor)
-        assert self._data.dtype == self.dtype()
-        assert self._inited
+        assert self._sample_rate > 0, "Sample rate must be greater than 0"
+        assert isinstance(self._sample_rate, int), f"Sample rate must be an int but found {type(self._sample_rate)}"
+        assert len(self._data.shape) == 2, f"Audio data must have 2 dimensions, but found {self._data.shape}"
+        assert 1 <= self._data.size(0) <= 2, f"Audio data must have 1 or 2 channels, but found {self._data.size(0)} channels"
+        assert isinstance(self._data, torch.Tensor), f"Audio data must be a torch.Tensor but found {type(self._data)}"
+        assert self._data.dtype == self.dtype(), f"Audio data must have dtype {self.dtype()} but found {self._data.dtype}"
+        assert self._inited, f"Make sure to call __init__ from subclasses of Audio ;)"
 
     def __init__(self, data: Tensor, sample_rate: int):
         """An audio is a special type of audio features - each feature vector has 1 dimensions"""
@@ -243,26 +243,7 @@ class Audio:
             logger.warning(f"The provided fpath is a YouTube URL. Use Audio.download instead. This will be removed in the future")
             return cls.download(fpath, cache_dir=cache_dir)
 
-        # TODO add different strategies for loading audio files
-        try:
-            wav, sr = torchaudio.load(fpath)
-        except Exception as e:
-            try:
-                wav, sr = librosa.load(fpath, mono=False)
-            except ImportError:
-                if sys.version_info >= (3, 13):
-                    raise RuntimeError(f"You might need to install aifc from the deadlib repository to make this work: `pip install standard-aifc standard-sunau`") from e
-                raise
-            sr = int(sr)
-            if len(wav.shape) > 1:
-                wav = wav.reshape(-1, wav.shape[-1])
-            else:
-                wav = wav.reshape(1, -1)
-
-            wav = torch.tensor(wav).float()
-
-        if wav.dtype != torch.float32:
-            wav = wav.to(dtype=torch.float32)
+        wav, sr = load_audio(fpath)
         return cls(wav, sr)
 
     def play(self, blocking: bool = False, info: list[tuple[str, float]] | None = None):
