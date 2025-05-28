@@ -34,6 +34,7 @@ from fyp.audio.analysis import BeatAnalysisResult, DeadBeatKernel
 from fyp.util import (
     clear_cuda,
     YouTubeURL,
+    download_audio as download_audio_inner
 )
 from fyp.constants import (
     CANDIDATE_URLS,
@@ -81,17 +82,17 @@ class Config:
         )
 
 
-def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = None):
-    """Downloads the audio from the URLs. Yields the audio and the URL."""
-    def download_audio_single(url: YouTubeURL) -> Audio:
-        path = ds.get_path("audio", url)
-        if os.path.exists(path):
-            # No need to wait if we are loading from cache
-            return Audio.load(path)
+def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = None, antiban: bool = False):
+    """Downloads the audio from the URLs. Yields the path to audio (in the dataset) and the URL."""
+    def download_audio_single(url: YouTubeURL) -> str:
+        if ds.has_path("audio", url):
+            return ds.get_path("audio", url)
 
-        audio = Audio.download(url, port=port)
-        # Wait for a random amount of time to avoid getting blacklisted
-        time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
+        audio = download_audio_inner(url, os.path.join(ds.root, "audio"), port=port)
+        if antiban:
+            # Wait for a random amount of time to avoid getting blacklisted
+            time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
+        ds.set_path("audio", url, audio)
         return audio
 
     # Downloads the things concurrently and yields them one by one
@@ -127,6 +128,7 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
                         tqdm.write(f"Too many errors in a short time, has YouTube blacklisted us?")
                         for t, e in error_logs:
                             tqdm.write(f"Error ({t}): {e}")
+                            tqdm.write("=" * os.get_terminal_size().columns)
                         # Stop all the other downloads
                         for future in futures:
                             future.cancel()
@@ -139,8 +141,8 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL], port: int | None = No
     t = time.time()
     last_t = None
 
-    for i, (audio, url) in tqdm(enumerate(audios), total=len(urls)):
-        if audio is None:
+    for i, (audio_path, url) in tqdm(enumerate(audios), total=len(urls)):
+        if audio_path is None:
             continue
 
         last_entry_process_time = round(time.time() - last_t, 2) if last_t else None
@@ -152,13 +154,14 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL], port: int | None = No
         tqdm.write(f"Last entry process time: {last_entry_process_time} seconds")
         tqdm.write(f"Current entry: {url}")
         tqdm.write(f"Time elapsed: {round(time.time() - t, 2)} seconds")
+        tqdm.write(f"Entries processed: {i + 1} / {len(urls)}")
+        tqdm.write(f"Number of entries in dataset: {len(ds.list_files('audio'))}")
         tqdm.write("\u2500" * os.get_terminal_size().columns)
         tqdm.write("")
 
         clear_cuda()
 
-        audio_path = ds.get_path("audio", url)
-        audio.save(audio_path)
+        audio = Audio.load(audio_path)
 
         try:
             dataset_entry = create_entry(

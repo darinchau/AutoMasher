@@ -18,6 +18,7 @@ import traceback
 from typing import Callable
 from numpy.typing import NDArray
 import numpy as np
+from functools import lru_cache
 from tqdm.auto import tqdm
 from typing import Iterable
 import pickle
@@ -292,15 +293,18 @@ class SongDataset:
             with open(self.metadata_path, "w") as f:
                 json.dump({}, f)
 
-        self.register("audio", "{video_id}.wav")
+        self.register("audio")
         self.register("parts", "{video_id}.wav.demucs")
         self.register("datafiles", "{video_id}.dat3")
         self.register("info", "info.json", initial_data="{}")
         self.register("error", "error_logs.txt")
         self.register("pack", "pack.data", create=False)
 
-    def register(self, key: str, file_format: str, *, create: bool = True, initial_data: str | None = None):
+    def register(self, key: str, file_format: str = "", *, create: bool = True, initial_data: str | None = None):
         """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
+
+        Leave the file format blank for a variable directory structure, where a json file will be created in the key directory
+        to map the video id to the file name on the fly.
 
         The file format should contain the string "{video_id}" which will be replaced by the video id of the url
         If it does not, then a file is created in the root directory"""
@@ -310,9 +314,18 @@ class SongDataset:
             metadata["file_structure"] = {}
         metadata["file_structure"][key] = file_format
         _safe_write_json(metadata, self.metadata_path)
-        if "{video_id}" in file_format and not os.path.exists(self.root + "/" + key):
+        if file_format == "":
+            # Variable directory structure, create a json file in the key directory
+            if not os.path.exists(os.path.join(self.root, key)):
+                os.makedirs(os.path.join(self.root, key))
+            if not os.path.isfile(os.path.join(self.root, key, "info.json")):
+                with open(os.path.join(self.root, key, "info.json"), "w") as f:
+                    json.dump({}, f)
+        elif "{video_id}" in file_format and not os.path.exists(os.path.join(self.root, key)):
+            # id-indexed directory structure, create a directory for the key
             os.makedirs(self.root + "/" + key)
-        elif create and "{video_id}" not in file_format and not os.path.isfile(self.root + "/" + file_format):
+        elif create and "{video_id}" not in file_format and not os.path.isfile(os.path.join(self.root, file_format)):
+            # Fixed file format, create the file in the root directory
             with open(self.root + "/" + file_format, "w") as f:
                 f.write(initial_data or "")
         directory_invalid_reason = self._check_directory_structure()
@@ -324,6 +337,11 @@ class SongDataset:
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         for key, file_format in metadata["file_structure"].items():
+            if file_format == "":
+                # Variable directory structure, check if the info.json file exists
+                # TODO add more checks if necessary
+                if not os.path.exists(os.path.join(self.root, key, "info.json")):
+                    return f"File {key}/info.json does not exist"
             if "{video_id}" in file_format:
                 if not os.path.exists(self.root + "/" + key):
                     return f"File {key} does not exist"
@@ -333,6 +351,7 @@ class SongDataset:
                         return f"Invalid file format for {key}: {file} in {self.root}/{key}"
         return None
 
+    @lru_cache(maxsize=1024)
     def get_path(self, key: str, url: YouTubeURL | None = None) -> str:
         """Get the (absolute) file path for the given key and url"""
         if url is not None and url.is_placeholder:
@@ -342,6 +361,14 @@ class SongDataset:
         if key not in metadata["file_structure"]:
             raise ValueError(f"Key {key} not registered")
         file_format: str = metadata["file_structure"][key]
+        if file_format == "":
+            if url is None:
+                raise ValueError(f"Invalid file format for {key} (variable file format) - a URL is expected")
+            with open(os.path.join(self.root, key, "info.json"), "r") as f:
+                info = json.load(f)
+            if url.video_id not in info:
+                raise ValueError(f"URL {url} not found in info.json for key {key} (variable file format)")
+            return os.path.join(self.root, key, info[url.video_id])
         if "{video_id}" in file_format and url is None:
             raise ValueError(f"Invalid file format for {key}: {file_format} - a URL is expected")
         if url is None:
@@ -350,7 +377,29 @@ class SongDataset:
 
     def has_path(self, key: str, url: YouTubeURL) -> bool:
         """Check if the file path for the given key and url exists"""
-        return os.path.isfile(self.get_path(key, url))
+        try:
+            path = self.get_path(key, url)
+        except ValueError as e:
+            if "(variable file format)" in str(e):
+                return False
+            raise e
+        return os.path.isfile(path)
+
+    def set_path(self, key: str, url: YouTubeURL, path: str):
+        """Set the file path for the given key and url. This is useful for variable directory structures"""
+        with open(self.metadata_path, "r") as f:
+            metadata = json.load(f)
+        if key not in metadata["file_structure"]:
+            raise ValueError(f"Key {key} not registered")
+        json_path = os.path.join(self.root, key, "info.json")
+        if metadata["file_structure"][key] == "":
+            # Variable directory structure, write to info.json
+            with open(json_path, "r") as f:
+                info = json.load(f)
+            info[url.video_id] = os.path.basename(path)
+            _safe_write_json(info, json_path)
+            return
+        raise ValueError(f"Cannot set path for {key} - it is not a variable directory structure")
 
     def list_files(self, key: str) -> list[str]:
         """List all the files in the given key. Returns a list of filenames (not full paths)"""
@@ -367,6 +416,11 @@ class SongDataset:
         if key not in metadata["file_structure"]:
             raise ValueError(f"Key {key} not registered")
         file_format: str = metadata["file_structure"][key]
+        if file_format == "":
+            # Variable directory structure, read the info.json file
+            with open(os.path.join(self.root, key, "info.json"), "r") as f:
+                info = json.load(f)
+            return [YouTubeURL(f"{YouTubeURL.URL_PREPEND}{url_id}") for url_id in info.keys()]
         if "{video_id}" not in file_format:
             raise ValueError(f"Invalid file format for {key}: {file_format} - a video_id is expected")
         len_prepend = len(file_format.split("{video_id}")[0])

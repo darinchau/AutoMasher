@@ -243,6 +243,7 @@ class Audio:
             logger.warning(f"The provided fpath is a YouTube URL. Use Audio.download instead. This will be removed in the future")
             return cls.download(fpath, cache_dir=cache_dir)
 
+        # TODO add different strategies for loading audio files
         try:
             wav, sr = torchaudio.load(fpath)
         except Exception as e:

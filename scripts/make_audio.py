@@ -11,28 +11,11 @@ import time
 import traceback
 from tqdm.auto import tqdm, trange
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import tempfile
 import argparse
-import shutil
 from dataclasses import dataclass, field
-import random
 import datetime
-from PIL import Image
-from threading import Thread
-
-try:
-    from pytubefix import Playlist, YouTube, Channel
-except ImportError:
-    try:
-        from pytube import Playlist, YouTube, Channel  # type: ignore
-    except ImportError:
-        raise ImportError("Please install the pytube library to download the audio. You can install it using `pip install pytube` or `pip install pytubefix`")
-
 from fyp.audio.dataset import DatasetEntry, SongDataset, create_entry
-from fyp import Audio
-from fyp.audio.analysis import BeatAnalysisResult, DeadBeatKernel
 from fyp.util import (
-    clear_cuda,
     YouTubeURL,
 )
 from .make_v3_dataset import download_audio
@@ -80,8 +63,8 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL], port: int | None = No
     t = time.time()
     last_t = None
 
-    for i, (audio, url) in tqdm(enumerate(audios), total=len(urls)):
-        if audio is None:
+    for i, (audio_path, url) in tqdm(enumerate(audios), total=len(urls)):
+        if audio_path is None:
             continue
 
         last_entry_process_time = round(time.time() - last_t, 2) if last_t else None
@@ -93,13 +76,11 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL], port: int | None = No
         tqdm.write(f"Last entry process time: {last_entry_process_time} seconds")
         tqdm.write(f"Current entry: {url}")
         tqdm.write(f"Time elapsed: {round(time.time() - t, 2)} seconds")
+        tqdm.write(f"Entries processed: {i + 1} / {len(urls)}")
+        tqdm.write(f"Number of entries in dataset: {len(ds.list_files('audio'))}")
         tqdm.write("\u2500" * os.get_terminal_size().columns)
         tqdm.write("")
 
-        clear_cuda()
-
-        audio_path = ds.get_path("audio", url)
-        audio.save(audio_path)
         tqdm.write(f"Waiting for the next entry...")
 
 
