@@ -84,6 +84,8 @@ def download_audio_with_yt_dlp(link: YouTubeURL, output_dir: str, port: int | No
                 return False, (f"Age Restricted - Sign in to confirm your age")
             if "Private video" in str(e):
                 return False, (f"Private video")
+            if "This video has been removed" in str(e):
+                return False, (f"This video has been removed or is unavailable")
             print(f"Attempt {retries+1} failed: {e}")
             retries += 1
             if retries >= max_retries:
@@ -97,7 +99,7 @@ def download_audio(link: str | YouTubeURL, output_dir: str, verbose=True, timeou
     link = get_url(link)
     successful, path = download_audio_with_yt_dlp(link, output_dir, verbose=verbose, port=port)
     if not successful:
-        raise DownloadError(f"Failed to download audio from {link}: {path}")
+        raise DownloadError(f"Video not downloadable for {link}: {path}")
     # Make sure path points to a file in output_dir
     if not os.path.isfile(path):
         raise DownloadError(f"Downloaded file not found: {path}. Ensure yt-dlp is installed and the link is valid.")
