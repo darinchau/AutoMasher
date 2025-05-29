@@ -114,11 +114,15 @@ class Audio:
         """Returns an identical copy of self"""
         return Audio(self._data.clone(), self._sample_rate)
 
-    def pad(self, target: int, front: bool = False) -> Audio:
+    def pad(self, target: int, front: bool = False, warn: int = -1) -> Audio:
         """Returns a new audio with the given number of frames and the same sample rate as self.
         If n < self.nframes, we will trim the audio; if n > self.nframes, we will perform zero padding
-        If front is set to true, then operate on the front instead of on the back"""
+        If front is set to true, then operate on the front instead of on the back
+        If warn is set to a positive value, then we will warn if the new length is more than this number of frames away from the original length. Set to -1 to disable the warning"""
         length = self.nframes
+        if warn > 0 and abs(length - target) > warn:
+            logger.warning(f"Padding audio from {length} frames to {target} frames. This is more than {warn} frames away from the original length. This might not be intended.")
+
         if not front:
             if length > target:
                 new_data = self._data[:, :target].clone()
