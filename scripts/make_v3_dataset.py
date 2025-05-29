@@ -35,7 +35,8 @@ from fyp.util import (
     clear_cuda,
     YouTubeURL,
     download_audio as download_audio_inner,
-    DownloadError
+    DownloadError,
+    Colors
 )
 from fyp.constants import (
     CANDIDATE_URLS,
@@ -89,7 +90,11 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
         if ds.has_path("audio", url):
             return ds.get_path("audio", url)
 
-        audio = download_audio_inner(url, os.path.join(ds.root, "audio"), port=port)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_audio_path = download_audio_inner(url, temp_dir, port=port)
+            audio_destination = os.path.join(ds.root, "audio")
+            audio = os.path.join(audio_destination, os.path.basename(temp_audio_path))
+            shutil.copy2(temp_audio_path, audio)
         if antiban:
             # Wait for a random amount of time to avoid getting blacklisted
             time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
@@ -110,7 +115,7 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
             except DownloadError as e:
                 if "Video not downloadable" in str(e):
                     ds.write_info(REJECTED_URLS, url)
-                    tqdm.write(f"Rejected URL: {str(e)}")
+                    tqdm.write(f"{Colors.UNDERLINE}Rejected URL{Colors.END}: {str(e)}")
                     continue
                 if "Tunnel connection failed: 502 Proxy Error" in str(e):
                     raise FatalError(f"Proxy error: {url}. 502 Proxy Error") from e

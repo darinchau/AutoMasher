@@ -18,7 +18,7 @@ from fyp.audio.dataset import DatasetEntry, SongDataset, create_entry
 from fyp.util import (
     YouTubeURL,
 )
-from .make_v3_dataset import download_audio
+from .make_v3_dataset import download_audio, REJECTED_URLS
 
 LIST_SPLIT_SIZE = 300
 MAX_ERRORS = 10
@@ -87,7 +87,8 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL], port: int | None = No
 def get_candidate_urls(ds: SongDataset) -> list[YouTubeURL]:
     datafiles = ds.list_urls("datafiles")
     audios = ds.list_urls("audio")
-    result = [link for link in datafiles if link not in audios]
+    rejected = ds.read_info_urls(REJECTED_URLS)
+    result = [link for link in datafiles if link not in audios and link not in rejected]
     return result
 
 
