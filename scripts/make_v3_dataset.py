@@ -34,7 +34,8 @@ from fyp.audio.analysis import BeatAnalysisResult, DeadBeatKernel
 from fyp.util import (
     clear_cuda,
     YouTubeURL,
-    download_audio as download_audio_inner
+    download_audio as download_audio_inner,
+    DownloadError
 )
 from fyp.constants import (
     CANDIDATE_URLS,
@@ -98,7 +99,7 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
     # Downloads the things concurrently and yields them one by one
     # If more than MAX_ERRORS fails in MAX_ERRORS_TIME seconds, then we assume YT has blacklisted our IP or our internet is down or smth and we stop
     error_logs = []
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {executor.submit(download_audio_single, url): url for url in urls}
         for future in as_completed(futures):
             url = futures[future]
@@ -106,8 +107,8 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
                 audio = future.result()
                 tqdm.write(f"Downloaded audio: {url}")
                 yield audio, url
-            except Exception as e:
-                if "Video unavailable" in str(e) or "This video is not available" in str(e):
+            except DownloadError as e:
+                if "This video is not available" in str(e):
                     ds.write_info(REJECTED_URLS, url)
                     tqdm.write(f"Rejected URL: {url} (This video is not available.)")
                     continue
@@ -116,7 +117,7 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
                     tqdm.write(f"Rejected URL: {url} (Sign in to confirm your age)")
                     continue
                 if "Tunnel connection failed: 502 Proxy Error" in str(e):
-                    raise FatalError(f"Proxy error: {url}. Please refresh proxy") from e
+                    raise FatalError(f"Proxy error: {url}. 502 Proxy Error") from e
                 if "Private video" in str(e):
                     ds.write_info(REJECTED_URLS, url)
                     tqdm.write(f"Rejected URL: {url} (Private video)")

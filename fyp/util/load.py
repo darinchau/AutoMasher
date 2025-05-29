@@ -7,6 +7,17 @@ import numpy as np
 from .url import get_url, YouTubeURL, to_youtube, is_posix
 
 
+class DownloadError(RuntimeError):
+    """Custom exception for download errors."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+    def __str__(self):
+        return f"DownloadError: {self.message}"
+
+
 def load_audio(path: str, sr: int | None = None):
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Audio file not found: {path}")
@@ -36,7 +47,8 @@ def is_file_in_directory(path: str, dir: str) -> bool:
     return False
 
 
-def download_audio_with_yt_dlp(link: YouTubeURL, output_dir: str, port: int | None = None, verbose=True, max_retries=3):
+def download_audio_with_yt_dlp(link: YouTubeURL, output_dir: str, port: int | None = None, verbose=True, max_retries=3) -> tuple[bool, str]:
+    """Returns successful or not and if successful, the path to the downloaded audio file; otherwise returns an error message."""
     try:
         from yt_dlp.YoutubeDL import YoutubeDL
     except ImportError:
@@ -64,25 +76,32 @@ def download_audio_with_yt_dlp(link: YouTubeURL, output_dir: str, port: int | No
                 # Find the downloaded file
                 for file in os.listdir(output_dir):
                     if link.video_id in file:
-                        return os.path.join(output_dir, file)
-            retries += 1
+                        return True, os.path.join(output_dir, file)
         except Exception as e:
+            if "Video unavailable" in str(e) or "This video is not available" in str(e):
+                return False, (f"This video is not available.")
+            if "Sign in to confirm your age" in str(e):
+                return False, (f"Age Restricted - Sign in to confirm your age")
+            if "Private video" in str(e):
+                return False, (f"Private video")
             print(f"Attempt {retries+1} failed: {e}")
             retries += 1
             if retries >= max_retries:
-                raise Exception("Maximum retries reached, download failed.")
+                return False, (f"Failed to download {link} after {max_retries} attempts: {e}")
 
-    raise FileNotFoundError(f"Could not find downloaded file for {link} after {max_retries} attempts.")
+    return False, "Unknown error occurred during download"
 
 
 def download_audio(link: str | YouTubeURL, output_dir: str, verbose=True, timeout=120, port: int | None = None):
     """Downloads the audio from a YouTube link using yt-dlp. Returns the file name of the downloaded audio file."""
     link = get_url(link)
-    path = download_audio_with_yt_dlp(link, output_dir, verbose=verbose, port=port)
+    successful, path = download_audio_with_yt_dlp(link, output_dir, verbose=verbose, port=port)
+    if not successful:
+        raise DownloadError(f"Failed to download audio from {link}: {path}")
     # Make sure path points to a file in output_dir
     if not os.path.isfile(path):
-        raise FileNotFoundError(f"Downloaded file not found: {path}. Ensure yt-dlp is installed and the link is valid.")
+        raise DownloadError(f"Downloaded file not found: {path}. Ensure yt-dlp is installed and the link is valid.")
     if not is_file_in_directory(path, output_dir):
-        raise ValueError(f"Downloaded file {path} is not in the specified output directory {output_dir}.")
+        raise DownloadError(f"Downloaded file {path} is not in the specified output directory {output_dir}.")
     path = os.path.basename(path)
     return path
