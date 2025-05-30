@@ -43,6 +43,7 @@ class Config:
         parser.add_argument(
             "--root",
             type=str,
+            required=True,
             help="Root directory for the dataset",
         )
         parser.add_argument(
