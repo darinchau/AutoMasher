@@ -112,16 +112,19 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
                 audio = future.result()
                 tqdm.write(f"Downloaded audio: {url}")
                 yield audio, url
-            except DownloadError as e:
-                if "Video not downloadable" in str(e):
-                    ds.write_info(REJECTED_URLS, url)
-                    tqdm.write(f"{Colors.UNDERLINE}Rejected URL{Colors.END}: {str(e)}")
-                    continue
-                if "Tunnel connection failed: 502 Proxy Error" in str(e):
-                    raise FatalError(f"Proxy error: {url}. 502 Proxy Error") from e
+            except Exception as e:
+                if isinstance(e, DownloadError):
+                    if "Video not downloadable" in str(e):
+                        ds.write_info(REJECTED_URLS, url)
+                        tqdm.write(f"{Colors.UNDERLINE}Rejected URL{Colors.END}: {str(e)}")
+                        continue
+                    if "Tunnel connection failed: 502 Proxy Error" in str(e):
+                        raise FatalError(f"Proxy error: {url}. 502 Proxy Error") from e
+                tqdm.write(f"{Colors.RED}Failed to download audio: {url}{Colors.END}")
+                tqdm.write(f"Error: {e}")
                 ds.write_error(f"Failed to download audio: {url}", e, print_fn=tqdm.write)
                 error_logs.append((time.time(), e))
-                if len(error_logs) >= MAX_ERRORS:
+                while len(error_logs) >= MAX_ERRORS:
                     if time.time() - error_logs[0][0] < MAX_ERRORS_TIME:
                         tqdm.write(f"Too many errors in a short time, has YouTube blacklisted us?")
                         for t, e in error_logs:
