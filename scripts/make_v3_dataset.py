@@ -82,7 +82,7 @@ class Config:
         parser.add_argument(
             "--workers",
             type=int,
-            default=0,
+            default=1,
             help="Number of worker threads to use for downloading audio. If 0, it will use the number of available CPUs.",
         )
         args = parser.parse_args()
