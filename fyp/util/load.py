@@ -94,7 +94,7 @@ def download_audio_with_yt_dlp(link: YouTubeURL, output_dir: str, port: int | No
     return False, "Unknown error occurred during download"
 
 
-def download_audio(link: str | YouTubeURL, output_dir: str, verbose=True, timeout=120, port: int | None = None):
+def download_audio(link: str | YouTubeURL, output_dir: str, verbose=True, port: int | None = None):
     """Downloads the audio from a YouTube link using yt-dlp. Returns the file name of the downloaded audio file."""
     link = get_url(link)
     successful, path = download_audio_with_yt_dlp(link, output_dir, verbose=verbose, port=port)

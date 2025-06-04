@@ -93,28 +93,30 @@ class Config:
         )
 
 
+def _download_audio_single(ds: SongDataset, url: YouTubeURL, port: int | None, antiban: bool) -> str:
+    if ds.has_path("audio", url):
+        return ds.get_path("audio", url)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_audio_path = download_audio_inner(url, temp_dir, port=port)
+        audio_destination = os.path.join(ds.root, "audio", os.path.basename(temp_audio_path))
+        temp_audio_full_path = os.path.join(temp_dir, temp_audio_path)
+        shutil.copy2(temp_audio_full_path, audio_destination)
+    if antiban:
+        # Wait for a random amount of time to avoid getting blacklisted
+        time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
+    ds.set_path("audio", url, audio_destination)
+    return audio_destination
+
+
 def download_audio(ds: SongDataset, urls: list[YouTubeURL], workers: int = 0, port: int | None = None, antiban: bool = False):
     """Downloads the audio from the URLs. Yields the path to audio (in the dataset) and the URL."""
-    def download_audio_single(url: YouTubeURL) -> str:
-        if ds.has_path("audio", url):
-            return ds.get_path("audio", url)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_audio_path = download_audio_inner(url, temp_dir, port=port)
-            audio_destination = os.path.join(ds.root, "audio")
-            audio = os.path.join(audio_destination, os.path.basename(temp_audio_path))
-            shutil.copy2(temp_audio_path, audio)
-        if antiban:
-            # Wait for a random amount of time to avoid getting blacklisted
-            time.sleep(random.uniform(RANDOM_WAIT_TIME_MIN, RANDOM_WAIT_TIME_MAX))
-        ds.set_path("audio", url, audio)
-        return audio
 
     # Downloads the things concurrently and yields them one by one
     # If more than MAX_ERRORS fails in MAX_ERRORS_TIME seconds, then we assume YT has blacklisted our IP or our internet is down or smth and we stop
     error_logs = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(download_audio_single, url): url for url in urls}
+        futures = {executor.submit(_download_audio_single, ds, url, port, antiban): url for url in urls}
         for future in as_completed(futures):
             url = futures[future]
             try:
