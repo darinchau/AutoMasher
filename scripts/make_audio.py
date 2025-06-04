@@ -18,7 +18,7 @@ from fyp.audio.dataset import DatasetEntry, SongDataset, create_entry
 from fyp.util import (
     YouTubeURL,
 )
-from .make_v3_dataset import download_audio, REJECTED_URLS
+from .make_v3_dataset import download_audio, REJECTED_URLS, Config
 
 LIST_SPLIT_SIZE = 300
 MAX_ERRORS = 10
@@ -32,35 +32,8 @@ class FatalError(Exception):
     pass
 
 
-@dataclass(frozen=True)
-class Config:
-    root: str
-    port: int | None = None
-
-    @classmethod
-    def parse_args(cls):
-        parser = argparse.ArgumentParser(description="Config for dataset creation")
-        parser.add_argument(
-            "--root",
-            type=str,
-            required=True,
-            help="Root directory for the dataset",
-        )
-        parser.add_argument(
-            "--port",
-            type=int,
-            default=None,
-            help="Port to use for downloading audio. If not specified, the default port will be used.",
-        )
-        args = parser.parse_args()
-        return cls(
-            root=args.root,
-            port=args.port,
-        )
-
-
-def process_batch(ds: SongDataset, urls: list[YouTubeURL], port: int | None = None):
-    audios = download_audio(ds, urls, port=port)
+def process_batch(ds: SongDataset, urls: list[YouTubeURL], workers: int = 0, port: int | None = None):
+    audios = download_audio(ds, urls, workers=workers, port=port)
     t = time.time()
     last_t = None
 
@@ -111,7 +84,7 @@ def main(config: Config | None = None):
         if not url_batch:
             break
         try:
-            process_batch(ds, url_batch, config.port)
+            process_batch(ds, url_batch, config.workers, config.port)
         except FatalError as e:
             print(e)
             break

@@ -61,7 +61,8 @@ class FatalError(Exception):
 @dataclass(frozen=True)
 class Config:
     root: str
-    port: int | None = None
+    workers: int
+    port: int | None
 
     @classmethod
     def parse_args(cls):
@@ -69,6 +70,7 @@ class Config:
         parser.add_argument(
             "--root",
             type=str,
+            required=True,
             help="Root directory for the dataset",
         )
         parser.add_argument(
@@ -77,14 +79,21 @@ class Config:
             default=None,
             help="Port to use for downloading audio. If not specified, the default port will be used.",
         )
+        parser.add_argument(
+            "--workers",
+            type=int,
+            default=0,
+            help="Number of worker threads to use for downloading audio. If 0, it will use the number of available CPUs.",
+        )
         args = parser.parse_args()
         return cls(
             root=args.root,
+            workers=args.workers,
             port=args.port,
         )
 
 
-def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = None, antiban: bool = False):
+def download_audio(ds: SongDataset, urls: list[YouTubeURL], workers: int = 0, port: int | None = None, antiban: bool = False):
     """Downloads the audio from the URLs. Yields the path to audio (in the dataset) and the URL."""
     def download_audio_single(url: YouTubeURL) -> str:
         if ds.has_path("audio", url):
@@ -104,7 +113,7 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
     # Downloads the things concurrently and yields them one by one
     # If more than MAX_ERRORS fails in MAX_ERRORS_TIME seconds, then we assume YT has blacklisted our IP or our internet is down or smth and we stop
     error_logs = []
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(download_audio_single, url): url for url in urls}
         for future in as_completed(futures):
             url = futures[future]
@@ -137,8 +146,8 @@ def download_audio(ds: SongDataset, urls: list[YouTubeURL], port: int | None = N
                     error_logs.pop(0)
 
 
-def process_batch(ds: SongDataset, urls: list[YouTubeURL], port: int | None = None):
-    audios = download_audio(ds, urls, port=port)
+def process_batch(ds: SongDataset, urls: list[YouTubeURL], workers: int = 0, port: int | None = None):
+    audios = download_audio(ds, urls, workers=workers, port=port)
     t = time.time()
     last_t = None
 
@@ -255,7 +264,7 @@ def main(config: Config | None = None):
         if not url_batch:
             break
         try:
-            process_batch(ds, url_batch, config.port)
+            process_batch(ds, url_batch, config.workers, config.port)
         except FatalError as e:
             print(e)
             break
