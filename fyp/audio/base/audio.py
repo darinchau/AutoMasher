@@ -164,8 +164,8 @@ class Audio:
         if chunk_length > total_samples:
             raise ValueError(f"Chunk length {chunk_length} is greater than total samples {total_samples} in {path}")
 
-        start_sample = random.randint(0, total_samples - chunk_length) if end is None else start * orig_sr // sr
-        stop_sample = start_sample + chunk_length if end is None else end * orig_sr // sr
+        start_sample = random.randint(0, total_samples - chunk_length) if end is None else int(start * orig_sr / sr)
+        stop_sample = start_sample + chunk_length if end is None else int(end * orig_sr / sr)
         signal, sampling_rate = af.read(path, offset=f"{start_sample}", duration=f"{chunk_length}", always_2d=True)
         audio = Audio(torch.from_numpy(signal), sampling_rate)
         return audio.pad(target=audio_length, warn=1024)
