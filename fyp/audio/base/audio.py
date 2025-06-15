@@ -167,8 +167,7 @@ class Audio:
         start_sample = random.randint(0, total_samples - chunk_length) if end is None else int(start * orig_sr / sr)
         stop_sample = start_sample + chunk_length if end is None else int(end * orig_sr / sr)
         signal, sampling_rate = af.read(path, offset=f"{start_sample}", duration=f"{chunk_length}", always_2d=True)
-        audio = Audio(torch.from_numpy(signal), sampling_rate)
-        return audio.pad(target=audio_length, warn=1024)
+        return Audio(torch.from_numpy(signal), sampling_rate).resample(sr).pad(target=audio_length, warn=1024)
 
     def to_nchannels(self, target: AudioMode | int) -> Audio:
         """Return self with the correct target. If you use int, you must guarantee the value is 1 or 2, otherwise you get an error"""
