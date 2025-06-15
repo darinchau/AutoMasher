@@ -139,29 +139,36 @@ class Audio:
         return Audio(new_data, self._sample_rate)
 
     @classmethod
-    def load_rs(cls, path: str, sr: int, start: int, end: int) -> Audio:
-        """Equivalent to Audio.load(path).resample(sr).slice_frames(start, end) but cuts disk io time on wav files"""
+    def load_rs(cls, path: str, sr: int, start: int, end: int | None = None) -> Audio:
+        """Equivalent to Audio.load(path).resample(sr).slice_frames(start, end) but cuts disk io time on wav files
+        If end is None, then it will get a random chunk of the audio with length start"""
         # Check if extension is wav
         if not path.endswith(".wav"):
-            return Audio.load(path).resample(sr).slice_frames(start, end)
+            aud = Audio.load(path).resample(sr)
+            max_start = aud.nframes - start
+            aud_start = random.randint(0, max_start)
+            return aud.slice_frames(aud_start, aud_start + start)
 
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Audio file not found: {path}")
-        if start < 0 or end < 0 or start >= end:
+        if start < 0:
             raise ValueError(f"Invalid start ({start}) or end ({end}) values for slicing audio in {path}")
+        if end is not None and (end <= start or end < 0):
+            raise ValueError(f"Invalid start ({start}) or end ({end}) values for slicing audio in {path}")
+
         import audiofile as af
         total_samples = af.samples(path)
         orig_sr = af.sampling_rate(path)
-        audio_length = end - start
+        audio_length = end - start if end is not None else start
         chunk_length = int(audio_length * orig_sr / sr)
         if chunk_length > total_samples:
             raise ValueError(f"Chunk length {chunk_length} is greater than total samples {total_samples} in {path}")
 
-        start_sample = random.randint(0, total_samples - chunk_length)
-        stop_sample = start_sample + chunk_length
+        start_sample = random.randint(0, total_samples - chunk_length) if end is None else start * orig_sr // sr
+        stop_sample = start_sample + chunk_length if end is None else end * orig_sr // sr
         signal, sampling_rate = af.read(path, offset=f"{start_sample}", duration=f"{chunk_length}", always_2d=True)
         audio = Audio(torch.from_numpy(signal), sampling_rate)
-        return audio
+        return audio.pad(target=audio_length, warn=1024)
 
     def to_nchannels(self, target: AudioMode | int) -> Audio:
         """Return self with the correct target. If you use int, you must guarantee the value is 1 or 2, otherwise you get an error"""
