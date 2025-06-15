@@ -138,6 +138,31 @@ class Audio:
 
         return Audio(new_data, self._sample_rate)
 
+    @classmethod
+    def load_rs(cls, path: str, sr: int, start: int, end: int) -> Audio:
+        """Equivalent to Audio.load(path).resample(sr).slice_frames(start, end) but cuts disk io time on wav files"""
+        # Check if extension is wav
+        if not path.endswith(".wav"):
+            return Audio.load(path).resample(sr).slice_frames(start, end)
+
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Audio file not found: {path}")
+        if start < 0 or end < 0 or start >= end:
+            raise ValueError(f"Invalid start ({start}) or end ({end}) values for slicing audio in {path}")
+        import audiofile as af
+        total_samples = af.samples(path)
+        orig_sr = af.sampling_rate(path)
+        audio_length = end - start
+        chunk_length = int(audio_length * orig_sr / sr)
+        if chunk_length > total_samples:
+            raise ValueError(f"Chunk length {chunk_length} is greater than total samples {total_samples} in {path}")
+
+        start_sample = random.randint(0, total_samples - chunk_length)
+        stop_sample = start_sample + chunk_length
+        signal, sampling_rate = af.read(path, offset=f"{start_sample}", duration=f"{chunk_length}", always_2d=True)
+        audio = Audio(torch.from_numpy(signal), sampling_rate)
+        return audio
+
     def to_nchannels(self, target: AudioMode | int) -> Audio:
         """Return self with the correct target. If you use int, you must guarantee the value is 1 or 2, otherwise you get an error"""
         if not isinstance(target, AudioMode) and not isinstance(target, int):
