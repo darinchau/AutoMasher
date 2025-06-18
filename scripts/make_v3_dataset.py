@@ -2,11 +2,6 @@
 # python -m scripts.make_v3_dataset from the root directory
 
 import os
-import numpy as np
-import base64
-import zipfile
-from math import isclose
-from typing import Literal
 import time
 import traceback
 from tqdm.auto import tqdm, trange
@@ -17,17 +12,6 @@ import shutil
 from dataclasses import dataclass, field
 import random
 import datetime
-from PIL import Image
-from threading import Thread
-
-try:
-    from pytubefix import Playlist, YouTube, Channel
-except ImportError:
-    try:
-        from pytube import Playlist, YouTube, Channel  # type: ignore
-    except ImportError:
-        raise ImportError("Please install the pytube library to download the audio. You can install it using `pip install pytube` or `pip install pytubefix`")
-
 from fyp.audio.dataset import DatasetEntry, SongDataset, create_entry
 from fyp import Audio
 from fyp.audio.analysis import BeatAnalysisResult, DeadBeatKernel
@@ -40,7 +24,6 @@ from fyp.util import (
 )
 from fyp.constants import (
     CANDIDATE_URLS,
-    PROCESSED_URLS,
     REJECTED_URLS,
 )
 from itertools import zip_longest
@@ -198,7 +181,6 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL], workers: int = 0, por
 
         try:
             dataset_entry.save(ds.get_path("datafiles", url))
-            ds.write_info(PROCESSED_URLS, url)
         except Exception as e:
             ds.write_error(f"Failed to write entry: {url}", e, print_fn=tqdm.write)
             ds.write_info(REJECTED_URLS, url)
@@ -208,10 +190,9 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL], workers: int = 0, por
 
 
 def get_candidate_urls(ds: SongDataset) -> list[YouTubeURL]:
-    # TODO remove this - temporarily only use the audios that we already have around
     candidates = ds.read_info(CANDIDATE_URLS)
     assert candidates is not None
-    finished = ds.read_info_urls(PROCESSED_URLS) | ds.read_info_urls(REJECTED_URLS)
+    finished = set(ds.list_urls("datafiles")) | ds.read_info_urls(REJECTED_URLS)
     metadata = ds.get_path("metadata")
     candidates = [c for c in candidates if c not in finished]
 
