@@ -348,8 +348,7 @@ class SongDataset:
                     return f"File {key} does not exist"
         return None
 
-    @lru_cache(maxsize=1024)
-    def get_path(self, key: str, url: YouTubeURL | None = None) -> str:
+    def get_path(self, key: str, url: YouTubeURL | None = None, filename: str | None = None) -> str:
         """Get the (absolute) file path for the given key and url"""
         if url is not None and url.is_placeholder:
             raise ValueError("Cannot get data path for placeholder url")
@@ -358,22 +357,34 @@ class SongDataset:
         if key not in metadata["file_structure"]:
             raise ValueError(f"Key {key} not registered")
         file_format: str = metadata["file_structure"][key]
+
+        # Something like error.txt or info.json matches here
+        if file_format != "" and "{video_id}" not in file_format:
+            if url is not None:
+                print(f"URL provided for {key} is not required and will be ignored")
+            return os.path.join(self.root, file_format)
+
         if file_format == "":
             if url is None:
                 raise ValueError(f"Invalid file format for {key} (variable file format) - a URL is expected")
             with open(os.path.join(self.root, key, "info.json"), "r") as f:
                 info = json.load(f)
-            if url.video_id not in info:
+            if url.video_id in info:
+                if filename is not None:
+                    print(f"File already exists for {key} and url {url}, ignoring provided filename {filename}")
+                filename = info[url.video_id]
+            elif filename is None:
                 raise ValueError(f"URL {url} not found in info.json for key {key} (variable file format)")
-            return os.path.join(self.root, key, info[url.video_id])
-        if "{video_id}" in file_format and url is None:
-            raise ValueError(f"Invalid file format for {key}: {file_format} - a URL is expected")
-        if url is None:
-            return os.path.join(self.root, file_format)
+        else:
+            if url is None:
+                raise ValueError(f"Invalid file format for {key}: {file_format} - a URL is expected")
+            filename = file_format.format(video_id=url.video_id)
+        if filename is None:
+            raise ValueError(f"Cannot resolve filename for key {key} and url {url} (variable file format)?")
         subindex = url.video_id[:2]
-        subdirectory = os.path.join(self.root, key, subindex)
-        os.makedirs(subdirectory, exist_ok=True)
-        return os.path.join(subdirectory, file_format.format(video_id=url.video_id))
+        path = os.path.join(self.root, key, subindex, filename)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return path
 
     def has_path(self, key: str, url: YouTubeURL) -> bool:
         """Check if the file path for the given key and url exists"""
