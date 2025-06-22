@@ -59,10 +59,15 @@ def process_batch(ds: SongDataset, urls: list[YouTubeURL], workers: int = 0, por
 
 
 def get_candidate_urls(ds: SongDataset) -> list[YouTubeURL]:
-    datafiles = ds.list_urls("datafiles")
+    from .make_v3_dataset import get_candidate_urls as _get_candidate_urls
+    candidates = ds.list_urls("datafiles")
     audios = ds.list_urls("audio")
     rejected = ds.read_info_urls(REJECTED_URLS)
-    result = [link for link in datafiles if link not in audios and link not in rejected]
+    candidates += _get_candidate_urls(ds)
+    result = [link for link in candidates if link not in audios and link not in rejected]
+    # deduplicate but preserve order
+    seen = set()
+    result = [x for x in result if not (x in seen or seen.add(x))]
     return result
 
 

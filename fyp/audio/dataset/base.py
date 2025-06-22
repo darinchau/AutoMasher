@@ -171,14 +171,13 @@ class SongDataset:
     """
 
     def __init__(
-        self, root: str, *,
+        self,
+        root: str, *,
         load_on_the_fly: bool = False,
-        assert_audio_exists: bool = False,
     ):
         self._data: dict[YouTubeURL, DatasetEntry] = {}
         self.root = root
         self.load_on_the_fly = load_on_the_fly
-        self.assert_audio_exists = assert_audio_exists
         self.filters: list[Callable[[DatasetEntry], bool]] = []
 
         if root.startswith("hf://"):
@@ -293,21 +292,23 @@ class SongDataset:
             with open(self.metadata_path, "w") as f:
                 json.dump({}, f)
 
-        self.register("audio")
-        self.register("parts", "{video_id}.wav.demucs")
-        self.register("datafiles", "{video_id}.dat3")
-        self.register("info", "info.json", initial_data="{}")
-        self.register("error", "error_logs.txt")
-        self.register("pack", "pack.data", create=False)
+        self._register("audio")
+        self._register("parts", "{video_id}.wav.demucs")
+        self._register("datafiles", "{video_id}.dat3")
+        self._register("info", "info.json", initial_data="{}")
+        self._register("error", "error_logs.txt")
+        self._register("pack", "pack.data", create=False)
 
-    def register(self, key: str, file_format: str = "", *, create: bool = True, initial_data: str | None = None):
+    def _register(self, key: str, file_format: str = "", *, create: bool = True, initial_data: str | None = None):
         """Add a type of file to the dataset. The file format is a string that describes the format of the file (e.g. "{video_id}.dat3)
 
         Leave the file format blank for a variable directory structure, where a json file will be created in the key directory
         to map the video id to the file name on the fly.
 
         The file format should contain the string "{video_id}" which will be replaced by the video id of the url
-        If it does not, then a file is created in the root directory"""
+        If it does not, then a file is created in the root directory
+
+        If the file format is empty, then a variable directory structure is created, where a json file is created in the key directory"""
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         if not "file_structure" in metadata:
@@ -345,10 +346,6 @@ class SongDataset:
             if "{video_id}" in file_format:
                 if not os.path.exists(self.root + "/" + key):
                     return f"File {key} does not exist"
-                expected_file_format_length = len(file_format.format(video_id="")) + 11
-                for file in self.list_files(key):
-                    if len(file) != expected_file_format_length:
-                        return f"Invalid file format for {key}: {file} in {self.root}/{key}"
         return None
 
     @lru_cache(maxsize=1024)
@@ -373,7 +370,10 @@ class SongDataset:
             raise ValueError(f"Invalid file format for {key}: {file_format} - a URL is expected")
         if url is None:
             return os.path.join(self.root, file_format)
-        return os.path.join(self.root, key, file_format.format(video_id=url.video_id))
+        subindex = url.video_id[:2]
+        subdirectory = os.path.join(self.root, key, subindex)
+        os.makedirs(subdirectory, exist_ok=True)
+        return os.path.join(subdirectory, file_format.format(video_id=url.video_id))
 
     def has_path(self, key: str, url: YouTubeURL) -> bool:
         """Check if the file path for the given key and url exists"""
@@ -473,10 +473,6 @@ class SongDataset:
         file_url = get_url(file[-16:-5])
         if not _skip_filecheck and not os.path.isfile(file):
             return None
-        if self.assert_audio_exists:
-            audio_path = self.get_path("audio", file_url)
-            if not os.path.isfile(audio_path):
-                return None
         try:
             entry = DatasetEntry.load(file)
             if not all(f(entry) for f in self.filters):
@@ -504,9 +500,6 @@ class SongDataset:
 
     def save_entry(self, entry: DatasetEntry):
         """This adds an entry to the dataset and checks for the presence of audio"""
-        audio_path = self.get_path("audio", entry.url)
-        if self.assert_audio_exists and not os.path.isfile(audio_path):
-            raise FileNotFoundError(f"Audio file {audio_path} not found")
         if not self.load_on_the_fly:
             self._data[entry.url] = entry
         path = self.get_path("datafiles", entry.url)
@@ -571,7 +564,7 @@ class SongDataset:
         if os.path.isfile(path):
             return Audio.load(path)
         # Save and reload to ensure consistency
-        audio = Audio.load(url)
+        audio = Audio.download(url)
         audio.save(path)
         audio = Audio.load(path)
         return audio
@@ -613,8 +606,8 @@ def _safe_write_json(data, filename):
     temp_fd, temp_path = tempfile.mkstemp()
 
     try:
-        with os.fdopen(temp_fd, 'w') as temp_file:
-            json.dump(data, temp_file, indent=4)
+        with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_file:
+            json.dump(data, temp_file, indent=4, ensure_ascii=False)
         shutil.move(temp_path, filename)
     except Exception as e:
         print(f"Failed to write data: {e}")

@@ -29,6 +29,7 @@ if typing.TYPE_CHECKING:
 
 BEAT_DATASET_KEY = "beats"
 
+
 @dataclass(frozen=True)
 class BeatAnalysisResult:
     """A class that represents the result of a beat analysis."""
@@ -153,7 +154,7 @@ def analyse_beat_transformer(audio: Audio | None = None,
         use_loaded_model (bool): Whether to use the loaded model. Defaults to True.
         """
     if use_cache and dataset is not None:
-        dataset.register("beats", "{video_id}.beats")
+        dataset._register("beats", "{video_id}.beats")
         if url is not None and not url.is_placeholder and dataset.has_path("beats", url):
             return BeatAnalysisResult.load(dataset.get_path("beats", url))
 

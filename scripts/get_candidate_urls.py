@@ -56,7 +56,7 @@ keys_to_write = ['title', 'artist_names', 'album_name', 'views', "language"]
 
 def main(path: str):
     song_ds = SongDataset(path)
-    song_ds.register("metadata", "metadata.json", initial_data="{}")
+    song_ds._register("metadata", "metadata.json", initial_data="{}")
 
     if not os.path.exists(os.path.join(path, "filtered_ds")):
         ds = load_dataset("laion/LAION-DISCO-12M")

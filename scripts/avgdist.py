@@ -53,7 +53,7 @@ class DistanceCalculator:
 
 def main(path: str):
     sd = SongDataset(path, load_on_the_fly=True)
-    sd.register("chords", "{video_id}.npz")
+    sd._register("chords", "{video_id}.npz")
     dist_calc = DistanceCalculator(num_classes=170)
     audios = sd.list_urls("audio")
     for url in tqdm(audios, desc="Processing audio files"):

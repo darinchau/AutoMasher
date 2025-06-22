@@ -316,8 +316,8 @@ def get_chord_result(audio: Audio,
     results = None
     key = LARGE_VOCA_CHORD_DATASET_KEY if use_large_voca else SIMPLE_CHORD_DATASET_KEY
     if use_cache and dataset is not None:
-        dataset.register(SIMPLE_CHORD_DATASET_KEY, "{video_id}.chord")
-        dataset.register(LARGE_VOCA_CHORD_DATASET_KEY, "{video_id}.chord")
+        dataset._register(SIMPLE_CHORD_DATASET_KEY, "{video_id}.chord")
+        dataset._register(LARGE_VOCA_CHORD_DATASET_KEY, "{video_id}.chord")
         if url is not None and not url.is_placeholder and dataset.has_path(key, url):
             results = ChordModelOutput.load(dataset.get_path(key, url))
 
