@@ -28,6 +28,7 @@ import tempfile
 import shutil
 import typing
 import zipfile
+import re
 
 PURGE_ERROR_LIMIT_BYTES = 1 << 32  # 4GB
 
@@ -381,7 +382,7 @@ class SongDataset:
             filename = file_format.format(video_id=url.video_id)
         if filename is None:
             raise ValueError(f"Cannot resolve filename for key {key} and url {url} (variable file format)?")
-        subindex = url.video_id[:2]
+        subindex = url.video_id[:2].lower()  # windows directory is SOMETIMES case-insensitive, so we use the lower case
         path = os.path.join(self.root, key, subindex, filename)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         return path
@@ -413,12 +414,34 @@ class SongDataset:
         raise ValueError(f"Cannot set path for {key} - it is not a variable directory structure")
 
     def list_files(self, key: str) -> list[str]:
-        """List all the files in the given key. Returns a list of filenames (not full paths)"""
+        """List all the files in the given key. Returns a list of absolute paths to the files.
+
+        If the key points to like one file only, then the return will be a list containing one file name.
+
+        Otherwise, will give the absolute path to the files under said key."""
         with open(self.metadata_path, "r") as f:
             metadata = json.load(f)
         if key not in metadata["file_structure"]:
             raise ValueError(f"Key {key} not registered")
-        return os.listdir(os.path.join(self.root, key))
+        file_format: str = metadata["file_structure"][key]
+        if file_format == "":
+            # Variable directory structure, read the info.json file
+            with open(os.path.join(self.root, key, "info.json"), "r") as f:
+                info = json.load(f)
+            return [os.path.join(self.root, path) for path in info.values()]
+        if "{video_id}" not in file_format:
+            return [os.path.join(self.root, key, file_format)]
+        all_files = []
+        check = re.compile(r"^" + file_format.replace("{video_id}", r"[a-zA-Z0-9_-]+") + r"$")
+        for root, _, files in os.walk(os.path.join(self.root, key)):
+            if not files:
+                continue
+            for file in files:
+                if check.match(file):
+                    all_files.append(os.path.join(root, file))
+        if not all_files:
+            raise ValueError(f"No files found for key {key} with file format {file_format}")
+        return all_files
 
     def list_urls(self, key: str) -> list[YouTubeURL]:
         """List all the urls in the given key"""
@@ -434,9 +457,17 @@ class SongDataset:
             return [YouTubeURL(f"{YouTubeURL.URL_PREPEND}{url_id}") for url_id in info.keys()]
         if "{video_id}" not in file_format:
             raise ValueError(f"Invalid file format for {key}: {file_format} - a video_id is expected")
-        len_prepend = len(file_format.split("{video_id}")[0])
-        len_append = len(file_format.split("{video_id}")[1])
-        return [get_url(file[len_prepend:-len_append]) for file in self.list_files(key)]
+        check = re.compile(r"^" + file_format.replace("{video_id}", r"([a-zA-Z0-9_-]+)") + r"$")
+        urls = []
+        for file in self.list_files(key):
+            match = check.match(os.path.basename(file))
+            if not match:
+                raise ValueError(f"File {file} does not match the file format {file_format} for key {key}")
+            video_id = match.group(1)
+            urls.append(get_url(video_id))
+        if not urls:
+            raise ValueError(f"No urls found for key {key} with file format {file_format}")
+        return urls
 
     def load_from_directory(self, verbose: bool = True):
         """Reloads the dataset from the directory into memory"""
@@ -454,7 +485,7 @@ class SongDataset:
             print_fn_(f"Error: {e}")
             print_fn_(f"Error: {traceback.format_exc()}")
         try:
-            with open(self.error_logs_path, "a") as f:
+            with open(self.get_path("error"), "a") as f:
                 f.write(error + "\n")
                 if e:
                     f.write(str(e) + "\n")
@@ -470,10 +501,6 @@ class SongDataset:
     def metadata_path(self):
         return os.path.join(self.root, ".db")
 
-    @property
-    def error_logs_path(self):
-        return self.get_path("error")
-
     def get_entry(self, url: YouTubeURL, *, _skip_filecheck: bool = False) -> DatasetEntry | None:
         """Try to get the entry by url. If it does not exist, return None"""
         if url.is_placeholder:
@@ -481,7 +508,6 @@ class SongDataset:
         if url in self._data and all(f(self._data[url]) for f in self.filters):
             return self._data[url]
         file = self.get_path("datafiles", url)
-        file_url = get_url(file[-16:-5])
         if not _skip_filecheck and not os.path.isfile(file):
             return None
         try:
