@@ -13,6 +13,9 @@ Auto Masher is a research project that aims to create pop song mashups with AI-a
 Our technical paper "Retrieval-based automatic mashup generation with deep learning-guided features" has been accepted by the 25th International Congress on Acoustics/188th Meeting of the Acoustical
 Society of America (ICA2025 New Orleans)
 
+Our paper [DOI: https://doi.org/10.1121/2.0002071](https://doi.org/10.1121/2.0002071) has been awarded Best Student Paper by Proceedings of Meetings on Acoustics (POMA)
+
+
 Auto Masher has been awarded the second-runner up in Best Final Year Project Award in the Department of Computer Science, HKUST in the year 2023-2024.
 
 # Installation
