@@ -10,8 +10,28 @@ from .modules import DemixedDilatedTransformerModel
 from .tracker import unpack_beats, unpack_downbeats, require_madmom
 
 
+def hann(M, sym: bool):
+    a = [0.5, 0.5]
+    if int(M) != M or M < 0:
+        raise ValueError('Window length M must be a non-negative integer')
+    if M <= 1:
+        return np.ones(M)
+    if not sym:
+        M, needs_trunc = M + 1, True
+    else:
+        M, needs_trunc = M, False
+
+    fac = np.linspace(-np.pi, np.pi, M)
+    w = np.zeros(M)
+    for k in range(len(a)):
+        w += a[k] * np.cos(k * fac)
+
+    if needs_trunc:
+        return w[:-1]
+    return w
+
+
 def separator_stft(data: np.ndarray) -> np.ndarray:
-    from scipy.signal.windows import hann
     data = np.asfortranarray(data)
     N = 4096
     H = 1024

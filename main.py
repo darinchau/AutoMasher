@@ -74,7 +74,7 @@ def main():
         natural_vocal_proportion_threshold=0.8,
         natural_window_size=10,
 
-        chord_metric=ChordMetric.KL_DIVERGENCE,
+        chord_metric=ChordMetric.DEFAULT,
 
         save_original=True,
         _skip_mashup=False,

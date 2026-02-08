@@ -257,6 +257,8 @@ class SongDataset:
         dataset = load_dataset(dataset_name, split="train")
         self.root = "./resources/dataset"
 
+        self.init_directory_structure()
+
         for entry in tqdm(dataset, desc="Loading dataset from hf...", disable=False):
             url = get_url(entry["url"])
             try:
@@ -285,7 +287,9 @@ class SongDataset:
             if not os.path.isfile(path):
                 entry.save(path)
             else:
-                warnings.warn(f"File {path} already exists - skipping")
+                # warnings.warn(f"File {path} already exists - skipping")
+                # Normal if loading from the hf dataset a second time
+                pass
 
     def init_directory_structure(self):
         """Checks if the directory structure is correct"""
@@ -358,7 +362,6 @@ class SongDataset:
         if key not in metadata["file_structure"]:
             raise ValueError(f"Key {key} not registered")
         file_format: str = metadata["file_structure"][key]
-
         # Something like error.txt or info.json matches here
         if file_format != "" and "{video_id}" not in file_format:
             if url is not None:
@@ -375,7 +378,11 @@ class SongDataset:
                     print(f"File already exists for {key} and url {url}, ignoring provided filename {filename}")
                 filename = info[url.video_id]
             elif filename is None:
-                raise ValueError(f"URL {url} not found in info.json for key {key} (variable file format)")
+                if key == "audio":
+                    # A default value for audio files if not provided is the youtube_id.mp3
+                    filename = f"{url.video_id}.mp3"
+                else:
+                    raise ValueError(f"URL {url} not found in info.json for key {key} (variable file format)")
         else:
             if url is None:
                 raise ValueError(f"Invalid file format for {key}: {file_format} - a URL is expected")
@@ -471,10 +478,10 @@ class SongDataset:
 
     def load_from_directory(self, verbose: bool = True):
         """Reloads the dataset from the directory into memory"""
-        for file in tqdm(self.list_files("datafiles"), desc="Loading dataset", disable=not verbose):
-            url = get_url(file[:-5])
+        for url in tqdm(self.list_urls("datafiles"), desc="Loading dataset", disable=not verbose):
             entry = self.get_entry(url, _skip_filecheck=True)
             if entry is None:
+                print(f"Warning: entry for url {url} could not be loaded - skipping")
                 continue
             self._data[entry.url] = entry
 

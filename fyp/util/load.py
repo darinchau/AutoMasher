@@ -23,7 +23,7 @@ def load_audio(path: str, sr: int | None = None):
         raise FileNotFoundError(f"Audio file not found: {path}")
     try:
         wav, sr = audiofile.read(path, always_2d=True)
-    except ImportError:
+    except ImportError as e:
         if sys.version_info >= (3, 13):
             raise RuntimeError(f"You might need to install aifc from the deadlib repository to make this work: `pip install standard-aifc standard-sunau`") from e
         raise
@@ -105,5 +105,4 @@ def download_audio(link: str | YouTubeURL, output_dir: str, verbose=True, port: 
         raise DownloadError(f"Downloaded file not found: {path}. Ensure yt-dlp is installed and the link is valid.")
     if not is_file_in_directory(path, output_dir):
         raise DownloadError(f"Downloaded file {path} is not in the specified output directory {output_dir}.")
-    path = os.path.basename(path)
     return path

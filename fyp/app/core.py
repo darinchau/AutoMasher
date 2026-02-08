@@ -264,14 +264,14 @@ def load_dataset(config: MashupConfig) -> SongDataset:
     dataset = SongDataset(
         config.dataset_path,
         load_on_the_fly=config.load_on_the_fly,
-        assert_audio_exists=config.assert_audio_exists,
     )
 
     write = print if config._verbose else lambda x: None
 
-    if dataset.get_path("pack") is not None:
-        print("Loading dataset from pack...")
-        dataset = SongDataset.from_packed(config.dataset_path)
+    if os.path.isfile(dataset.get_path("pack")):
+        print(f"Loading dataset from pack...: {dataset.get_path("pack")}")
+        # use dataset.root because if the input is a hf path, dataset.root will be the local path after downloading
+        dataset = SongDataset.from_packed(dataset.root)
 
     original_dataset_length = len(dataset)
     filter_out_reason = {}
